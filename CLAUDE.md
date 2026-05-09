@@ -30,6 +30,10 @@ When finishing any implementation task, create a TODO list with these steps:
 1. Use the `superpowers:finishing-a-development-branch` skill to guide integration.
 2. Check whether `docs/seshat-sdd.md` or the relevant spec under `docs/superpowers/specs/` needs updating to reflect any design decisions that changed during implementation.
 
+## Package Manager
+
+This project uses `uv`. All Python commands must run through `uv`, e.g. `uv run pytest`, `uv run python`, `uv add <package>`, `uv pip show <package>`.
+
 ## Notes
 
 - Architecture and AI component decisions are documented in `docs/architecture.md`, `docs/seshat-sdd.md`, and the specs under `docs/superpowers/specs/`.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import aioboto3
 from botocore.exceptions import ClientError
@@ -9,9 +9,8 @@ from botocore.exceptions import ClientError
 from seshat.utils.retry import async_retry
 
 if TYPE_CHECKING:
-    from contextlib import AbstractAsyncContextManager
-
-    from aiobotocore.client import AioBaseClient
+    from aiobotocore.session import ClientCreatorContext
+    from types_aiobotocore_s3.client import S3Client
 
     from seshat.config.settings import BlobStoreConfig
 
@@ -47,8 +46,8 @@ class S3BlobStore:
         self._endpoint_url = config.endpoint_url
         self._session = aioboto3.Session()
 
-        self._client_ctx: AbstractAsyncContextManager[AioBaseClient] | None = None
-        self._client: AioBaseClient | None = None
+        self._client_ctx: ClientCreatorContext[S3Client] | None = None
+        self._client: S3Client | None = None
 
         logger.debug(
             "S3BlobStore initialised (bucket=%s region=%s endpoint=%s)",
@@ -58,11 +57,8 @@ class S3BlobStore:
         )
 
     async def connect(self) -> None:
-        # aioboto3.client() returns an async context manager at runtime, not a live client; cast aligns the type.
-        self._client_ctx = cast(
-            "AbstractAsyncContextManager[AioBaseClient]",
-            self._session.client("s3", region_name=self._region, endpoint_url=self._endpoint_url),
-        )
+        # aioboto3.Session.client() returns an async context manager at runtime, not a live client
+        self._client_ctx = self._session.client("s3", region_name=self._region, endpoint_url=self._endpoint_url)
         # Enter it manually here so the client lifetime spans the store's connect/close lifecycle.
         self._client = await self._client_ctx.__aenter__()
         logger.info("S3BlobStore client connected (bucket=%s)", self._bucket)
@@ -75,7 +71,7 @@ class S3BlobStore:
             logger.debug("S3BlobStore client closed")
 
     @property
-    def client(self) -> AioBaseClient:
+    def client(self) -> S3Client:
         if self._client is None:
             raise RuntimeError("S3BlobStore.connect() has not been called")
         return self._client
