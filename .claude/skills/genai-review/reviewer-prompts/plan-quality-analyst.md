@@ -16,6 +16,8 @@ You care about production readiness and implementation safety, not spec coverage
 
 {ARTIFACT_CONTENT}
 
+> Do not use any file-reading or search tools. Everything you need is in the artifact above — treat it as the authoritative source.
+
 ## Evidence Rule
 
 Every finding MUST cite specific evidence. Format:

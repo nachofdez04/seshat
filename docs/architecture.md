@@ -46,7 +46,7 @@ Key design decisions and their rationale. Full detail lives in [docs/superpowers
 
 ## Chunking & Within-Meeting Deduplication
 
-**Chunking:** TextTiling (NLTK) for MVP. Its suitability for meeting transcripts is unvalidated — if the chunking sanity check (§12) shows systematic mis-segmentation, fall back to fixed-size overlapping chunks (500-token windows, 100-token overlap). Diarization-based and semantic chunking remain v2 options.
+**Chunking:** TextTiling (NLTK) for MVP. Its suitability for meeting transcripts is unvalidated — if the chunking sanity check (§12) shows systematic mis-segmentation, fall back to `RecursiveCharacterTextSplitter` (LangChain, 500-token windows, 100-token overlap). Diarization-based and semantic chunking remain v2 options.
 
 **Within-meeting deduplication:** two nodes of the same type are merged if their titles exact-match (primary) or their embeddings exceed `merge_similarity_threshold=0.85` (fallback). The surviving node is the one with the highest chunk index — later in the transcript is assumed to reflect the settled outcome. Earlier reversed positions are discarded. No `SUPERSEDES` relationship is created within a single job.
 
@@ -175,4 +175,3 @@ Prompt/response artifacts are written automatically by autolog and are considere
 | Post-approval `PATCH /graph/{node_id}` | Edit at approval time via `edited_content` is sufficient for MVP |
 | Reranking (cross-encoder) | Add only if `seshat eval` retrieval baseline shows top-K-only recall@5 < 0.7 |
 | Replace verification/resolution agents with ONNX NLI models | Evaluate against LLM baseline using `seshat eval` once MVP data is available |
-

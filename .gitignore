@@ -27,6 +27,9 @@ coverage.xml
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# MyPy
+.mypy_cache/
+
 # Ruff
 .ruff_cache/
 
@@ -40,10 +43,12 @@ data/
 *.log
 
 # VS Code
-# .vscode/
+.vscode/
 
 # Miscellaneous
 todos.md
+docs/*/plans/
+docs/*/code/
 
 # Git worktrees
 .worktrees/

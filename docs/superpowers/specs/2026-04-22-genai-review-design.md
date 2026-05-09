@@ -1,6 +1,6 @@
 # genai-review Skill — Design Spec
 
-**Date:** 2026-04-22  
+**Date:** 2026-04-22
 **Status:** Approved
 
 ## Overview
@@ -135,7 +135,7 @@ Findings without a valid `Evidence:` line matching this format are dropped befor
 
 After the Tech Lead report is produced:
 
-1. **Write** the report to `docs/genai-review/<type>/YYYY-MM-DD-<topic>-review.md`, where `<type>` is `spec`, `plan`, or `code`.
+1. **Write** the report to `docs/genai-review/<type>/YYYY-MM-DD-<topic>-review.md`, where `<type>` is `spec`, `plans`, or `code`.
 2. **User Review Gate** — present the path and ask:
    > "Review written to `<path>`. Please review it and let me know if you want any changes before I commit."
    Wait for approval. If changes are requested, update the file and ask again.

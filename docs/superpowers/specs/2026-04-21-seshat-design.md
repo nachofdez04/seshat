@@ -82,7 +82,7 @@ Pre-formatted text (YAML/JSON) → Text Validator                          → T
 
 ```python
 class TranscriptDocument(BaseModel):
-    id: str                          # UUID4, generated at job creation time
+    id: UUID = Field(default_factory=uuid4)  # auto-generated at construction time
     idempotency_key: str | None      # echoed from JobSubmissionRequest; used for deduplication on POST /jobs
     schema_version: str = "1.0"
     source_type: Literal["audio", "text"]   # "video" deferred to v2 (ffmpeg dependency)
@@ -146,7 +146,7 @@ This provides a full recovery path (reprocess from raw transcript without re-tra
 
 > **Scope note:** production hardening (private bucket policy, SSE-S3 encryption, IAM service identities, lifecycle rules) is out of scope — this system runs locally against LocalStack only. The bucket structure above is an `S3BlobStore` implementation detail. **Pre-production checklist:** if this system is ever pointed at real AWS S3 (not LocalStack), SSE-KMS encryption and a private bucket policy blocking public access must be enabled before any real meeting content is stored. This is not optional — raw transcripts and extracted decisions are sensitive by default.
 
-> **Why S3 + LocalStack for MVP (not local filesystem):** the master's programme includes a cloud module, and the thesis intentionally exercises a cloud-native persistence path. S3 is the MVP blob store, and LocalStack runs the AWS APIs locally so the same code paths execute in dev and (hypothetically) prod — no dual "local FS vs S3" branch to maintain. The same rationale applies to using AWS Secrets Manager (via LocalStack) instead of falling back to `EnvSecretsProvider` for all local development.
+> **Why S3 + LocalStack for MVP (not local filesystem):** the master's programme includes a cloud module, and the thesis intentionally exercises a cloud-native persistence path. S3 is the MVP blob store, and LocalStack runs the AWS APIs locally so the same code paths execute in dev and (hypothetically) prod — no dual "local FS vs S3" branch to maintain. The same rationale applies to using AWS Secrets Manager (via LocalStack) instead of falling back to `EnvSecretsResolver` for all local development.
 
 ### Text Input Schema
 
@@ -212,14 +212,16 @@ class DocumentLoaderProvider(StrEnum):
     # CONFLUENCE = auto() # v2
 
 class AbstractDocumentLoader(ABC):
-    async def load(self, source: str) -> list[str]: ...
-    # Returns a list of raw text documents to feed into the extraction pipeline.
-    # Async for consistency with the rest of the pipeline and v2 network-backed loaders
-    # (Notion, Confluence); MarkdownDocumentLoader wraps its file I/O in asyncio.to_thread().
+    async def load(self, source: str) -> list[Document]: ...
+    # Returns a list of LangChain Documents (text + metadata) to feed into the extraction pipeline.
+    # metadata carries at minimum {"source": filepath} for MarkdownDocumentLoader; v2 loaders
+    # (Notion, Confluence) may include page title, URL, last-modified, etc.
+    # Async for consistency with the rest of the pipeline and v2 network-backed loaders;
+    # MarkdownDocumentLoader wraps its file I/O in asyncio.to_thread().
 
 class DocumentLoaderConfig(BaseModel):
     provider: DocumentLoaderProvider = DocumentLoaderProvider.MARKDOWN
-    source_path: str = "./docs"
+    source_path: str = "./init-docs"
 ```
 
 `DocumentLoaderConfig` is added to `SeshatConfig` as an optional field — only required when running `seshat init`.
@@ -240,6 +242,8 @@ class SeshatConfig(BaseSettings):
     )
     transcription: TranscriptionConfig
     vector_store: VectorStoreConfig
+    vector_index: VectorIndexConfig
+    kb_store: KBStoreConfig
     blob_store: BlobStoreConfig
     extraction: ExtractionConfig
     rag: RAGConfig
@@ -293,6 +297,7 @@ class SecretsProvider(StrEnum):
 
 ```python
 class SeshatConfigOverride(BaseModel):
+    transcription: TranscriptionConfig | None = None
     extraction: ExtractionConfig | None = None
     rag: RAGConfig | None = None
 
@@ -367,13 +372,10 @@ class ConfidenceWeights(BaseModel):
 ```python
 class RAGConfig(BaseModel):
     enabled: bool = True
-    embedding_provider: EmbeddingProvider = EmbeddingProvider.OPENAI
-    embedding_model: str = "text-embedding-3-small"
     top_k: int = 5        # candidates retained from vector search (fed to graph traversal)
     max_context_tokens: int = 4000
     traversal_max_depth: int = 1                            # direct neighbours only for MVP
     traversal_rel_types: list[RelationshipType] | None = None  # None = all relationship types
-    max_embedding_tokens: int = 500_000                     # aggregate token cap across all embedding calls in the RAG stage
 ```
 
 Metadata filters for retrieval are **not** config — they are passed per-job in the request payload.
@@ -387,9 +389,30 @@ Metadata filters for retrieval are **not** config — they are passed per-job in
 ```python
 class VectorStoreConfig(BaseModel):
     provider: VectorStoreProvider = VectorStoreProvider.PGVECTOR
-    collection: str = "seshat-docs"
-    # pgvector: connection string resolved through SecretsProvider at startup (key: "seshat/postgres_url")
+    connection_secret_key: str = "postgres_url"   # key looked up in SecretsProvider at startup
     # Other providers (Chroma, Qdrant, Weaviate): add provider-specific config fields when implementing
+```
+
+### VectorIndexConfig
+
+Embedding and collection settings are split into a separate config so they can be tuned independently of the provider selection.
+
+```python
+class VectorIndexConfig(BaseModel):
+    collection: str = "seshat-docs"
+    embedding_provider: EmbeddingProvider = EmbeddingProvider.OPENAI
+    embedding_model: str = "text-embedding-3-small"
+    max_indexing_tokens: int = 500_000   # aggregate token cap across all embedding calls in the RAG stage
+```
+
+### KBStoreConfig
+
+```python
+class KBStoreConfig(BaseModel):
+    schema_name: str = "ops"             # PostgreSQL schema that owns kb_nodes and kb_relationships
+    pool_min_size: int = 2
+    pool_max_size: int = 10
+    connection_secret_key: str = "postgres_url"   # shared with VectorStoreConfig; same Postgres instance
 ```
 
 ### BlobStoreConfig
@@ -450,16 +473,16 @@ ADR Agent  Risk Agent  Agreement   Action Item   [custom via
                     RAG + Resolution (Orchestrator)
                               │
                               ▼
-                    ExtractionResult (with relationships)
+                    ExtractionResult (nodes + relationships as top-level list)
 ```
 
 > **Note:** the Action Item agent additionally returns `assignee: str | None` — see Two-Pass Extraction Contract below.
 
 ### Two-Pass Extraction Contract
 
-**Ordering invariant:** all agent calls in the fan-out phase must complete and their outputs merged before the RAG + Resolution pass begins. All `KBRelationship` objects — without exception — are created in Pass 2. Pass 1 agents return `KBNode` objects with `relationships: []`.
+**Ordering invariant:** all agent calls in the fan-out phase must complete and their outputs merged before the RAG + Resolution pass begins. All `KBRelationship` objects — without exception — are created in Pass 2.
 
-- **Pass 1 — Fan-out:** agents run concurrently, one per `ConceptType` per chunk. Agents return nodes with empty relationship lists. The orchestrator rejects any non-empty `relationships` returned by an agent and logs it as a hallucination signal. The Action Item agent is the sole exception in output schema: it includes an additional field `assignee: str | None = None` (the participant name it identifies as owner). This field is not a `KBRelationship` — it is a named extraction output that Pass 2 resolves.
+- **Pass 1 — Fan-out:** agents run concurrently, one per `ConceptType` per chunk. Agents return `KBNode` objects — no relationships. `KBNode` has no `relationships` field; the model itself enforces this. The Action Item agent is the sole exception in output schema: it includes an additional field `assignee: str | None = None` (the participant name it identifies as owner). This field is not a `KBRelationship` — it is a named extraction output that Pass 2 resolves.
 - **Pass 2 — RAG + Resolution:** runs only after the complete merged Pass 1 node list is in memory. Constructs all relationships, including `ASSIGNED_TO` (by matching `assignee` against `TranscriptMetadata.participants` — exact match first, then case-insensitive prefix). The `assignee` field is consumed here and does not appear on the final `KBNode` or in the KB store.
 
   **`participants=None` fallback:** when `TranscriptMetadata.participants` is `None`, `ASSIGNED_TO` resolution is skipped for all action items — no `ASSIGNED_TO` relationships are created. The `assignee` value is discarded. The action item node is written without an assignee relationship; it is not rejected or downgraded. This is logged as a warning per affected node so the reviewer is aware the assignee could not be resolved.
@@ -497,12 +520,11 @@ class RelationshipType(StrEnum):
 
 ```python
 class KBNode(BaseModel):
-    id: str
+    id: UUID = Field(default_factory=uuid4)  # auto-generated at construction time
     schema_version: str = "1.0"
     type: ConceptType
     title: str
     description: str
-    relationships: list[KBRelationship]
     confidence: float
     source_quote: str        # exact transcript excerpt (grounding)
     status: NodeStatus
@@ -541,7 +563,6 @@ class IngestionSource(StrEnum):
     INIT = auto()   # seeded from a document corpus via seshat init
 
 class NodeMetadata(BaseModel):
-    schema_version: str = "1.0"
     job_id: str                               # UUID4; same namespace for both JOB and INIT ingestion (refs ops.jobs.job_id or ops.init_runs.job_id)
     meeting_date: date | None = None          # None when ingestion_source=INIT
     participants: list[str] | None = None     # best-effort; None when unknown or ingestion_source=INIT
@@ -549,10 +570,6 @@ class NodeMetadata(BaseModel):
     team: str | None = None
     project: str | None = None
     domain: str | None = None
-    node_type: ConceptType
-    node_id: str
-    source_quote: str
-    confidence: float
     approved_by: str | None = None
     approved_at: datetime | None = None
     approval_method: ApprovalMethod | None = None
@@ -570,13 +587,14 @@ class ResolutionCandidate(BaseModel):
 class ExtractionResult(BaseModel):
     job_id: str
     nodes: list[KBNode]
-    confidence_breakdowns: dict[str, ConfidenceBreakdown]  # node_id → breakdown
-    resolution_candidates: dict[str, list[ResolutionCandidate]]  # node_id → candidates flagged for that node
+    relationships: list[KBRelationship]           # all relationships produced by Pass 2; written to KB separately from nodes
+    confidence_breakdowns: dict[str, UUID]         # node.id → breakdown
+    resolution_candidates: dict[str, list[ResolutionCandidate]]  # node.id → candidates flagged for that node
 ```
 
-`ExtractionResult` is the output of the extraction + resolution pass and the payload returned by `GET /jobs/{id}/results`. `resolution_candidates` surfaces the SUPERSEDES/AMENDS/CONFLICTS_WITH candidates identified by the resolution step for each new node — the reviewer UI uses these to show the reviewer what existing KB nodes may be affected by an approval decision.
+`ExtractionResult` is the output of the extraction + resolution pass and the payload returned by `GET /jobs/{id}/results`. Relationships are a top-level list rather than embedded on nodes — `KBNode` has no `relationships` field. The writing stage iterates `ExtractionResult.relationships` and calls `write_relationship()` for each after all nodes are written. `resolution_candidates` surfaces the SUPERSEDES/AMENDS/CONFLICTS_WITH candidates identified by the resolution step for each new node — the reviewer UI uses these to show the reviewer what existing KB nodes may be affected by an approval decision.
 
-> **Vector store indexing:** one vector per `KBNode` — the embedding is generated from `title` + `description` + `source_quote` after extraction. `NodeMetadata` travels with the vector for runtime metadata filtering (applied as `>=` comparisons for `min_confidence`, equality for all other fields). The `source_quote` and `confidence` fields are duplicated from `KBNode` intentionally — the vector store needs them for filtering without a round-trip to the KB store. **Invariant:** `NodeMetadata.source_quote` and `NodeMetadata.confidence` must always equal `KBNode.source_quote` and `KBNode.confidence` respectively — they are written together in the same transaction and neither is ever updated independently.
+> **Vector store indexing:** one vector per `KBNode` — the embedding is generated from `title` + `description` + `source_quote` after extraction. `NodeMetadata` travels with the vector for runtime metadata filtering (applied as `>=` comparisons for `min_confidence`, equality for all other fields). The `confidence`, `node_type`, and `node_state` fields are duplicated from `KBNode` intentionally — the vector store needs them for filtering without a round-trip to the KB store. **Invariant:** `NodeMetadata.confidence`, `NodeMetadata.node_type`, and `NodeMetadata.node_state` must always equal the corresponding fields on `KBNode` — they are written together in the same transaction and neither is ever updated independently.
 >
 > **Indexing timing:** vectors are written to the vector store during the `WRITING` stage, as part of the same Postgres transaction as the KB row (§4, Node Lifecycle Invariant). They are **not** written after extraction. Nodes from a job in `AWAITING_REVIEW` are not yet retrievable via RAG — invisible to concurrent jobs until the reviewing job reaches `DONE`. This is intentional: unreviewed nodes should not influence future extractions.
 
@@ -642,7 +660,7 @@ Transcript text and retrieved KB context are untrusted inputs injected into agen
 
 **MVP:** TextTiling (NLTK implementation). Detects topic-shift boundaries in the transcript and produces variable-length, topically coherent chunks. Requires no model calls. `max_chunk_count` in `ExtractionConfig` is a hard ceiling to prevent O(agents × chunks) cost blowup. TextTiling tuning parameters (`w`, `k`) are implementation details.
 
-> **Hypothesis, not guarantee:** TextTiling was designed for expository prose. Its suitability for meeting transcripts — which contain interruptions, backtracking, and mid-sentence topic drift — is unvalidated. The chunking sanity check in §12 must be completed before extraction metrics are interpreted. If the sanity check reveals systematic boundary errors, replace TextTiling with **fixed-size overlapping chunks** (e.g. 500-token windows, 100-token overlap) as an immediate fallback — no model calls, predictable boundaries, no dependency on transcript structure. Diarization and semantic chunking remain v2 options once production audio is available.
+> **Hypothesis, not guarantee:** TextTiling was designed for expository prose. Its suitability for meeting transcripts — which contain interruptions, backtracking, and mid-sentence topic drift — is unvalidated. The chunking sanity check in §12 must be completed before extraction metrics are interpreted. If the sanity check reveals systematic boundary errors, replace TextTiling with **`RecursiveCharacterTextSplitter`** (LangChain, `langchain-text-splitters`) as an immediate fallback — 500-token windows, 100-token overlap, markdown-aware separator hierarchy (`\n\n`, `\n`, ` `, `""`). No model calls, predictable boundaries, no dependency on transcript structure. Diarization and semantic chunking remain v2 options once production audio is available.
 
 Agents run per chunk. Results are deduplicated and merged before returning. The merge criterion is:
 
@@ -655,7 +673,7 @@ Two nodes that satisfy either criterion are merged: the final settled position i
 
 > **Trade-off:** within-meeting deduplication prioritises a clean final KB over preserving debate history. The reversal is intentionally discarded — only the final settled position survives. The `source_quote` on the surviving node must reflect the final position, not the earlier reversed one. The count of within-meeting merges per job is logged to MLflow as a quality signal: a job with many merges may indicate a contentious or poorly-transcribed meeting worth manual review.
 
-**v2 upgrade path (if fixed-size fallback is also insufficient):**
+**v2 upgrade path (if `RecursiveCharacterTextSplitter` fallback is also insufficient):**
 - **Diarization-based splitting:** AssemblyAI speaker diarization splits on speaker turn boundaries. Highest coherence for multi-speaker meetings; requires production audio samples to validate quality.
 - **Semantic chunking:** embedding-based boundary detection (e.g. LangChain `SemanticChunker`). Best quality but adds a pre-extraction embedding pass — justify against the eval corpus before adopting.
 
@@ -667,7 +685,7 @@ Two nodes that satisfy either criterion are merged: the final settled position i
 
 ### Node Lifecycle Invariant
 
-The pipeline is **append-and-state-only** — extracted content is never modified after creation. A node's `title`, `description`, `source_quote`, `confidence`, and `relationships` are immutable once written. The only permitted mutation is `update_node_state()` on existing nodes when a `SUPERSEDES` or `AMENDS` relationship is established by the resolution step. If a later meeting revisits an existing decision, the resolution step creates a new node and expresses the relationship via `SUPERSEDES`, `AMENDS`, or `CONFLICTS_WITH` — it never overwrites the original. This preserves the full decision history in the graph.
+The pipeline is **append-and-state-only** — extracted content is never modified after creation. A node's `title`, `description`, `source_quote`, and `confidence` are immutable once written. The only permitted mutation is `update_node_state()` on existing nodes when a `SUPERSEDES` or `AMENDS` relationship is established by the resolution step. If a later meeting revisits an existing decision, the resolution step creates a new node and expresses the relationship via `SUPERSEDES`, `AMENDS`, or `CONFLICTS_WITH` — it never overwrites the original. This preserves the full decision history in the graph.
 
 Consequences:
 - **State transitions:** when a new node carries a `SUPERSEDES` or `AMENDS` relationship, the pipeline calls `update_node_state()` on the target node — advancing its `state` to `SUPERSEDED` or `AMENDED` respectively. This is the only mutation the pipeline applies to an existing node. A `CONFLICTS_WITH` relationship does **not** trigger a state transition — both nodes remain `NodeState.CURRENT`. `CONFLICTS_WITH` is a graph-level annotation only; reviewers discover active conflicts via the graph query UI (Screen 4 highlights them) and via `resolution_candidates` surfaced at review time (Screen 3). This is intentional: a conflict between two `CURRENT` nodes is a signal for human judgment, not an automatic state change.
@@ -684,7 +702,7 @@ Consequences:
 RAG runs **after** extraction, not before. Extraction agents receive a lightweight same-type KB hint at prompt time (see below); the full retrieval and relationship resolution pass happens once all new nodes are extracted.
 
 ```
-ExtractionResult (new nodes, no cross-meeting relationships)
+ExtractionResult (new nodes + relationships from Pass 2)
       │
       ▼
  RAG Service — per new node:
@@ -793,7 +811,7 @@ PostgresKBStore              AbstractVectorStore          S3BlobStore
 | `AbstractVectorStore` | Abstract + implementations | LangChain already owns provider abstraction here; interface is thin and multiple v2 providers (Chroma, Qdrant, Weaviate) are realistic |
 | `AbstractTranscriptionService` | Abstract + implementations | Three providers are already enumerated (AssemblyAI, OpenAI, Deepgram); factory-swappable at startup |
 | `AbstractDocumentLoader` | Abstract + implementations | v2 loaders (Notion, Confluence) are network-backed and behaviourally different from `MarkdownDocumentLoader` |
-| `AbstractSecretsProvider` | Abstract + implementations | Two providers in MVP (ENV, AWS); v2 adds Azure and Vault — startup factory swap |
+| `AbstractSecretsResolver` | Abstract + implementations | Two providers in MVP (ENV, AWS); v2 adds Azure and Vault — startup factory swap |
 | `AsyncioTaskQueue` | Concrete class, duck-typed swap | One queue for MVP; the v2 `ARQTaskQueue` exposes the same three methods (`enqueue / get_status / cancel`) — no formal protocol needed, the swap is a one-line change at the worker entrypoint |
 
 ### Shared Filter and Result Types
@@ -826,7 +844,7 @@ Both stores accept the same `NodeFilter` type for runtime filtering so filter se
 
 All methods are async — the pipeline runs in an asyncio context. `PostgresKBStore` uses an async-native Postgres client (`asyncpg` via `langchain-postgres`). The async decision must be made before implementation — retrofitting sync-to-async is expensive.
 
-**`PostgresKBStore`** exposes: write a node (returns its ID); write a relationship (both source and target IDs required); transition a node's state (the only pipeline-legal mutation on an existing node); retrieve a node by ID; retrieve a node's neighbours filtered by relationship type(s) and direction (`inbound`, `outbound`, or `both`); query nodes by `NodeFilter`.
+**`PostgresKBStore`** exposes: write a node (plain `INSERT`, returns its UUID as `str`; relationships are always written separately); write a relationship (both source and target UUIDs required); transition a node's state (the only pipeline-legal mutation on an existing node); retrieve a node by ID; retrieve a node's neighbours filtered by relationship type(s) and direction (`inbound`, `outbound`, or `both`); query nodes by `NodeFilter`.
 
 **`AbstractVectorStore`** exposes: upsert a node embedding (node ID + text + metadata); similarity search returning ranked `SearchResult` objects (query text, top-K count, optional `NodeFilter`); delete a node embedding by ID.
 
@@ -857,7 +875,7 @@ KB nodes and relationships are stored in the `ops` schema alongside the operatio
 
 `get_neighbours()` joins on `ops.kb_relationships`. `direction="both"` returns inbound and outbound edges (used by `GET /graph/{node_id}` and RAG graph traversal); `direction="inbound"` filters to edges where `target_id = node_id` (used by impact traversal); `direction="outbound"` filters to edges where `source_id = node_id`. `query()` applies `NodeFilter` fields as SQL predicates on `ops.kb_nodes`.
 
-**Schema migration:** Alembic manages all `ops` schema migrations — the same tool used for `ops.jobs`, `ops.api_keys`, and `ops.init_runs`. The `schema_version` field on `KBNode` and `NodeMetadata` is retained for application-level compatibility checks at read time.
+**Schema migration:** Alembic manages all `ops` schema migrations — the same tool used for `ops.jobs`, `ops.api_keys`, and `ops.init_runs`. The `schema_version` field on `KBNode` is retained for application-level compatibility checks at read time.
 
 **v2 path:** introduce `Neo4jKBStore` with the same method signatures as `PostgresKBStore` and extract a shared `KBStore` protocol at that point. Migration exports `ops.kb_nodes` and `ops.kb_relationships` rows into Neo4j nodes and edges — structured rows are easier to migrate than parsed YAML frontmatter files. The vector store remains pgvector when this migration happens — only the KB layer migrates.
 
@@ -870,26 +888,27 @@ When Weaviate is introduced, a single `WeaviateStore` class satisfies **both** t
 ## 7. Secrets Layer
 
 ```python
-class AbstractSecretsProvider(ABC):
-    async def get_secret(self, key: str) -> str: ...
+class AbstractSecretsResolver(ABC):
+    def get_secret(self, key: str) -> str: ...   # synchronous; cached in-process after first call
 
-# Implementations: EnvSecretsProvider, AWSSecretsProvider
-# (AzureSecretsProvider, VaultSecretsProvider — v2)
+# Implementations: EnvSecretsResolver, AWSSecretsResolver
+# (AzureSecretsResolver, VaultSecretsResolver — v2)
 ```
 
-**Call frequency:** secrets are resolved **once at startup**, not per-agent invocation. The factory resolves all required secrets (LLM API keys, transcription API key) during worker initialisation and caches them in-process for the lifetime of the worker. This makes the async interface safe — the single startup call is awaited before the event loop begins processing jobs, so there is no risk of blocking the extraction loop. `AWSSecretsProvider.get_secret()` wraps its HTTP call in `asyncio.to_thread()`, consistent with all other blocking I/O in the pipeline (see Section 6).
+**Call frequency:** secrets are resolved **once at startup**, not per-agent invocation. The factory resolves all required secrets (LLM API keys, transcription API key) during worker initialisation and caches them in-process for the lifetime of the worker. The interface is synchronous — `AWSSecretsResolver` calls the boto3 `secretsmanager` client directly; the cache on `AbstractSecretsResolver` ensures the blocking HTTP call is made at most once per key per process lifetime.
 
 ```python
 class SecretsConfig(BaseModel):
-    provider: SecretsProvider = SecretsProvider.ENV
-    # AWS — ignored when provider=ENV
+    provider: SecretsProvider = SecretsProvider.AWS
+    # ENV — ignored when provider=AWS
     region: str = "eu-west-1"
     secret_path_prefix: str = "seshat"
+    endpoint_url: str | None = None   # set to LocalStack URL in dev; None = real AWS
 ```
 
 The secrets factory reads `SecretsConfig.provider` and returns the appropriate implementation. API keys stored as `SecretStr` in config are resolved through this layer at runtime — never hardcoded.
 
-**Rotation:** secrets are resolved once at startup and cached in-process. If a secret is rotated (e.g. an LLM API key is compromised), the worker must be restarted to pick up the new value. For MVP this is acceptable — document it as a known operational procedure. For v2, implement a TTL-based cache in `AbstractSecretsProvider` so rotation takes effect within a configurable window without a full restart.
+**Rotation:** secrets are resolved once at startup and cached in-process. If a secret is rotated (e.g. an LLM API key is compromised), the worker must be restarted to pick up the new value. For MVP this is acceptable — document it as a known operational procedure. For v2, implement a TTL-based cache in `AbstractSecretsResolver` so rotation takes effect within a configurable window without a full restart.
 
 LocalStack emulates AWS Secrets Manager locally (`SERVICES=secretsmanager,s3`).
 
@@ -1149,7 +1168,7 @@ This is the primary correctness gate for the knowledge base. For each `PENDING_R
 - Node title, type (`ConceptType`), and description
 - `source_quote` inline (the exact transcript excerpt grounding this node)
 - `ConfidenceBreakdown`: final score + per-component breakdown (logprobs / verification / heuristics)
-- `relationships`: extracted relationships for this node (read-only), with a hyperlink to each target node in Screen 4
+- relationships from `ExtractionResult.relationships` where `source_id == node.id` (read-only), with a hyperlink to each target node in Screen 4
 - `resolution_candidates` from `ExtractionResult`: existing KB nodes flagged as SUPERSEDES / AMENDS / CONFLICTS candidates — shown prominently so the reviewer can assess downstream impact before approving. Each candidate entry shows `candidate_title`, `rel_type`, and `target_node_confidence`, so reviewers can distinguish a high-confidence `CONFLICTS_WITH` target from a speculative one
 - Per-node action: approve / reject / edit (opens an inline form pre-filled with current `title` + `description`)
 - Bulk approve rule: threshold slider + optional exclude list → maps to `BulkApproveRule` in `ApproveRequest`
@@ -1158,7 +1177,7 @@ This is the primary correctness gate for the knowledge base. For each `PENDING_R
 **Screen 4 — Knowledge base query**
 - Filter panel: `ConceptType`, `team`, `project`, `domain`, `NodeState`, date range
 - Node list: title, type, confidence, state (`CURRENT` / `AMENDED` / `SUPERSEDED`)
-- Node detail panel: full node + relationships (source node + type + target node for each); CONFLICTS relationships highlighted; stale CONFLICTS edges (where either party has `state != CURRENT`) are filtered out and not displayed
+- Node detail panel: full node + its relationships from `ops.kb_relationships` (source node + type + target node for each); CONFLICTS relationships highlighted; stale CONFLICTS edges (where either party has `state != CURRENT`) are filtered out and not displayed
 - "View in MLflow" deep-link from node metadata
 
 ### Impact Traversal
@@ -1186,7 +1205,7 @@ Role requirement: `submitter` (read-only, same as `GET /graph/{node_id}`).
 | `nodes` | `ExtractionResult.nodes` | All node fields in Screen 3 |
 | `confidence_breakdowns[node_id]` | `ConfidenceBreakdown` per node | Confidence breakdown display |
 | `resolution_candidates[node_id]` | Resolution step output | SUPERSEDES/AMENDS/CONFLICTS_WITH impact preview |
-| `nodes[].relationships` | `KBNode.relationships` | Relationship list + hyperlinks |
+| relationships for `node.id` | `KBRelationship` rows from `ExtractionResult` | Relationship list + hyperlinks |
 | `nodes[].source_quote` | `KBNode.source_quote` | Inline source quote |
 
 ---
@@ -1234,7 +1253,7 @@ services:
 - Single `.env` file drives all config via `env_nested_delimiter="__"`
 - `postgres` and `mlflow` mount named volumes for persistence
 - `worker` sets `restart: unless-stopped` — automatically restarts on crash without operator intervention
-- Postgres connection string stored in LocalStack Secrets Manager under key `seshat/postgres_url`; resolved at startup via `AWSSecretsProvider`
+- Postgres connection string stored in LocalStack Secrets Manager under key `seshat/postgres_url`; resolved at startup via `AWSSecretsResolver`
 
 > **v2 — multiple worker replicas:** horizontal scaling requires a durable queue (ARQ/Redis). With the MVP asyncio queue, multiple replicas would race on the same in-memory task list. Upgrade path: swap `AsyncioTaskQueue` for `ARQTaskQueue` and set `replicas: N` in Compose.
 
@@ -1275,8 +1294,8 @@ src/
     blob_store/       # S3BlobStore
     transcription/    # AbstractTranscriptionService + implementations (AssemblyAI, OpenAI, Deepgram)
     document_loader/  # AbstractDocumentLoader + implementations (used by seshat init)
-    config/           # Settings, StrEnums, factory functions
-    secrets/          # AbstractSecretsProvider + implementations
+    config/           # Settings, StrEnums
+    secrets/          # AbstractSecretsResolver + implementations
     models/           # Shared Pydantic models (KBNode, ExtractionResult, etc.)
 tests/
   unit/

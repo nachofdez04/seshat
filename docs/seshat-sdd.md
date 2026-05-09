@@ -1,8 +1,8 @@
 # Seshat — Solution Design Document
 
-Translates Seshat's high-level architecture into an implementation-oriented blueprint. Intended for engineers who will build, test, and operate the system, and for reviewers validating coherence and feasibility. 
-- For a narrative introduction see [docs/primer.md](primer.md). 
-- For a quick-reference decision index see [docs/architecture.md](architecture.md). 
+Translates Seshat's high-level architecture into an implementation-oriented blueprint. Intended for engineers who will build, test, and operate the system, and for reviewers validating coherence and feasibility.
+- For a narrative introduction see [docs/primer.md](primer.md).
+- For a quick-reference decision index see [docs/architecture.md](architecture.md).
 - For full implementation contracts see [docs/superpowers/specs/2026-04-21-seshat-design.md](superpowers/specs/2026-04-21-seshat-design.md).
 
 ---

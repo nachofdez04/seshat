@@ -156,5 +156,3 @@ All methods are async. The pipeline runs in an asyncio context throughout.
 | API endpoints, job lifecycle, review flow, `ApproveRequest` shape | §8 API Layer & Job Lifecycle |
 | MLflow instrumentation, prompt/response artifacts | §9 Observability |
 | Labelled corpus format, threshold calibration procedure, release gate | §12 Evaluation Strategy |
-
-
