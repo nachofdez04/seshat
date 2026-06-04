@@ -1,0 +1,28 @@
+corpus_id: null_006_risk_decision_unrelated
+description: >
+  Cross-type risk→decision discriminating: a risk and a decision from the same project
+  where the risk does not block the decision. The risk concerns a monitoring gap;
+  the decision concerns a hiring plan — same organisation, no causal link.
+
+tags:
+  tier: "null"
+  pairing: cross_type
+  types: [decision, risk]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: risk_monitoring
+    type: risk
+    title: No alerting configured for memory pressure on the worker fleet
+    description: The worker fleet has no memory pressure alerts. A gradual memory leak could go unnoticed until services start crashing, with no visibility into the build-up.
+    quote: "There are no memory alerts on the worker fleet — a leak could build up for days before we notice."
+
+kb_nodes:
+  - id: decision_hiring
+    type: decision
+    title: Hire two senior backend engineers in Q3
+    description: The engineering manager confirmed headcount approval for two senior backend engineers to be hired in Q3, focused on platform reliability work.
+    quote: "We have headcount approval for two senior backend engineers in Q3 — focusing on platform reliability."
+
+expected_relations: []

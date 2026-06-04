@@ -1,0 +1,22 @@
+corpus_id: merge_002_policy_with_exception
+description: >
+  One decision is a general policy; the other refines it with an explicit exception.
+  They belong to the same decision thread and should merge. Hard because the second
+  looks like a standalone decision but is scoped directly to the first.
+
+tags:
+  concept_type: decision
+  difficulty: hard
+  scenario: merge
+  detail: "general policy + exception clause — same thread, must merge"
+
+items:
+  - id: no-direct-db-access
+    title: "Services must not access the database directly"
+    description: "The team established a policy that no application service may query the database directly; all data access must go through the data service layer, enforcing a clear separation of concerns and centralising schema ownership."
+  - id: migration-scripts-exception
+    title: "Database migration scripts are exempt from the no-direct-access policy"
+    description: "The team explicitly exempted database migration scripts from the no-direct-access policy, recognising that migration tooling must interact with the schema at a level below the data service layer to apply structural changes safely."
+
+expected_groups:
+  - [no-direct-db-access, migration-scripts-exception]

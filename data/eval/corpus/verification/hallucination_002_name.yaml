@@ -1,0 +1,14 @@
+description: >
+  Verifier must reject a description that names a specific person not mentioned in the quote.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: easy
+  detail: "person name (Ana) absent from quote"
+
+nodes:
+  - title: "Platform team owns migrations"
+    description: "Ana will own all future database migrations per the team's decision."
+    quote: "the platform team will own database migrations going forward"
+    expected_supported: false

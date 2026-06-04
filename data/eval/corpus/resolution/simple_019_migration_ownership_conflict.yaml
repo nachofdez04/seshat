@@ -1,0 +1,32 @@
+corpus_id: simple_019_migration_ownership_conflict
+description: >
+  Same-type action_item↔action_item baseline: two active tasks that cannot both be executed
+  as stated — completing one would undo the other. Both are still assigned and open. The
+  correct label is CONFLICTS_WITH, not SUPERSEDES (neither cancels the other), not BLOCKS
+  (they are not sequentially ordered — they contradict each other).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [action_item]
+  relations: [conflicts_with]
+  difficulty: easy
+
+source_nodes:
+  - id: action_rewrite_owned_by_alice
+    type: action_item
+    title: Alice will own and lead the migration script rewrite
+    description: The team assigned Alice as the sole owner of the migration script rewrite, responsible for the design, implementation, and delivery.
+    quote: "Alice, you own the migration script rewrite end to end — design, implementation, delivery. That's yours."
+
+kb_nodes:
+  - id: action_rewrite_owned_by_bob
+    type: action_item
+    title: Bob will own and lead the migration script rewrite
+    description: Bob owns the migration script rewrite, responsible for its design, implementation, and delivery.
+    quote: "Bob, the migration script rewrite is yours — get it done before the sprint ends."
+
+expected_relations:
+  - source: action_rewrite_owned_by_alice
+    target: action_rewrite_owned_by_bob
+    rel_type: conflicts_with

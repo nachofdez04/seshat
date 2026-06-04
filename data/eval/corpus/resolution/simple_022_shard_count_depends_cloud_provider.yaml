@@ -1,0 +1,32 @@
+corpus_id: simple_022_shard_count_depends_cloud_provider
+description: >
+  Same-type open_question↔open_question baseline: one open question cannot be answered
+  until another is resolved first. The source question's answer space is entirely
+  determined by the outcome of the target question. The correct label is DEPENDS_ON,
+  not AMENDS (the source is a distinct question, not a refinement of the target).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [open_question]
+  relations: [depends_on]
+  difficulty: easy
+
+source_nodes:
+  - id: question_sharding
+    type: open_question
+    title: How many shards should the event store be partitioned into at launch?
+    description: The team needs to decide on the initial shard count for the event store. The right answer depends entirely on which cloud provider is selected, since shard limits and pricing differ significantly between providers.
+    quote: "We can't pick a shard count until we know which cloud provider we're going with — the limits are completely different."
+
+kb_nodes:
+  - id: question_provider
+    type: open_question
+    title: Which cloud provider should host the new event store?
+    description: An unresolved question about whether the event store will be hosted on AWS, GCP, or Azure, each of which has different managed-database offerings and operational constraints.
+    quote: "We still haven't decided — AWS, GCP, or Azure for the event store?"
+
+expected_relations:
+  - source: question_sharding
+    target: question_provider
+    rel_type: depends_on

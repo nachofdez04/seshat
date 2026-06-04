@@ -1,0 +1,30 @@
+corpus_id: simple_012_vendor_sla_blocks_uptime_question
+description: >
+  Cross-type risk→open_question baseline: an unresolved risk makes an open question
+  unanswerable until the risk is addressed. Single obvious blocks relationship.
+
+tags:
+  tier: simple
+  pairing: cross_type
+  types: [open_question, risk]
+  relations: [blocks]
+  difficulty: easy
+
+source_nodes:
+  - id: risk_vendor_sla
+    type: risk
+    title: Primary vendor SLA does not guarantee 99.9% uptime for batch processing
+    description: The primary vendor's SLA only covers the API tier and explicitly excludes batch processing jobs. If batch jobs fail there is no contractual remedy, which undermines any SLA commitment the team might make to customers.
+    quote: "The vendor SLA doesn't cover batch jobs — if they go down we have no contractual recourse. We can't promise customers anything until this is resolved."
+
+kb_nodes:
+  - id: question_sla
+    type: open_question
+    title: What uptime SLA should we commit to for the batch processing feature?
+    description: The team needs to decide what uptime SLA to advertise for the batch processing feature. The answer depends on what the underlying vendor can guarantee.
+    quote: "What SLA do we commit to for batch processing? We haven't agreed a number yet."
+
+expected_relations:
+  - source: risk_vendor_sla
+    target: question_sla
+    rel_type: blocks

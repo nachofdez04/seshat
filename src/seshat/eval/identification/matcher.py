@@ -1,7 +1,6 @@
 from enum import StrEnum, auto
 
 from pydantic import BaseModel, Field
-from rapidfuzz import fuzz
 
 from seshat.eval.models import IdentificationCorpusNode
 from seshat.models.nodes import KBNode
@@ -76,6 +75,8 @@ def _build_candidates(
 
 
 def _score(exp: IdentificationCorpusNode, pred: KBNode, transcript: str) -> tuple[float, MatchMethod]:
+    from rapidfuzz import fuzz
+
     if pred.quote_anchors:
         best = max(
             fuzz.partial_ratio(exp.quote, transcript[a.char_start : a.char_end]) / 100.0 for a in pred.quote_anchors

@@ -1,0 +1,42 @@
+corpus_id: simple_003_blue_green_preserves_clause
+description: >
+  Borderline AMENDS vs SUPERSEDES: a new decision revises most of an earlier policy but
+  explicitly preserves one clause. The correct label is AMENDS (partial update, original
+  partially survives) rather than SUPERSEDES (full replacement). The distractor is that
+  the new decision's scope is broad enough to seem like a complete override.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [decision]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_revised
+    type: decision
+    title: Adopt a blue/green deployment strategy, retaining Monday freeze
+    description: >
+      The team revised the deployment process to use blue/green deployments for all services.
+      The existing Monday deployment freeze is explicitly kept; all other clauses of the prior
+      deployment policy are replaced.
+    quote: >
+      "Going forward we'll use blue/green deployments across all services — this supersedes the
+      previous rolling-update approach. One thing stays: the Monday freeze is non-negotiable,
+      so keep that in place."
+
+kb_nodes:
+  - id: decision_original
+    type: decision
+    title: Use rolling updates with a Monday deployment freeze
+    description: >
+      The team adopted rolling updates as the standard deployment strategy, with a freeze on
+      all deployments every Monday to protect the weekly business reporting run.
+    quote: >
+      "We'll use rolling updates as our standard. Also, no deployments on Mondays — that's when
+      finance runs the weekly reports and we can't afford downtime."
+
+expected_relations:
+  - source: decision_revised
+    target: decision_original
+    rel_type: amends

@@ -1,0 +1,35 @@
+corpus_id: realistic_001_api_platform_review
+description: >
+  Six decisions from an API platform team review covering two distinct initiatives
+  (GraphQL adoption and rate limiting rollout) plus one singleton (deprecation timeline).
+  Items within each initiative must be grouped; the singleton must stay separate.
+
+tags:
+  concept_type: decision
+  difficulty: medium
+  scenario: mixed
+  detail: "2 initiative groups of 2 + 1 initiative group of 2 + 1 singleton; realistic but smaller scale"
+
+items:
+  - id: graphql-gateway
+    title: "Introduce a GraphQL gateway for all client-facing APIs"
+    description: "The team decided to introduce a GraphQL gateway as the single entry point for all client-facing API queries, replacing the current fan-out of REST calls from the frontend and allowing clients to request exactly the fields they need."
+  - id: graphql-schema-registry
+    title: "Maintain a centralised GraphQL schema registry"
+    description: "The team decided to maintain a centralised schema registry for all GraphQL types and mutations, enforcing schema review before any change is merged and providing a single source of truth for client code generation."
+
+  - id: rate-limit-per-client
+    title: "Enforce per-client rate limits at the API gateway"
+    description: "The team decided to enforce per-client rate limits at the API gateway layer, starting at 200 requests per minute per API key, to prevent a single client from exhausting backend capacity and to enable differentiated service tiers."
+  - id: rate-limit-headers
+    title: "Return rate-limit headers on every API response"
+    description: "The team decided to include X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset headers in every API response so clients can implement adaptive back-off without polling a separate quota endpoint."
+
+  - id: v1-deprecation
+    title: "Deprecate v1 REST API endpoints at the end of Q4"
+    description: "The team agreed to formally deprecate all v1 REST API endpoints at the end of Q4, giving external partners a six-month migration window following the deprecation notice and allowing the team to remove legacy code by the next major release."
+
+expected_groups:
+  - [graphql-gateway, graphql-schema-registry]
+  - [rate-limit-per-client, rate-limit-headers]
+  - [v1-deprecation]

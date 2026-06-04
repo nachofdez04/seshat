@@ -1,0 +1,54 @@
+corpus_id: realistic_002_platform_sprint_review
+description: >
+  Realistic meeting output: 10 decisions from a platform engineering sprint review covering
+  three distinct initiatives (observability rollout, auth hardening, DB migration) plus
+  two standalone singletons (release cadence, on-call policy). Items within each initiative
+  must be grouped together; singletons must stay separate.
+
+tags:
+  concept_type: decision
+  difficulty: hard
+  scenario: mixed
+  detail: "3 initiative groups + 2 singletons; realistic meeting scale"
+
+items:
+  - id: structured-logs
+    title: "Emit structured JSON logs from all services"
+    description: "The team mandated that all services emit structured JSON logs to enable the shared log aggregation pipeline; plain-text logging in production is no longer permitted and will be enforced in CI."
+  - id: log-retention
+    title: "Retain logs for 90 days"
+    description: "The team set the log retention policy at 90 days across all environments, satisfying the audit requirement agreed with compliance and balancing storage costs against investigative needs."
+  - id: alert-on-error-rate
+    title: "Alert when error rate exceeds 1% for 5 consecutive minutes"
+    description: "The team defined the error-rate alerting threshold at 1% sustained over five minutes, tuned to filter transient spikes while catching degraded service states before they affect a significant portion of users."
+
+  - id: jwt-auth
+    title: "Use JWT tokens for all API authentication"
+    description: "The team standardised on JWT tokens issued by the central identity provider for all API authentication, deprecating the legacy session-cookie approach and centralising trust management in a single token authority."
+  - id: token-expiry
+    title: "Set JWT access token expiry to 15 minutes"
+    description: "The team set the JWT access token lifetime to 15 minutes, short enough to contain the blast radius of a compromised token while long enough to avoid excessive refresh overhead for interactive clients."
+  - id: refresh-token-rotation
+    title: "Rotate refresh tokens on every use"
+    description: "The team adopted single-use refresh tokens with automatic rotation on each redemption, ensuring that a stolen refresh token is invalidated after its first use and preventing silent session hijacking."
+
+  - id: postgres-migration
+    title: "Upgrade the operational database to PostgreSQL 16 before end of Q3"
+    description: "The team committed to upgrading the production PostgreSQL cluster to version 16 before the end of Q3, primarily to gain logical replication improvements and the new pg_stat_io visibility needed for capacity planning."
+  - id: zero-downtime-cutover
+    title: "Use blue-green deployment for the PostgreSQL migration cutover"
+    description: "The team decided to use a blue-green deployment strategy for the PostgreSQL 16 migration cutover, standing up the new cluster in parallel and switching traffic atomically to eliminate downtime during the upgrade."
+
+  - id: biweekly-releases
+    title: "Ship production releases on a fixed two-week cadence"
+    description: "The team adopted a fixed two-week release cadence for production deployments, replacing the previous ad-hoc shipping model to give stakeholders a predictable integration window and reduce coordination overhead."
+  - id: oncall-rotation
+    title: "Rotate on-call duty weekly across the platform team"
+    description: "The team agreed to move to a weekly on-call rotation across all platform engineers, replacing the previous bi-weekly schedule to distribute the on-call burden more evenly and reduce cumulative fatigue."
+
+expected_groups:
+  - [structured-logs, log-retention, alert-on-error-rate]
+  - [jwt-auth, token-expiry, refresh-token-rotation]
+  - [postgres-migration, zero-downtime-cutover]
+  - [biweekly-releases]
+  - [oncall-rotation]

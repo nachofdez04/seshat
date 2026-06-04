@@ -1,0 +1,46 @@
+description: >
+  Coverage: external dependency discussed substantively, but the transcript states no
+  concrete failure mode, blocked release, compliance exposure, or named deliverable being
+  blocked. Under the current rules, a dependency or external sign-off without a named blocked
+  output and without a stated consequence is not a Risk — it is an Open Question.
+  An Action Item is also expected because legal follow-up is assigned. Models that
+  over-extract will produce a spurious RISK.
+
+tags:
+  tier: boundary
+  difficulty: medium
+  focus: [open_question, action_item]
+  detail: "dependency without stated consequence is OQ not risk"
+
+transcript: |
+  We need legal to confirm whether customer telemetry data can be stored in the US region
+  or whether EU residency is required. We haven't got a ruling yet.
+  Right — we can't pick the storage architecture until we know.
+  Has anyone contacted them?
+  Not formally. We should get a written ruling before we go too far down any path.
+  Agreed. Lena, can you open a request with legal and get us a written position by end of
+  next week?
+  Yes, I'll draft the request today and follow up if I don't hear back by Thursday.
+
+expected:
+  open_question:
+    - quote: "We need legal to confirm whether customer telemetry data can be stored in the US region\n\
+        or whether EU residency is required. We haven't got a ruling yet.\n\
+        Right — we can't pick the storage architecture until we know."
+      title: Is EU data residency required for customer telemetry?
+      description: The team cannot choose a storage architecture until legal confirms whether customer telemetry must remain in the EU region.
+      question: Is EU data residency required for customer telemetry data, or can it be stored in the US region?
+      context: Legal has not yet provided a ruling; the team is blocked from choosing a storage architecture until it does.
+
+  action_item:
+    - quote: "Agreed. Lena, can you open a request with legal and get us a written position by end of\n\
+        next week?\n\
+        Yes, I'll draft the request today and follow up if I don't hear back by Thursday."
+      title: Obtain legal ruling on telemetry data residency
+      description: Lena will open a formal request with legal for a written position on telemetry data residency by end of next week.
+      task: Open a formal request with legal for a written ruling on customer telemetry data residency requirements.
+      assignee: Lena
+      due: by end of next week
+
+  decision: []
+  risk: []

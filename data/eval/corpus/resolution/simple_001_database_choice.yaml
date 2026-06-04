@@ -1,0 +1,30 @@
+corpus_id: simple_001_database_choice
+description: >
+  Same-type decision↔decision baseline: one new decision supersedes an earlier one.
+  Single obvious supersedes relationship — no distractors.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [decision]
+  relations: [supersedes]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_new
+    type: decision
+    title: Use PostgreSQL for all new services
+    description: The team decided to standardise on PostgreSQL after evaluating MySQL and SQLite.
+    quote: "Agreed, we're going with Postgres across the board from now on."
+
+kb_nodes:
+  - id: decision_old
+    type: decision
+    title: Use MySQL for new services
+    description: MySQL is the team's standard database for new services.
+    quote: "We'll go with MySQL for now — it's what the team knows best."
+
+expected_relations:
+  - source: decision_new
+    target: decision_old
+    rel_type: supersedes

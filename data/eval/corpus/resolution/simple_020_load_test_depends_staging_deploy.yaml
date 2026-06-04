@@ -1,0 +1,32 @@
+corpus_id: simple_020_load_test_depends_staging_deploy
+description: >
+  Same-type action_item↔action_item baseline: one task explicitly cannot start until another
+  is complete, but the first task does not prevent the second from running independently.
+  The correct label is DEPENDS_ON (asymmetric dependency), not BLOCKS (which would be the
+  reverse direction — here the source waits on the target, not the other way around).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [action_item]
+  relations: [depends_on]
+  difficulty: easy
+
+source_nodes:
+  - id: action_load_test
+    type: action_item
+    title: Run load tests against the new checkout API
+    description: The QA team must run a full load test suite against the new checkout API before the release. This can only begin once the API is deployed to the staging environment.
+    quote: "QA, start the load tests on the new checkout API as soon as it's in staging — we need those results before we release."
+
+kb_nodes:
+  - id: action_deploy_staging
+    type: action_item
+    title: Deploy the new checkout API to the staging environment
+    description: The engineering team must deploy the new checkout API to staging so that integration and load testing can proceed.
+    quote: "Get the new checkout API deployed to staging — QA is waiting on it."
+
+expected_relations:
+  - source: action_load_test
+    target: action_deploy_staging
+    rel_type: depends_on

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from seshat.eval.common import matches_tags
 from seshat.eval.models import IdentificationCorpusExample, IdentificationCorpusNode
 from seshat.models.enums import ConceptType
 
@@ -13,12 +14,19 @@ if TYPE_CHECKING:
 _BASE_CORPUS_FIELDS: frozenset[str] = frozenset({"quote", "title", "description"})
 
 
-def load_corpus(corpus_dir: Path) -> list[IdentificationCorpusExample]:
+def load_corpus(
+    corpus_dir: Path,
+    tag_filter: dict[str, str | list[str]] | None = None,
+) -> list[IdentificationCorpusExample]:
     examples = []
     for path in sorted(corpus_dir.glob("*.yaml")):
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         examples.append(_parse_example(path.stem, data))
+
+    if tag_filter:
+        examples = [ex for ex in examples if matches_tags(ex.tags, tag_filter)]
+
     return examples
 
 
@@ -40,4 +48,5 @@ def _parse_example(corpus_id: str, data: dict[str, Any]) -> IdentificationCorpus
         corpus_id=corpus_id,
         transcript=data["transcript"],
         expected_nodes=nodes,
+        tags=data.get("tags") or {},
     )

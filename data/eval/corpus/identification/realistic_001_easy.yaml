@@ -1,0 +1,150 @@
+description: >
+  Realistic easy: a clean engineering planning meeting for a new notification service.
+  Covers all four types with formal, unambiguous language and a linear narrative.
+  Two decisions (one with rationale and alternatives, one without), one future risk
+  and one blocker risk, two action items (one with due date, one without), and two
+  open questions. Tests breadth of extraction with zero noise.
+
+tags:
+  tier: realistic
+  difficulty: easy
+  focus: [decision, risk, action_item, open_question]
+  detail: "clean multi-topic meeting; all 4 types; linear narrative"
+
+transcript: |
+  Alright, let's get started. We're here to plan the notification service — delivery
+  channel, template storage, and open items before we kick off development next week.
+  First item: how should we deliver push notifications? The candidates are FCM directly
+  from our backend, or routing everything through a managed service like AWS SNS.
+  I'd prefer SNS. It handles device registration, platform routing, and retry logic for
+  us. Building all of that on FCM directly would take weeks and give us less reliability.
+  Agreed. We also get a single API regardless of whether we expand to APNs later. FCM
+  direct would mean maintaining separate code paths per platform.
+  Good points. Let's decide: we will use AWS SNS as the push notification delivery layer.
+  Agreed.
+  Next: template storage. We need somewhere to keep the notification templates. Options
+  we considered last week were a dedicated templates table in the main Postgres database,
+  or a separate key-value store in DynamoDB.
+  Let's put them in Postgres. We already have migrations tooling, access controls, and
+  the rest of the content model there. No need to introduce another data store.
+  Agreed. Templates go in Postgres.
+  Now let me flag two risk items before we move on.
+  The first one is about the notification volume ceiling. SNS has a default regional
+  limit of 100 publish calls per second. We project peak traffic at 80 per second today,
+  but if we double users by Q3 we will breach that limit and start dropping notifications.
+  That's a future risk we should track. We should request a limit increase well before Q3.
+  Agreed, it's on the horizon but not immediate.
+  The second risk is more urgent. The SNS topic ARNs and IAM role assignments have to
+  be created by the platform team before we can write any integration tests. Platform
+  said they won't have capacity until next week, and our integration test milestone is
+  this Thursday. We are blocked right now.
+  That's a blocker. We cannot proceed with integration testing until those resources exist.
+  Correct. Nothing to test against.
+  Okay. Action items. Yusuf, can you open the limit increase ticket with AWS Support by
+  end of day today?
+  Done by EOD, no problem.
+  Good. We also need someone to write the initial template schema migration — Fatima, can
+  you draft that and post it for review?
+  Sure, I'll put it together. No hard deadline on this one yet?
+  Not yet — just get a draft up for the team to review before we finalise the schema.
+  Fine, I'll post it in the pull request channel when it's ready.
+  Two open items before we close. We haven't settled the retry strategy for failed
+  deliveries. If a notification fails, do we retry immediately, use exponential backoff,
+  or rely on SNS dead-letter queues? We need a recommendation before implementation starts.
+  Agreed, that's still open.
+  And we haven't decided how notification preferences will be stored per user — in the
+  user profile service, or as a separate preferences microservice. Architecture decision,
+  not urgent, but we need it before we wire up the opt-out flow.
+  Let's leave both of those as open questions for now.
+
+expected:
+  decision:
+    - quote: "First item: how should we deliver push notifications? The candidates are FCM directly\n\
+        from our backend, or routing everything through a managed service like AWS SNS.\n\
+        I'd prefer SNS. It handles device registration, platform routing, and retry logic for\n\
+        us. Building all of that on FCM directly would take weeks and give us less reliability.\n\
+        Agreed. We also get a single API regardless of whether we expand to APNs later. FCM\n\
+        direct would mean maintaining separate code paths per platform.\n\
+        Good points. Let's decide: we will use AWS SNS as the push notification delivery layer.\n\
+        Agreed."
+      title: Use AWS SNS as the push notification delivery layer
+      description: The team decided to route all push notifications through AWS SNS rather than calling FCM directly, citing managed retry logic, single API surface, and platform routing.
+      decision: Use AWS SNS as the push notification delivery layer.
+      rationale: SNS handles device registration, platform routing, and retry logic, avoiding weeks of custom work. It also provides a single API that would support APNs expansion without separate code paths.
+      alternatives_considered:
+        - FCM direct from the backend
+
+    - quote: "Next: template storage. We need somewhere to keep the notification templates. Options\n\
+        we considered last week were a dedicated templates table in the main Postgres database,\n\
+        or a separate key-value store in DynamoDB.\n\
+        Let's put them in Postgres. We already have migrations tooling, access controls, and\n\
+        the rest of the content model there. No need to introduce another data store.\n\
+        Agreed. Templates go in Postgres."
+      title: Store notification templates in Postgres
+      description: The team decided to store notification templates in the existing Postgres database rather than DynamoDB.
+      decision: Store notification templates in the existing Postgres database.
+      rationale: Not stated
+      alternatives_considered:
+        - DynamoDB key-value store
+
+  risk:
+    - quote: "The first one is about the notification volume ceiling. SNS has a default regional\n\
+        limit of 100 publish calls per second. We project peak traffic at 80 per second today,\n\
+        but if we double users by Q3 we will breach that limit and start dropping notifications.\n\
+        That's a future risk we should track. We should request a limit increase well before Q3.\n\
+        Agreed, it's on the horizon but not immediate."
+      title: SNS regional publish limit may be breached at Q3 user growth
+      description: At the projected Q3 user growth the notification publish rate will exceed the default SNS regional limit of 100 per second, causing dropped notifications.
+      type: future
+      risk: If user volume doubles by Q3, peak notification traffic will exceed the SNS regional publish limit of 100 requests per second, resulting in dropped notifications.
+
+    - quote: "The second risk is more urgent. The SNS topic ARNs and IAM role assignments have to\n\
+        be created by the platform team before we can write any integration tests. Platform\n\
+        said they won't have capacity until next week, and our integration test milestone is\n\
+        this Thursday. We are blocked right now.\n\
+        That's a blocker. We cannot proceed with integration testing until those resources exist.\n\
+        Correct. Nothing to test against."
+      title: Missing SNS resources block integration test milestone
+      description: The platform team has not yet created the SNS topic ARNs and IAM roles the team needs; their capacity gap means the integration test milestone on Thursday cannot be met.
+      type: blocker
+      risk: SNS infrastructure resources are unavailable until next week, blocking the Thursday integration test milestone.
+
+  action_item:
+    - quote: "Okay. Action items. Yusuf, can you open the limit increase ticket with AWS Support by\n\
+        end of day today?\n\
+        Done by EOD, no problem."
+      title: Open SNS limit increase ticket with AWS Support
+      description: Yusuf will submit a request to AWS Support for an SNS regional publish limit increase by end of day today.
+      task: Open a limit increase ticket with AWS Support for the SNS regional publish limit.
+      assignee: Yusuf
+      due: end of day today
+
+    - quote: "We also need someone to write the initial template schema migration — Fatima, can\n\
+        you draft that and post it for review?\n\
+        Sure, I'll put it together. No hard deadline on this one yet?\n\
+        Not yet — just get a draft up for the team to review before we finalise the schema.\n\
+        Fine, I'll post it in the pull request channel when it's ready."
+      title: Draft notification template schema migration
+      description: Fatima will draft the initial schema migration for notification templates and post it in the pull request channel for review before the schema is finalised.
+      task: Draft the initial notification template schema migration and post it for team review.
+      assignee: Fatima
+      due: null
+
+  open_question:
+    - quote: "We haven't settled the retry strategy for failed\n\
+        deliveries. If a notification fails, do we retry immediately, use exponential backoff,\n\
+        or rely on SNS dead-letter queues? We need a recommendation before implementation starts.\n\
+        Agreed, that's still open."
+      title: What retry strategy should the notification service use for failed deliveries?
+      description: The team has not decided whether to retry immediately, use exponential backoff, or rely on SNS dead-letter queues; a recommendation is needed before implementation begins.
+      question: What retry strategy should the notification service use for failed deliveries — immediate retry, exponential backoff, or SNS dead-letter queues?
+      context: Implementation cannot start without this decision; no owner or recommendation has been assigned.
+
+    - quote: "And we haven't decided how notification preferences will be stored per user — in the\n\
+        user profile service, or as a separate preferences microservice. Architecture decision,\n\
+        not urgent, but we need it before we wire up the opt-out flow.\n\
+        Let's leave both of those as open questions for now."
+      title: Where should per-user notification preferences be stored?
+      description: The team has not decided whether notification preferences belong in the user profile service or a dedicated preferences microservice; this is needed before the opt-out flow can be built.
+      question: Should per-user notification preferences be stored in the user profile service or in a separate preferences microservice?
+      context: The decision is needed before the opt-out flow can be wired up; no architecture choice has been made yet.

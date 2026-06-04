@@ -1,0 +1,30 @@
+corpus_id: simple_009_cdn_choice_resolves_question
+description: >
+  Cross-type decision→open_question baseline: a decision explicitly closes an open
+  question that the team had previously deferred. Single obvious resolves relationship.
+
+tags:
+  tier: simple
+  pairing: cross_type
+  types: [decision, open_question]
+  relations: [resolves]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_cdn
+    type: decision
+    title: Use Cloudflare as the CDN for all static assets
+    description: After evaluating Cloudflare, Fastly, and AWS CloudFront, the team selected Cloudflare for its pricing, edge network coverage, and existing team familiarity.
+    quote: "We're going with Cloudflare for the CDN — pricing is better and the team already knows it."
+
+kb_nodes:
+  - id: question_cdn
+    type: open_question
+    title: Which CDN should we use for static asset delivery?
+    description: The team deferred the CDN choice pending a cost and performance comparison of the three shortlisted providers.
+    quote: "We haven't picked a CDN yet — we need to compare Cloudflare, Fastly, and CloudFront before deciding."
+
+expected_relations:
+  - source: decision_cdn
+    target: question_cdn
+    rel_type: resolves

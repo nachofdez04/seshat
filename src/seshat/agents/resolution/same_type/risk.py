@@ -1,10 +1,10 @@
 from typing import Literal
 
-from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _EntryBase, _ResultBase
+from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _ResultBase, _SameTypeEntry
 from seshat.models.enums import RelationshipType
 
 
-class _RiskEntry(_EntryBase):
+class _RiskEntry(_SameTypeEntry):
     rel_type: Literal[RelationshipType.AMENDS] | None  # type: ignore[override]
 
 
@@ -14,37 +14,45 @@ class _RiskResult(_ResultBase[_RiskEntry]): ...
 _RISK_PROMPT = """\
 You are a risk relationship resolution agent.
 
+## Relation definitions
+
+### amends
+The source refines the target risk without replacing it as a tracked concern.
+- Example: "Pipeline may fail for messages above 512 KB" amends "Pipeline may fail for large messages".
+
+## Task
 You receive a source risk (current meeting) and a list of target risks (prior meeting KB).
-For each target, determine whether a directed relationship exists from the source to that target.
+For each target, output one rel_type. Every target MUST appear in the output.
+Relationships are directed: source → target only.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source → target only.
-- Assign at most one non-null rel_type per (source, target) pair.
-- Topical similarity alone is not sufficient — require a direct logical connection.
-- amends is directed from the more specific to the more general: the source adds precision to the target. If both seem to qualify each other equally, prefer null over assigning amends in both directions.
-- Allowed relationships: amends, null.
-- Prohibited relationships: supersedes, conflicts_with, blocks, depends_on.
+## Over-extraction guards
 
-Selection priority:
-  1. Use amends if the source narrows, scopes, quantifies, corrects, or adds concrete conditions to the target while preserving the same underlying risk concern.
-  2. Otherwise, use null.
+### Same concern domain (hard stop)
+Before assigning any label, confirm both risks address the same concern area (failure mode, system component, or risk category). Ask: "Are they in the same concern domain?" If no → null; do not proceed.
+- Example: "Connection pool exhausted under high read load" is NOT any relation for "Write-ahead log fills during bulk import" — same database, different mechanisms → null.
 
-Relationship definitions:
-- amends: the source refines the target risk without replacing it as a tracked concern.
-    The source may make the target more specific, add a condition, identify a clearer trigger, quantify severity or likelihood, narrow the affected scope, or correct part of the risk description while preserving the same underlying concern.
-    Use only when the source and target describe the same risk mechanism, failure mode, or concern at different levels of precision.
-    - Example: "Pipeline may fail for messages above 512 KB" amends "Pipeline may fail for large messages".
-    - Example: "Schema registry degrades above 5 000 writes/min" amends "Schema registry may become a bottleneck under load".
-    - Example: "Cache warming failure causes elevated latency only on the first request after a deployment" amends "Cache warming failure may cause elevated latency".
-- null: no directed relationship exists — source and target are independently valid.
-    - Example: "Ingestion pipeline may exhaust memory on large payloads" and "Monitoring agent may introduce latency on metric collection" — different failure domains, no logical connection.
-    - Example: "Database connection pool may be exhausted under sustained high read load" and "Database write-ahead log may fill up during a bulk import" — same component, unrelated failure modes.
+### Not amends
+- Source and target share the same component or domain but describe different failure modes.
+  Counter-example: "Connection pool exhausted under high read load" is NOT amends for "Write-ahead log fills during bulk import" — same database, different mechanisms → null.
+- Source is a parallel concern at the same level of precision, not a refinement of the target.
+  Counter-example: "Cache stampede on cold start may spike database load" is NOT amends for "Connection pool exhausted under peak traffic" — related domain, independent failure modes → null.
+- Both describe the same concern at the same specificity level; neither refines the other.
+  If it is unclear which is more specific, prefer null over assigning amends in either direction.
 
-Counter-examples:
-- "Ingestion pipeline may fail for messages above 512 KB" does NOT have a null relationship with "Ingestion pipeline may fail for large messages" — the source adds precision to the target → amends.
-- "API gateway becomes unavailable when upstream latency exceeds 30 s" does NOT have a null relationship with "API gateway may become unavailable under adverse conditions" — the source characterises the same concern more precisely → amends.
-- "Database connection pool may be exhausted under sustained high read load" does NOT amend "Database write-ahead log may fill up during a bulk import" — same component, different failure mode → null.
+## Selection
+Once the same concern domain guard passes, select the first label that applies:
+1. **amends** — when source and target describe the same failure mode or concern, and the source refines, corrects, or adds precision to the target. The source may:
+   - Narrow the trigger condition: "above 512 KB" amends "for large messages"
+   - Identify a more specific failure scenario: "during peak traffic" amends "under load"
+   - Correct or update the framing while preserving the same concern: "token exhaustion is most likely at peak traffic, not at cutover" amends "token exhaustion may occur at cutover"
+   - Quantify or add a concrete condition to an abstract statement
+   Ask: "Does the source add precision to the same underlying failure mode?" If yes → amends.
+2. Otherwise → null.
+
+## Boundary examples
+- amends vs null:
+  - "Pipeline may fail for messages above 512 KB" → amends "Pipeline may fail for large messages" — same failure mode, source adds a threshold.
+  - "Pipeline may fail for messages above 512 KB" → null "Pipeline may exhaust memory on very large file uploads" — different failure modes: message routing vs memory.
 """
 
 

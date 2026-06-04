@@ -1,0 +1,147 @@
+corpus_id: realistic_002_auth_overhaul
+description: >
+  Realistic multi-source, multi-KB: an auth system overhaul meeting produces five source
+  nodes (three decisions, one risk, one action item) resolved against a KB of nine nodes
+  from the previous meeting. Tests a dense relationship graph:
+  - decision supersedes a prior decision (OAuth replaces session tokens entirely)
+  - decision amends a prior decision (narrows an existing HTTPS policy to also cover tokens)
+  - decision conflicts_with a prior decision (new token lifetime contradicts prior policy)
+  - decision resolves a prior open question (session-token vs OAuth debate settled)
+  - decision mitigates a prior risk (token expiry directly reduces hijacking exposure)
+  - risk amends a prior risk (same concern, more specific failure condition identified)
+  - action item blocks a prior action item (token library must be chosen before SDK can be updated)
+  - two null pairs (same project area, no logical connection)
+
+grey_area:
+  - pair: [src_decision_adopt_oauth, kb_decision_long_token_lifetime]
+    note: >
+      The 24-hour session token lifetime policy becomes stale once OAuth replaces session
+      tokens, but OAuth adoption does not directly address or replace the lifetime policy —
+      it makes it irrelevant as a side effect. Arguable as supersedes (indirect staleness)
+      or null (no direct policy relationship). Scored as null in expected_relations to avoid
+      rewarding transitive inference; a supersedes prediction is a precision miss but not a
+      fundamental error.
+  - pair: [src_risk_refresh_token_leakage, kb_decision_session_tokens]
+    note: >
+      The risk agent predicts blocks because refresh token leakage makes the session token
+      decision risky to enforce. In reality kb_decision_session_tokens is superseded by
+      src_decision_adopt_oauth in the same run, but the risk agent has no visibility into
+      sibling-decision supersessions. The post-processing step in orchestrator._run_resolution
+      strips blocks against superseded targets, so this spurious prediction is eliminated
+      at the pipeline level.
+
+tags:
+  tier: realistic
+  pairing: mixed
+  types: [action_item, decision, open_question, risk]
+  relations: [amends, blocks, conflicts_with, mitigates, resolves, supersedes]
+  difficulty: hard
+
+source_nodes:
+  - id: src_decision_adopt_oauth
+    type: decision
+    title: Replace session-token auth with OAuth 2.0 across all services
+    description: The team decided to replace the existing session-token authentication system with OAuth 2.0, making it the single auth mechanism across all internal and external services.
+    quote: "Session tokens are gone — we're moving to OAuth 2.0 across the board. Agreed."
+
+  - id: src_decision_short_token_lifetime
+    type: decision
+    title: Set OAuth access token lifetime to 15 minutes
+    description: Access tokens issued by the OAuth provider must expire after 15 minutes to limit the blast radius of token hijacking.
+    quote: "OAuth tokens expire in 15 minutes — short lifetime, mandatory refresh. No exceptions."
+
+  - id: src_decision_require_tls_for_tokens
+    type: decision
+    title: All endpoints that accept or issue tokens must enforce TLS 1.2 or higher
+    description: Any endpoint involved in token issuance or validation must enforce TLS 1.2 as a minimum, extending the existing HTTPS policy to explicitly cover token handling.
+    quote: "Any endpoint touching a token — issuance or validation — must enforce TLS 1.2 minimum."
+
+  - id: src_risk_refresh_token_leakage
+    type: risk
+    title: Refresh tokens stored in browser localStorage are vulnerable to XSS exfiltration
+    description: If clients store refresh tokens in localStorage, a successful XSS attack can exfiltrate long-lived tokens and maintain persistent access even after access tokens expire.
+    quote: "If refresh tokens end up in localStorage, XSS gives an attacker persistent access — that's worse than the session-token problem we're trying to fix."
+
+  - id: src_action_evaluate_token_libraries
+    type: action_item
+    title: Evaluate and select an OAuth token library for the backend services
+    description: Lena will evaluate candidate OAuth token libraries and produce a recommendation before the SDK update work begins.
+    quote: "Lena, evaluate the OAuth libraries and give us a recommendation — nothing else can move until we pick one."
+
+kb_nodes:
+  - id: kb_decision_session_tokens
+    type: decision
+    title: Use session tokens for all service authentication
+    description: All services use opaque session tokens stored server-side for authentication, across both internal and external service calls.
+    quote: "Session tokens, server-side storage — that's our auth model."
+
+  - id: kb_decision_long_token_lifetime
+    type: decision
+    title: Set session token lifetime to 24 hours
+    description: Session tokens expire after 24 hours, with no mandatory refresh cycle.
+    quote: "Tokens last 24 hours — users shouldn't have to re-authenticate more than once a day."
+
+  - id: kb_decision_https_external
+    type: decision
+    title: Enforce HTTPS on all external-facing API endpoints
+    description: All API endpoints exposed to external clients must use HTTPS; internal service-to-service calls were not covered by this policy.
+    quote: "External APIs must use HTTPS — internal traffic is out of scope for now."
+
+  - id: kb_risk_token_hijacking
+    type: risk
+    title: Long-lived session tokens increase exposure window if intercepted
+    description: Session tokens with a 24-hour lifetime give an attacker a large window to exploit a stolen token before it expires.
+    quote: "A 24-hour token is a 24-hour window for an attacker — if one gets intercepted, we have no fast way to limit damage."
+
+  - id: kb_risk_xss_token_theft
+    type: risk
+    title: Client-side token storage may expose tokens to XSS attacks
+    description: Tokens stored in client-side mechanisms such as localStorage or sessionStorage are accessible to JavaScript and can be stolen via XSS.
+    quote: "Any token in localStorage is one XSS away from being gone."
+
+  - id: kb_oq_auth_provider
+    type: open_question
+    title: Should we replace session-token authentication with a token-based standard such as OAuth 2.0?
+    description: The team has been debating whether to move away from opaque session tokens entirely in favour of a standards-based token protocol such as OAuth 2.0.
+    quote: "Do we stay with session tokens or move to something like OAuth 2.0? We need to decide before we plan the migration."
+
+  - id: kb_oq_token_storage_pattern
+    type: open_question
+    title: What is the recommended client-side token storage pattern?
+    description: The team has not settled on whether clients should use localStorage, sessionStorage, or httpOnly cookies for token storage.
+    quote: "localStorage vs httpOnly cookies — we need a recommendation before the frontend starts implementing."
+
+  - id: kb_action_update_sdk
+    type: action_item
+    title: Update the internal SDK to support the new auth mechanism
+    description: The platform team needs to update the internal SDK to support whichever auth mechanism is chosen before service teams can begin migration.
+    quote: "Once we pick the auth approach, platform team updates the SDK — service teams can't migrate until then."
+
+  - id: kb_action_audit_service_auth
+    type: action_item
+    title: Audit all services for current session-token usage
+    description: The security team will audit all services to catalogue current session-token usage, as a prerequisite for planning the migration scope.
+    quote: "Security team, audit every service for session-token usage — we need the full inventory before we plan the migration."
+
+expected_relations:
+  - source: src_decision_adopt_oauth
+    target: kb_decision_session_tokens
+    rel_type: supersedes
+  - source: src_decision_adopt_oauth
+    target: kb_oq_auth_provider
+    rel_type: resolves
+  - source: src_decision_short_token_lifetime
+    target: kb_decision_long_token_lifetime
+    rel_type: conflicts_with
+  - source: src_decision_short_token_lifetime
+    target: kb_risk_token_hijacking
+    rel_type: mitigates
+  - source: src_decision_require_tls_for_tokens
+    target: kb_decision_https_external
+    rel_type: amends
+  - source: src_risk_refresh_token_leakage
+    target: kb_risk_xss_token_theft
+    rel_type: amends
+  - source: src_action_evaluate_token_libraries
+    target: kb_action_update_sdk
+    rel_type: blocks

@@ -1,0 +1,29 @@
+corpus_id: null_004_decision_open_question_unrelated
+description: >
+  Cross-type decision→open_question discriminating: a decision and an open question
+  from the same project where the decision does not answer the question.
+  The decision concerns the authentication method; the question concerns observability
+  tooling — same system context, but no resolves link.
+
+tags:
+  tier: "null"
+  pairing: cross_type
+  types: [decision, open_question]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: decision_auth
+    type: decision
+    title: Use OAuth 2.0 with PKCE for all client authentication
+    description: The team standardised on OAuth 2.0 with PKCE for client authentication across all new services, replacing the legacy API-key approach.
+    quote: "All new services will use OAuth 2.0 with PKCE — we're retiring the API key approach."
+
+kb_nodes:
+  - id: question_observability
+    type: open_question
+    title: Should we use Datadog or Grafana Cloud for platform observability?
+    description: The team has not decided which observability platform to adopt. Both Datadog and Grafana Cloud are under evaluation, pending a pricing review.
+    quote: "We still haven't chosen between Datadog and Grafana Cloud — need the pricing numbers first."
+
+expected_relations: []

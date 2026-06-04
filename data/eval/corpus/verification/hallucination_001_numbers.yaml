@@ -1,0 +1,15 @@
+description: >
+  Verifier must reject a description that introduces a specific number and deadline absent
+  from the quote.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: easy
+  detail: "number (47) and deadline (Q3) absent from quote"
+
+nodes:
+  - title: "Migrate to Kubernetes"
+    description: "The team agreed to migrate all 47 microservices to Kubernetes by Q3."
+    quote: "we decided to move to Kubernetes for the new services"
+    expected_supported: false

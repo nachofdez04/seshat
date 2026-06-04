@@ -1,0 +1,41 @@
+description: >
+  Direct action assignment and process milestone boundary: the group assigns Ravi
+  to update the logging guidelines. The group also mentions revisiting log aggregation
+  tooling at a future sprint; that agenda note is neither a Decision nor an Open
+  Question. The primary assertions are node type and assignee field.
+
+tags:
+  tier: happy-path
+  difficulty: medium
+  focus: [decision, action_item]
+
+transcript: |
+  The logging format is inconsistent across services — some emit JSON, some plain text.
+  We should standardise before we set up the log aggregation pipeline.
+  Let's decide now: all services must emit structured JSON logs going forward.
+  Agreed, no more plain-text logging in production.
+  Ravi, can you update the logging guidelines doc and post it in the engineering channel?
+  Sure, I'll get that done by tomorrow.
+  Good. We'll revisit log aggregation tooling at the next sprint planning once the format
+  is standardised across all services.
+
+expected:
+  decision:
+    - quote: "Let's decide now: all services must emit structured JSON logs going forward.\n\
+        Agreed, no more plain-text logging in production."
+      title: Standardise all services on structured JSON logging
+      description: The team decided all services must emit structured JSON logs; plain-text logging in production is no longer permitted.
+      decision: All services must emit structured JSON logs; plain-text logging in production is forbidden.
+      rationale: Inconsistent log formats block setting up a shared log aggregation pipeline.
+      alternatives_considered: []
+  action_item:
+    - quote: "Ravi, can you update the logging guidelines doc and post it in the engineering channel?\n\
+        Sure, I'll get that done by tomorrow."
+      title: Update logging guidelines doc
+      description: Ravi will update the logging guidelines document and post it in the engineering channel by tomorrow.
+      task: Update the logging guidelines document and post it in the engineering channel.
+      assignee: Ravi
+      due: by tomorrow
+
+  risk: []
+  open_question: []

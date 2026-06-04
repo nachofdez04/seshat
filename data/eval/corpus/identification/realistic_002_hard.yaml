@@ -1,0 +1,139 @@
+description: >
+  Realistic hard: a multi-topic sprint planning meeting covering SDK versioning policy,
+  a database query performance problem, and a customer-facing feature gate. An open
+  question raised early (which SDK versions to support) is resolved mid-meeting into a
+  decision; it must not appear in expected open_question. A risk about slow query
+  performance gets an investigation action item but is never accepted, so the risk
+  survives. Informal phrasing and self-assignment test disambiguation under realistic
+  conversational noise.
+
+tags:
+  tier: realistic
+  difficulty: hard
+  focus: [decision, risk, action_item, open_question]
+  detail: "OQ→Decision mid-transcript; risk survives investigation; concern refuted by fact"
+
+transcript: |
+  Let's get going — three things today: SDK support policy, the slow-query problem
+  in the reporting service, and the feature gate for the document export module.
+  Start with SDK support. We have clients on v1, v2, and v3 of the SDK. The question
+  is how many versions we maintain simultaneously. Engineering wants to drop v1 entirely.
+  That's the open question going into this meeting — do we commit to a two-version
+  support window or something longer?
+  I think two versions is the right call, but I want to hear from support first.
+  Support team, what's the v1 usage look like?
+  We have six enterprise customers still on v1. All of them are in active upgrade projects.
+  The last one should be off v1 by end of Q2.
+  That settles it for me. If v1 is fully off by end of Q2 we can drop it at the Q3 release.
+  We don't need to decide on a permanent window count just yet.
+  Agreed. Let's make this concrete: we will drop v1 SDK support at the Q3 release, and
+  maintain a two-version support window from that point forward — so v2 and v3 going forward.
+  Yeah, sounds right to me. Two versions is a clean policy.
+  Good. Moving on — the reporting service. Lena, you flagged the slow-query problem.
+  Yeah, so the nightly aggregation job is scanning full table ranges on the events table —
+  around 180 million rows — because the composite index on tenant_id and event_date was
+  never backfilled for historical partitions. Queries that should take seconds are timing
+  out after five minutes.
+  That's a real problem. If this hits during business hours a tenant's reporting dashboard
+  becomes completely unusable.
+  Exactly. And we've had two incidents already this sprint where the aggregation job ran
+  long and blocked the dashboard API for fifteen minutes.
+  So we need to understand the full scope before we can fix it. Do we know which partitions
+  are missing the index?
+  Not yet — I'd need to run a scan across all partitions to map the gaps.
+  Lena, can you run that scan and put together a remediation plan by Thursday?
+  Sure, I'll take that.
+  Great. That said, the underlying risk is still open — we don't know the full extent of
+  the missing indexes yet and more incidents are possible before the fix lands.
+  Agreed, the investigation doesn't close the risk.
+  Third topic: document export feature gate. This is tied to the enterprise tier —
+  the product team wants to enable it for all Pro and Enterprise customers by the end of
+  the month. Is there anything blocking that?
+  We need to validate the export size limits. The current cap is 50 MB per export. Pro
+  customers are generating documents up to 40 MB, so we're close to the ceiling. If we
+  enable broadly without raising the cap we might hit OOM errors on the worker pool.
+  Do we have memory headroom to raise the cap?
+  We do — workers are provisioned at 4 GB and our p99 memory usage during export is 1.1 GB.
+  We can safely raise the cap to 200 MB without reprovisioning.
+  Okay, let's make the call then: we enable document export for all Pro and Enterprise
+  customers by end of month, and we raise the per-export size cap from 50 MB to 200 MB.
+  Agreed.
+  Who's setting the config flag? Dmitri, you own the feature flag service.
+  Yeah, I'll update the flag config and the worker cap setting. Just confirm the date —
+  end of month means the 31st?
+  Correct, the 31st.
+  I'll have it done by then.
+  Anything else blocking the export launch?
+  We still haven't confirmed whether the export job logs need to be included in the
+  customer-facing audit trail. Legal hasn't reviewed that yet and we don't have a clear
+  answer. That needs resolving before we can say the feature is fully compliant.
+  Agreed, that's still open. Let's flag it and move on.
+
+expected:
+  decision:
+    - quote: "Agreed. Let's make this concrete: we will drop v1 SDK support at the Q3 release, and\n\
+        maintain a two-version support window from that point forward — so v2 and v3 going forward.\n\
+        Yeah, sounds right to me. Two versions is a clean policy."
+      title: Drop v1 SDK at Q3 release and maintain a two-version support window
+      description: The team decided to drop v1 SDK support at the Q3 release and maintain a rolling two-version support window (currently v2 and v3) going forward.
+      decision: Drop v1 SDK support at the Q3 release and maintain a two-version support window from that point forward.
+      rationale: All enterprise customers on v1 are in active upgrade projects and the last one is expected to migrate off by end of Q2, making v1 safe to drop at the Q3 release.
+      alternatives_considered:
+        - Maintain a support window longer than two versions
+
+    - quote: "Okay, let's make the call then: we enable document export for all Pro and Enterprise\n\
+        customers by end of month, and we raise the per-export size cap from 50 MB to 200 MB.\n\
+        Agreed."
+      title: Enable document export for Pro and Enterprise customers with 200 MB cap by end of month
+      description: The team decided to enable the document export feature for all Pro and Enterprise customers by the end of the month and raise the per-export size limit from 50 MB to 200 MB.
+      decision: Enable document export for all Pro and Enterprise customers by the 31st and raise the per-export size cap from 50 MB to 200 MB.
+      rationale: Workers have sufficient memory headroom (p99 at 1.1 GB against a 4 GB provision) to support a 200 MB cap without reprovisioning.
+      alternatives_considered: []
+
+  risk:
+    - quote: "That's a real problem. If this hits during business hours a tenant's reporting dashboard\n\
+        becomes completely unusable.\n\
+        Exactly. And we've had two incidents already this sprint where the aggregation job ran\n\
+        long and blocked the dashboard API for fifteen minutes.\n\
+        So we need to understand the full scope before we can fix it. Do we know which partitions\n\
+        are missing the index?\n\
+        Not yet — I'd need to run a scan across all partitions to map the gaps.\n\
+        Lena, can you run that scan and put together a remediation plan by Thursday?\n\
+        Sure, I'll take that.\n\
+        Great. That said, the underlying risk is still open — we don't know the full extent of\n\
+        the missing indexes yet and more incidents are possible before the fix lands.\n\
+        Agreed, the investigation doesn't close the risk."
+      title: Missing composite indexes may cause further reporting dashboard outages before remediation
+      description: The composite index backfill on the events table is incomplete across historical partitions; the full scope is unknown and further incidents blocking the reporting dashboard are possible before the fix is applied.
+      type: future
+      risk: Unindexed historical partitions on the events table continue to cause aggregation query timeouts that block tenant reporting dashboards; additional incidents are likely before the index gap is fully mapped and remediated.
+
+  action_item:
+    - quote: "Lena, can you run that scan and put together a remediation plan by Thursday?\n\
+        Sure, I'll take that."
+      title: Scan partitions for missing indexes and draft remediation plan
+      description: Lena will scan all events table partitions to identify missing composite index coverage and produce a remediation plan by Thursday.
+      task: Run a scan across all events table partitions to map missing composite indexes and prepare a remediation plan.
+      assignee: Lena
+      due: by Thursday
+
+    - quote: "Who's setting the config flag? Dmitri, you own the feature flag service.\n\
+        Yeah, I'll update the flag config and the worker cap setting. Just confirm the date —\n\
+        end of month means the 31st?\n\
+        Correct, the 31st.\n\
+        I'll have it done by then."
+      title: Update feature flag config and worker cap for document export
+      description: Dmitri will update the feature flag configuration to enable document export for Pro and Enterprise customers and set the per-export worker cap to 200 MB by the 31st.
+      task: Update the feature flag config to enable document export for Pro and Enterprise customers and set the per-export size cap to 200 MB.
+      assignee: Dmitri
+      due: by the 31st
+
+  open_question:
+    - quote: "We still haven't confirmed whether the export job logs need to be included in the\n\
+        customer-facing audit trail. Legal hasn't reviewed that yet and we don't have a clear\n\
+        answer. That needs resolving before we can say the feature is fully compliant.\n\
+        Agreed, that's still open. Let's flag it and move on."
+      title: Must export job logs be included in the customer-facing audit trail?
+      description: Legal has not yet reviewed whether export job logs are required in the customer-facing audit trail; without this answer the document export feature cannot be declared fully compliant.
+      question: Are export job logs required to be included in the customer-facing audit trail for compliance purposes?
+      context: Legal review has not been completed; the feature cannot be considered fully compliant until this is resolved.

@@ -1,0 +1,15 @@
+description: >
+  Verifier must accept a description that paraphrases the quote using different words
+  without adding unsupported facts.
+
+tags:
+  tier: faithful
+  source: quote
+  difficulty: easy
+  detail: "synonym substitution; no new facts"
+
+nodes:
+  - title: "Deploy on Kubernetes"
+    description: "Kubernetes will be used for new service deployments."
+    quote: "we decided to move to Kubernetes for the new services"
+    expected_supported: true

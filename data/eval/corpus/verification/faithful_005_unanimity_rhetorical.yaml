@@ -1,0 +1,16 @@
+description: >
+  Verifier must accept a description that amplifies the tone of an agreed decision without
+  adding new facts. "Unanimously agreed" strengthens the claim in the quote but introduces
+  no new entities, causal claims, or outcomes — it is rhetorical amplification.
+
+tags:
+  tier: faithful
+  source: quote
+  difficulty: hard
+  detail: "rhetorical amplification (unanimously); no new facts introduced"
+
+nodes:
+  - title: "Use Kafka for the event bus"
+    description: "The team unanimously agreed to use Kafka for the event bus."
+    quote: "let's go with Kafka for the event bus.\nAgreed, Kafka it is."
+    expected_supported: true

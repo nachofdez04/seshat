@@ -1,0 +1,38 @@
+description: >
+  Decision and Open Question field edges: a settled decision is made without an
+  explicit rationale, so rationale should be "Not stated". A substantive unresolved
+  question is phrased as a statement rather than a literal question.
+
+tags:
+  tier: happy-path
+  difficulty: medium
+  focus: [decision, open_question]
+
+transcript: |
+  For the beta, all admin access will go through SSO.
+  Agreed, SSO only for beta admins.
+  We still do not know whether EU customer data can leave the region.
+  Legal needs to confirm that before we can choose the residency model.
+  Let's keep the residency model open until legal answers.
+
+expected:
+  decision:
+    - quote: "For the beta, all admin access will go through SSO.\n\
+        Agreed, SSO only for beta admins."
+      title: Require SSO for beta admin access
+      description: The team decided that all beta admin access will go through SSO.
+      decision: Require all beta admin access to go through SSO.
+      rationale: Not stated
+      alternatives_considered: []
+
+  open_question:
+    - quote: "We still do not know whether EU customer data can leave the region.\n\
+        Legal needs to confirm that before we can choose the residency model.\n\
+        Let's keep the residency model open until legal answers."
+      title: Can EU customer data leave the region?
+      description: The team cannot choose the residency model until legal confirms whether EU customer data can leave the region.
+      question: Can EU customer data leave the region?
+      context: Legal has not confirmed whether EU customer data can leave the region, so the residency model remains open.
+
+  risk: []
+  action_item: []

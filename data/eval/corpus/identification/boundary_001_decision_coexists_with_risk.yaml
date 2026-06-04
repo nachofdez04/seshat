@@ -1,0 +1,73 @@
+description: >
+  A risk and a decision appear in the same exchange, plus an investigation action item.
+  The decision (set a hard cap) is a partial mitigation but does not resolve whether the
+  cap is sufficient — the failure mode remains open. The action item is an investigation
+  task and does not suppress the risk. All three node types must be extracted.
+  Tests the new rule: a risk is not suppressed merely because someone is assigned to
+  benchmark or evaluate.
+
+tags:
+  tier: boundary
+  difficulty: medium
+  focus: [decision, risk, action_item]
+  detail: "partial mitigation, investigation doesn't suppress risk"
+
+grey_area:
+  - type: open_question
+    note: >
+      "We haven't validated that 500 holds at 3x load" is consistently extracted as an
+      open question in stable runs (P=0.0, R=0.0 because expected is empty). The phrase
+      reads like an unresolved question but is better classified as a risk framing — the
+      concern is expressed as a failure mode ("could still hit exhaustion"), not as a
+      question the team needs to answer before proceeding. The load test action item covers
+      the investigation. A spurious open_question prediction here is an understandable
+      error, not a fundamental failure.
+
+transcript: |
+  The current connection pool is sized for our existing load, but we're expecting a 3x
+  traffic increase at launch. If we hit that without adjusting the pool, we could see
+  cascading timeouts across all API workers.
+  That's a real concern. We had connection pool exhaustion in staging last month — it took
+  everything down for ten minutes.
+  Agreed, we can't go to launch like this. We need a hard cap in place. Let's set the
+  maximum pool size to 500 connections and enforce it at the proxy level.
+  Good first step, but we haven't validated that 500 holds at 3x load — we could still
+  hit exhaustion at peak launch traffic.
+  Agreed. Priya, can you run a load test simulating 3x traffic against staging before we go live?
+  Yes, I'll run it before end of sprint and report back.
+
+expected:
+  decision:
+    - quote: "Agreed, we can't go to launch like this. We need a hard cap in place. Let's set the\n\
+        maximum pool size to 500 connections and enforce it at the proxy level."
+      title: Set connection pool maximum to 500 connections at proxy level
+      description: The team decided to enforce a maximum pool size of 500 connections at the proxy level before launch.
+      decision: Set the maximum connection pool size to 500 connections, enforced at the proxy level.
+      rationale: The service has no hard cap and suffered connection pool exhaustion in staging under high load.
+      alternatives_considered: []
+
+  risk:
+    - quote: "The current connection pool is sized for our existing load, but we're expecting a 3x\n\
+        traffic increase at launch. If we hit that without adjusting the pool, we could see\n\
+        cascading timeouts across all API workers.\n\
+        That's a real concern. We had connection pool exhaustion in staging last month — it took\n\
+        everything down for ten minutes.\n\
+        Agreed, we can't go to launch like this. We need a hard cap in place. Let's set the\n\
+        maximum pool size to 500 connections and enforce it at the proxy level.\n\
+        Good first step, but we haven't validated that 500 holds at 3x load — we could still\n\
+        hit exhaustion at peak launch traffic."
+      title: Connection pool cap may be insufficient at 3x launch traffic
+      description: The 500-connection cap may not be enough to handle the expected 3x traffic increase at launch, and the team does not yet have load data to confirm it.
+      type: future
+      risk: The 500-connection cap may still exhaust under 3x launch traffic, causing cascading timeouts across API workers.
+
+  action_item:
+    - quote: "Agreed. Priya, can you run a load test simulating 3x traffic against staging before we go live?\n\
+        Yes, I'll run it before end of sprint and report back."
+      title: Load test connection pool at 3x launch traffic
+      description: Priya will run a load test against staging simulating 3x traffic to validate whether the 500-connection cap holds.
+      task: Run a load test simulating 3x launch traffic against staging to validate the 500-connection pool cap.
+      assignee: Priya
+      due: before end of sprint
+
+  open_question: []

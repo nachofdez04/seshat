@@ -1,0 +1,65 @@
+corpus_id: multi_004_risk_risk_mixed
+description: >
+  Same-type risk↔risk multi-target: one source risk against four KB risks.
+  Expected labels: amends two (source identifies peak traffic as the primary trigger,
+  correcting both the cutover framing and the prior dismissal that exhaustion is not a
+  concern — both are the same underlying risk, restated with more precision), null two
+  (same domain, no logical connection). Tests that the risk agent uses amends for
+  corrective reframings of the same concern, not just additive refinements.
+
+grey_area:
+  - pair: [risk_connection_pool_exhaustion_peak, risk_pool_exhaustion_not_a_concern]
+    note: >
+      Scored as amends (source corrects the prior dismissal — "not a concern" — with evidence
+      that exhaustion is actively happening). The agent misses this in most runs (F1=0.667,
+      only one of five runs scores 1.0). The corrective-reframing case is harder than
+      additive refinement because the source and target superficially look like contradictory
+      assessments rather than the same concern at different precision levels. Non-deterministic
+      in practice; a miss here is understandable.
+
+tags:
+  tier: multi
+  pairing: same_type
+  types: [risk]
+  relations: [amends]
+  difficulty: medium
+
+source_nodes:
+  - id: risk_connection_pool_exhaustion_peak
+    type: risk
+    title: Connection pool exhaustion is most likely during peak traffic, not during deployments
+    description: The team now believes that connection pool exhaustion is primarily a peak-traffic problem driven by query latency spikes, not a deployment-time problem.
+    quote: "The pool exhaustion we're seeing isn't just at cutover — it's happening at peak traffic when query latency spikes. The deployment framing undersells the real risk."
+
+kb_nodes:
+  - id: risk_pool_exhaustion_cutover
+    type: risk
+    title: Blue-green deploy cutover may cause brief connection pool exhaustion
+    description: During blue-green deploy cutovers, the connection pool may momentarily be saturated if both old and new instances are draining simultaneously.
+    quote: "We've seen the pool spike during cutover — old and new instances both holding connections at the same time."
+
+  - id: risk_pool_exhaustion_not_a_concern
+    type: risk
+    title: Connection pool exhaustion is not a concern at current traffic levels
+    description: The platform team assessed that at current request volumes the pool is sized with sufficient headroom and exhaustion is unlikely in normal operating conditions.
+    quote: "We sized the pool with 3x headroom — exhaustion is a non-issue at current traffic."
+
+  - id: risk_cache_stampede
+    type: risk
+    title: Cache stampede on cold start may spike database load
+    description: If the cache is cold after a deployment, a large number of simultaneous cache misses may cause a temporary spike in database read load.
+    quote: "Cold cache after a deploy means every request hits the database — that's a stampede risk."
+
+  - id: risk_db_replication_lag
+    type: risk
+    title: Database replication lag may cause stale reads under high write load
+    description: Under sustained high write load, the read replica may fall behind the primary, causing some reads to return stale data.
+    quote: "Heavy write load pushes the replica behind — reads may return stale data during burst periods."
+
+expected_relations:
+  - source: risk_connection_pool_exhaustion_peak
+    target: risk_pool_exhaustion_cutover
+    rel_type: amends
+  - source: risk_connection_pool_exhaustion_peak
+    target: risk_pool_exhaustion_not_a_concern
+    rel_type: amends

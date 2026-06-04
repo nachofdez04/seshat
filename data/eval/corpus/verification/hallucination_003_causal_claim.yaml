@@ -1,0 +1,15 @@
+description: >
+  Verifier must reject a description that asserts a causal reason not present in the quote.
+  The quote gives the decision; the description invents the motivation.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: medium
+  detail: "causal claim (compliance requirements) absent from quote"
+
+nodes:
+  - title: "Switch to SSO"
+    description: "The team decided to switch to SSO because of compliance requirements from legal."
+    quote: "let's switch to SSO, it will simplify the login flow"
+    expected_supported: false

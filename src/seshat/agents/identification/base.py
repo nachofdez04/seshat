@@ -29,7 +29,7 @@ class ConceptModel(BaseModel):
     quote: str = Field(
         description=(
             "A verbatim excerpt from the transcript covering the full exchange that informs this item — "
-            "from the first turn that raises the topic to the turn that closes or settles it. "
+            "from the first passage that raises the topic through all passages needed to support it. "
             "Do not paraphrase, reconstruct, or splice passages with ellipsis. "
             "The description must not claim anything that is not present in this quote."
         )

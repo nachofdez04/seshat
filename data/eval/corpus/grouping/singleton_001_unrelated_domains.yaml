@@ -1,0 +1,20 @@
+corpus_id: singleton_001_unrelated_domains
+description: "Two decisions from completely unrelated domains — each should be a singleton group."
+
+tags:
+  concept_type: decision
+  difficulty: easy
+  scenario: singleton
+  detail: "people/process vs. API standards — no shared theme"
+
+items:
+  - id: on-call-rotation
+    title: "Switch to weekly on-call rotation"
+    description: "The team agreed to move from bi-weekly to weekly on-call rotations starting next sprint, citing engineer burnout under the current schedule and the need to spread load more evenly across the team."
+  - id: api-versioning
+    title: "Use URL versioning for all public APIs"
+    description: "The team decided that all public API endpoints will use URL-based versioning (/v1/, /v2/), chosen over header-based versioning for its debuggability and simplicity for external consumers."
+
+expected_groups:
+  - [on-call-rotation]
+  - [api-versioning]

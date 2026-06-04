@@ -3,6 +3,7 @@ import pytest
 from seshat.config.settings import EvalConfig
 from seshat.eval.identification.corpus_loader import load_corpus
 from seshat.models.enums import ConceptType
+from tests.unit.eval.conftest import TagFilterContractTests
 
 
 @pytest.fixture(scope="class")
@@ -22,7 +23,11 @@ class TestCorpusLoader:
                 assert isinstance(node.type, ConceptType)
 
 
-class TestProductionCorpus:
+class TestProductionCorpus(TagFilterContractTests):
+    load_corpus = staticmethod(load_corpus)
+    corpus_dir_attr = "identification_corpus_dir"
+    tag_key = "tier"
+
     def test_all_files_load_and_have_valid_content(self, eval_corpus: EvalConfig):
         examples = load_corpus(eval_corpus.identification_corpus_dir)
         assert len(examples) > 0

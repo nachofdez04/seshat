@@ -1,0 +1,35 @@
+description: >
+  Boundary: the same statement is plausibly both a risk and an action item. The speaker
+  names a failure mode and is immediately asked to own the investigation and fix. The correct
+  extraction is an ACTION_ITEM only — the concern was fully absorbed into an assigned commitment
+  in the same exchange. The speaker is identified by name so the assignee is resolvable.
+  Models that over-extract will produce a spurious RISK.
+
+tags:
+  tier: negative
+  difficulty: medium
+  focus: [risk]
+  detail: "failure mode absorbed by action item with explicit acceptance"
+
+transcript: |
+  The load balancer config hasn't been tested under the new traffic profile — if we go
+  live without checking it we could see cascading timeouts across the payment service.
+  Mia, can you run a load test against the staging environment before end of week and fix
+  anything that comes up?
+  Sure, that should cover it. I'll have results by Friday EOD.
+
+expected:
+  decision: []
+  risk: []
+  open_question: []
+  action_item:
+    - quote: "Mia, can you run a load test against the staging environment before end of week and fix\n\
+        anything that comes up?\n\
+        Sure, that should cover it. I'll have results by Friday EOD."
+      title: Run load test on load balancer config before go-live
+      description: >
+        Mia will run a load test against staging to validate the load balancer configuration
+        under the new traffic profile, fix any issues found, and report results by Friday EOD.
+      task: Run a load test on the load balancer config against staging and fix any issues found.
+      assignee: Mia
+      due: Friday EOD

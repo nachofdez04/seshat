@@ -1,0 +1,76 @@
+corpus_id: multi_005_decision_conflicts_boundary
+description: >
+  Same-type decision↔decision multi-target stress-testing the supersedes/conflicts_with
+  boundary: one source decision against five KB decisions. Expected labels:
+  conflicts_with two (same parameter, contradictory active values), supersedes one
+  (genuinely replaces a prior choice at the same concern level), null two (different
+  concern domain entirely — retry budget does not amend a circuit breaker requirement).
+  Designed specifically to catch cases where the model uses supersedes when
+  conflicts_with is correct — both conflicting decisions are still active policies
+  that would need to be followed simultaneously.
+
+grey_area:
+  - pair: [decision_retry_budget_3, decision_retry_budget_3_critical_only]
+    note: >
+      The source (all services, 3 retries) expands scope beyond the target (critical-path
+      only), which looks like amends (scope extension). However, the target's explicit
+      exclusion of non-critical services directly contradicts the source's blanket mandate,
+      making both simultaneously unenforceable. Scored as conflicts_with because the data
+      team's scoped policy was never formally rescinded; amends is an understandable
+      prediction given the scope-extension framing.
+
+tags:
+  tier: multi
+  pairing: same_type
+  types: [decision]
+  relations: [conflicts_with, supersedes]
+  difficulty: medium
+
+source_nodes:
+  - id: decision_retry_budget_3
+    type: decision
+    title: All services must retry failed downstream calls at most 3 times with exponential backoff
+    description: The platform team decided to cap retries at 3 attempts with exponential backoff across all services, to prevent retry storms under partial outages.
+    quote: "Three retries max, exponential backoff — anything more and we amplify the outage. Agreed across the board."
+
+kb_nodes:
+  - id: decision_retry_unlimited
+    type: decision
+    title: Services may retry failed downstream calls as many times as needed until success
+    description: Services may retry failed downstream calls indefinitely until success, prioritising eventual consistency over blast-radius concerns.
+    quote: "Keep retrying until it works — we can't afford dropped requests."
+
+  - id: decision_retry_budget_10
+    type: decision
+    title: All services must retry failed downstream calls at most 10 times
+    description: All services must cap retries at 10 attempts, with no backoff strategy specified.
+    quote: "Cap retries at 10 — that's enough runway for transient failures without going infinite."
+
+  - id: decision_retry_budget_3_critical_only
+    type: decision
+    title: Only critical-path services may retry failed downstream calls
+    description: The data team scoped retry logic to critical-path services only, leaving non-critical services to fail fast.
+    quote: "Retries only for critical-path services — non-critical calls should fail fast."
+
+  - id: decision_circuit_breaker_required
+    type: decision
+    title: All services must implement a circuit breaker for downstream calls
+    description: All services are required to wrap downstream calls with a circuit breaker that opens after repeated failures, preventing further calls until the downstream recovers.
+    quote: "Every service gets a circuit breaker for downstream calls — no exceptions."
+
+  - id: decision_deploy_canary
+    type: decision
+    title: All production deployments must use canary rollout with a 5% initial slice
+    description: Production releases must be deployed to a 5% canary slice first, with promotion gated on error rate and latency checks.
+    quote: "Canary first — 5% slice, watch error rate and latency, then promote."
+
+expected_relations:
+  - source: decision_retry_budget_3
+    target: decision_retry_unlimited
+    rel_type: supersedes
+  - source: decision_retry_budget_3
+    target: decision_retry_budget_10
+    rel_type: conflicts_with
+  - source: decision_retry_budget_3
+    target: decision_retry_budget_3_critical_only
+    rel_type: conflicts_with

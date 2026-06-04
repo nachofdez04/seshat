@@ -1,0 +1,31 @@
+corpus_id: simple_018_rate_limiting_scope_narrowed
+description: >
+  Same-type action_item↔action_item baseline: a revised action item partially updates an
+  existing one. The original task is not cancelled — only its scope is narrowed. The correct
+  label is AMENDS, not SUPERSEDES (the original task still stands for the remaining scope).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [action_item]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: action_revised
+    type: action_item
+    title: Add rate limiting only to the public-facing API endpoints
+    description: After reviewing the implementation cost, the team scoped down the rate-limiting task to cover only the public-facing endpoints for now, leaving internal service-to-service calls unaffected.
+    quote: "Let's scope this down — rate limiting on public endpoints only for now. Internal calls we'll revisit next quarter."
+
+kb_nodes:
+  - id: action_original
+    type: action_item
+    title: Add rate limiting to all API endpoints
+    description: The original task required adding rate limiting across every API endpoint, including both public-facing and internal service-to-service calls.
+    quote: "We need rate limiting on all endpoints — implement it across the board."
+
+expected_relations:
+  - source: action_revised
+    target: action_original
+    rel_type: amends

@@ -1,0 +1,33 @@
+description: >
+  Decision edge case: the team commits to a material future process rather than choosing
+  between product options. This is a Decision because the benchmark gate becomes required
+  for future production storage changes; it is not an Action Item because no owner is
+  assigned.
+
+tags:
+  tier: boundary
+  difficulty: medium
+  focus: [decision]
+  detail: "process commitment as decision, no action item"
+
+transcript: |
+  We keep approving storage changes based on informal estimates.
+  Let's make the process explicit: every production storage change must complete a two-day benchmark before approval.
+  The benchmark result has to be attached to the architecture review.
+  Agreed, no storage change goes to production review without that benchmark evidence.
+
+expected:
+  decision:
+    - quote: "We keep approving storage changes based on informal estimates.\n\
+        Let's make the process explicit: every production storage change must complete a two-day benchmark before approval.\n\
+        The benchmark result has to be attached to the architecture review.\n\
+        Agreed, no storage change goes to production review without that benchmark evidence."
+      title: Require benchmark evidence before approving production storage changes
+      description: The team decided every production storage change must complete a two-day benchmark and attach the results to architecture review before approval.
+      decision: Require every production storage change to complete a two-day benchmark and attach the result to architecture review before approval.
+      rationale: The team has been approving storage changes based on informal estimates.
+      alternatives_considered: []
+
+  risk: []
+  open_question: []
+  action_item: []

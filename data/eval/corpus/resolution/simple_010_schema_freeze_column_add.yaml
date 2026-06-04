@@ -1,0 +1,30 @@
+corpus_id: simple_010_schema_freeze_column_add
+description: >
+  Cross-type decision→action_item baseline: a decision imposes a freeze that directly
+  prevents an action item from proceeding as stated. Single obvious blocks relationship.
+
+tags:
+  tier: simple
+  pairing: cross_type
+  types: [action_item, decision]
+  relations: [blocks]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_freeze
+    type: decision
+    title: Freeze all schema changes until the data platform migration is complete
+    description: The platform team decided to halt all database schema changes across all services until the migration to the new data platform is finished, to avoid conflicting state.
+    quote: "No schema changes until the data platform migration is done — we can't have conflicting state mid-migration."
+
+kb_nodes:
+  - id: action_add_column
+    type: action_item
+    title: Add audit_ts column to the events table
+    description: The backend team needs to add a nullable audit_ts timestamp column to the events table as part of the audit logging feature.
+    quote: "Ravi, can you add the audit_ts column to events before the sprint ends?"
+
+expected_relations:
+  - source: decision_freeze
+    target: action_add_column
+    rel_type: blocks

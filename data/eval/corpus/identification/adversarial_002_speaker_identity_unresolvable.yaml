@@ -1,0 +1,45 @@
+description: >
+  Adversarial: self-reference resolution test with three cases. (1) Identifiable self-assignment:
+  speaker addressed by name earlier then accepts — extract with resolved name. (2) Anonymous
+  self-assignment: speaker says "I'll take that" with no prior name attribution — extract with
+  assignee="self". (3) Collective reference: "we'll get that sorted" — no identifiable owner,
+  do not extract.
+
+tags:
+  tier: adversarial
+  difficulty: hard
+  focus: [action_item]
+  detail: "named accept → name; anonymous self-assign → self; collective 'we' → not extracted"
+
+transcript: |
+  We need to set up monitoring dashboards for the new payments service before the go-live.
+  Ravi, can you configure the Grafana dashboards by Thursday?
+  Sure, I'll handle it.
+  We should also document the alert runbook — it's still missing.
+  I'll take that.
+  Great, sounds like we have owners for both.
+  We also need to update the on-call rotation schedule before the end of the week.
+  Yeah, we'll get that sorted.
+
+expected:
+  action_item:
+    - quote: "We need to set up monitoring dashboards for the new payments service before the go-live.\n\
+        Ravi, can you configure the Grafana dashboards by Thursday?\n\
+        Sure, I'll handle it."
+      title: Configure Grafana dashboards for payments service
+      description: Ravi will configure the Grafana monitoring dashboards for the new payments service by Thursday ahead of go-live.
+      task: Configure the Grafana dashboards for the new payments service.
+      assignee: Ravi
+      due: by Thursday
+    - quote: "We should also document the alert runbook — it's still missing.\n\
+        I'll take that.\n\
+        Great, sounds like we have owners for both."
+      title: Document the alert runbook
+      description: An unidentified speaker self-assigned the task of documenting the missing alert runbook.
+      task: Document the alert runbook.
+      assignee: self
+      due: null
+
+  decision: []
+  risk: []
+  open_question: []

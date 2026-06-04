@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from seshat.agents.resolution.base import BaseCrossTypeResolutionAgent, _EntryBase, _ResultBase
+from seshat.agents.resolution.base import BaseCrossTypeResolutionAgent, _CrossTypeEntry, _ResultBase
 from seshat.models.enums import ConceptType, RelationshipType
 
 if TYPE_CHECKING:
@@ -11,119 +11,147 @@ if TYPE_CHECKING:
     from seshat.config.settings import ResolutionLLMConfig
 
 
-class _CrossTypeDecisionEntry(_EntryBase):
-    rel_type: Literal[RelationshipType.MITIGATES, RelationshipType.RESOLVES, RelationshipType.BLOCKS] | None  # type: ignore[override]
+class _DecisionToRiskEntry(_CrossTypeEntry):
+    rel_type: Literal[RelationshipType.MITIGATES] | None  # type: ignore[override]
 
 
-class _CrossTypeDecisionResult(_ResultBase[_CrossTypeDecisionEntry]): ...
+class _DecisionToOpenQuestionEntry(_CrossTypeEntry):
+    rel_type: Literal[RelationshipType.RESOLVES] | None  # type: ignore[override]
+
+
+class _DecisionToActionItemEntry(_CrossTypeEntry):
+    rel_type: Literal[RelationshipType.BLOCKS] | None  # type: ignore[override]
+
+
+class _DecisionToRiskResult(_ResultBase[_DecisionToRiskEntry]): ...
+
+
+class _DecisionToOpenQuestionResult(_ResultBase[_DecisionToOpenQuestionEntry]): ...
+
+
+class _DecisionToActionItemResult(_ResultBase[_DecisionToActionItemEntry]): ...
+
+
+_DecisionResult = _DecisionToRiskResult | _DecisionToOpenQuestionResult | _DecisionToActionItemResult
 
 
 _DECISION_RISK_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Decision → Risk pairs.
 
+## Relation definitions
+
+### mitigates
+The decision establishes a policy, architecture, constraint, or control that directly reduces the risk's likelihood, severity, exposure, or blast radius. The mechanism must directly address the risk's specific failure mode.
+- Example: "Enforce a minimum two-source approval policy for all critical component orders" mitigates "Single-source procurement dependency may halt production if the primary supplier fails to deliver".
+
+## Task
 You receive a source decision (current meeting) and a list of target risks (prior meeting KB).
-For each target, determine whether the decision directly addresses the concern that motivated the risk.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source decision that establishes the control or policy that reduces the risk's failure mode — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source decision → target risk only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source decision → target risk only.
-- Require direct causal coupling — the decision must address the specific failure mode, not merely the same domain.
-- A decision that reduces risk incidentally or addresses a related but distinct failure mode does NOT qualify.
-- A decision that only detects, monitors, dashboards, or alerts on a risk does NOT mitigate the underlying technical or operational failure mode.
-- Detection, monitoring, dashboards, or alerts qualify as mitigates only when the target risk's stated failure mode is missing detection, missing alerting, or missing incident response.
-- A decision that merely acknowledges, defers, or postpones work does NOT mitigate a risk unless it introduces a concrete control that reduces likelihood, severity, or exposure.
+## Over-extraction guards
 
-Selection priority:
-  1. Use mitigates if the decision directly removes, reduces, contains, or controls the failure mode or concern that motivated the risk.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the decision's policy or control directly addresses the risk's specific failure mode while both are simultaneously active. Ask: "Does this decision's mechanism directly reduce this risk's failure mode — not just share the same system or domain, and not merely make the risk obsolete by retiring its underlying mechanism?" If no → null; do not proceed.
 
-Relationship definitions:
-- mitigates: the source decision establishes a policy, architecture, constraint, or control that directly reduces the target risk's likelihood, severity, exposure, or blast radius.
-    The decision must mechanistically reduce the risk's failure mode; it must not merely be in the same domain or improve awareness of the risk.
-    - Example: decision "Add dead-letter queue for failed events" mitigates risk "Silent event loss if consumer crashes".
-    - Example: decision "Enable mutual TLS for all inter-service calls" mitigates risk "Inter-service traffic may be intercepted by a compromised internal node".
-    - Example: decision "Set hard memory limits per image-processing worker" mitigates risk "Image-processing workers may exhaust available memory on oversized uploads".
-- null: the decision does not directly address the risk's failure mode, or shares only a domain.
-    - Example: decision "Use PostgreSQL for all storage" and risk "API gateway becomes unavailable under high load" — unrelated concerns.
-    - Example: decision "Adopt statistical fraud scoring" and risk "Invoice export service degrades above 5 000 writes/min" — same analytics domain, unrelated mechanisms.
-    - Example: decision "Add latency alerts for the billing API" and risk "Billing calculation workers will miss processing deadlines if invoice volume doubles" — alerts detect the breach but do not reduce the worker load causing it.
+### Not mitigates
+- The decision and risk share a domain but the decision addresses a different failure mode.
+  Counter-example: "Require code-owners approval on all pull requests to the model training module" is NOT mitigates for "Feature engineering pipeline may silently discard rows with missing sensor readings" — the approval gate targets code-change quality, not the data-loss failure mode → null.
+- The decision only detects, monitors, or alerts on the risk without reducing the failure mode itself.
+  Counter-example: "Publish a weekly supplier spend report for the procurement team" is NOT mitigates for "Single-source procurement for a critical component may leave production exposed if the supplier fails" — the report increases visibility but does not reduce the single-source dependency → null.
+- The decision defers, acknowledges, or postpones work without introducing a concrete control.
+  Counter-example: "Postpone the background-check tooling decision until the HR platform review is complete" is NOT mitigates for "Inconsistent background-check processes may create compliance liability" — deferral does not introduce a consistent process → null.
+- The decision eliminates or replaces the mechanism that gives rise to the risk, making the risk obsolete as a side effect rather than directly addressing its failure mode.
+  Counter-example: "Replace session-token authentication with OAuth 2.0 across all services" is NOT mitigates for "Long-lived session tokens increase the exposure window if intercepted" — the decision retires session tokens entirely, making the risk moot, but does not directly reduce the token-lifetime failure mode while both are simultaneously active → null.
 
-Counter-examples:
-- decision "Add circuit breakers to all service calls" does NOT mitigate risk "Database write-ahead log may fill up during a bulk import" — circuit breakers address service availability, not log capacity.
-- decision "Enforce RBAC for the admin panel" does NOT mitigate risk "API rate limiting may allow a single client to exhaust capacity" — both are protection concerns but different failure modes.
-- decision "Adopt blue-green deployments" does NOT mitigate risk "Cache warming failure causes elevated latency after a deployment" — the deployment strategy does not address the cache warming mechanism.
-- decision "Defer automated incident classification until operations ownership is clarified" does NOT mitigate risk "Automated incident classification lacks owner-defined escalation criteria" — deferral avoids immediate commitment but does not reduce the underlying ownership risk.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. **mitigates** — the decision directly removes, reduces, contains, or controls the specific failure mode that motivated the risk. Ask: "Does the decision mechanistically address this risk's failure mode?" If yes → mitigates.
+2. Otherwise → null.
+
+## Positive examples
+- "Require two independent reviewers before merging any change to the model scoring pipeline" mitigates "A single reviewer may approve a defect that silently degrades prediction quality" — the review gate directly addresses the single-reviewer failure mode.
+- "Set hard memory limits per image-processing worker" mitigates "Image-processing workers may exhaust available memory on oversized uploads" — the limit directly contains the failure mode by capping resource consumption.
 """
 
 _DECISION_OPEN_QUESTION_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Decision → OpenQuestion pairs.
 
+## Relation definitions
+
+### resolves
+The decision gives a direct, complete, and final-enough answer to the open question so it should no longer be tracked as open.
+- Example: "Use contractor performance scorecards reviewed quarterly" resolves "How should we evaluate contractor performance?".
+
+## Task
 You receive a source decision (current meeting) and a list of target open questions (prior meeting KB).
-For each target, determine whether the decision directly and fully resolves the open question.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source decision that directly answers the question — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source decision → target open question only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source decision → target open question only.
-- Only assign resolves if the decision fully and directly settles the question — partial or tangential answers do not qualify.
-- A decision that answers only a subcase or instance of the question does NOT resolve it; it may instead narrow it.
-- A decision that narrows or adds constraints to the question without answering it is null, not resolves.
-- A phased, provisional, experimental, or temporary decision does NOT resolve a broader open question unless the question is explicitly scoped to that phase.
-- A decision that assumes or depends on an answer to the question does NOT resolve the question.
+## Over-extraction guards
 
-Selection priority:
-  1. Use resolves if the decision provides a direct, complete answer that closes the open question.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the decision directly addresses what the question is asking. Ask: "Does this decision's answer directly settle what this question asks — not just relate to the same system or project?" If no → null; do not proceed.
 
-Relationship definitions:
-- resolves: the source decision gives a direct, complete, and final-enough answer to the target open question, so the question should no longer be tracked as open.
-    Partial answers, phase-one choices, assumptions, or decisions that only narrow the answer space do not resolve the question.
-    - Example: decision "Use blue/green deployments for all production releases" resolves open_question "What deployment strategy should we use?".
-    - Example: decision "Store all EU tenant data in eu-central-1" resolves open_question "Where should EU tenant data be hosted?".
-    - Example: decision "Adopt RabbitMQ as the asynchronous job queue" resolves open_question "What queueing technology should background jobs use?".
-- null: the decision does not fully resolve the open question, or only partially addresses it.
-    - Example: decision "Cap fraud-score cache TTL to 2 min for high-risk transactions" and open_question "What is the overall customer data handling policy?" — the decision narrows one aspect but does not settle the broader question.
-    - Example: decision "Enable mutual TLS for all inter-service calls" and open_question "What authentication model should we use for external APIs?" — related security domain, different scope.
-    - Example: decision "Build a phase-one automated ticket router" and open_question "Should we build or buy the long-term ticket routing capability?" — the decision settles an initial phase but not the broader long-term choice.
+### Not resolves
+- The decision answers only a subcase or instance of the question, or narrows it without fully settling it.
+  Counter-example: "Adopt Kubernetes for the batch inference workloads" is NOT resolves for "What container orchestration approach should we use across the whole platform?" — the decision covers one workload class, not the platform-wide question → null.
+- The decision is phased, provisional, or temporary and the question is broader in scope.
+  Counter-example: "Pilot the new onboarding workflow with the Berlin office only" is NOT resolves for "Should we standardise the onboarding workflow across all offices?" — the pilot does not settle the company-wide question → null.
+- The decision assumes or presupposes an answer to the question rather than providing one.
+  Counter-example: "Configure the anomaly detector to use the gradient-boosting model" is NOT resolves for "Which ML framework should the anomaly detection team standardise on?" — the decision presupposes a model choice but does not answer the framework question → null.
 
-Counter-examples:
-- decision "Enforce two-approver sign-off for production deployments" does NOT resolve open_question "How should we handle emergency hotfix deployments?" — it sets a general policy but does not specifically settle the hotfix exception.
-- decision "Use Redis for session storage" does NOT resolve open_question "What caching strategy should we adopt across all services?" — the question is broader than the decision's scope.
-- decision "Deploy the reporting warehouse on BigQuery" does NOT resolve open_question "What cloud provider will we use?" — the warehouse decision presupposes a cloud provider but does not itself answer the provider question.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. **resolves** — if the decision provides a direct, complete answer that closes the open question. Ask: "Does this decision fully settle the question so it no longer needs to be tracked as open?" If yes → resolves.
+2. Otherwise → null.
+
+## Positive examples
+- "Source all raw materials exclusively through pre-approved vendors on the central procurement list" resolves "Which vendors are authorised for raw-material procurement?" — the decision gives a complete, actionable answer that closes the question.
+- "Use the internal feature-flag service for all A/B experiments going forward" resolves "What tooling should teams use to run A/B experiments?" — the decision settles the tooling choice so the question no longer needs to be tracked as open.
 """
 
 _DECISION_ACTION_ITEM_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Decision → ActionItem pairs.
 
+## Relation definitions
+
+### blocks
+The decision imposes a restriction, freeze, prohibition, or incompatible constraint that prevents the action item from proceeding as stated. If the action item can proceed by incorporating the decision as a new constraint or updating its deliverable, use null.
+- Example: "Suspend all third-party data-sharing agreements pending the privacy audit" blocks "Send aggregated usage data to the analytics partner".
+
+## Task
 You receive a source decision (current meeting) and a list of target action items (prior meeting KB).
-For each target, determine whether the decision directly hinders or prevents the action item from being executed.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source decision that imposes the prohibition or freeze that makes execution impossible — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source decision → target action item only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source decision → target action item only.
-- Require a direct execution dependency — the decision must make the specific action item impossible or impractical to complete as stated.
-- A decision that changes the context of an action item without stopping it does NOT block it.
-- A decision that provides a constraint, input, or parameter for an action item does NOT block it if the action item can proceed by incorporating that decision.
-- A decision that makes an action item redundant or superseded is NOT blocks — those are same-type relationships.
+## Over-extraction guards
 
-Selection priority:
-  1. Use blocks if the decision imposes a constraint, restriction, or freeze that prevents the action item from proceeding as stated.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the decision directly governs what the action item does. Ask: "Does this decision impose a specific prohibition, freeze, or incompatible constraint that makes executing this action item impossible as written — not just pointless, superseded, or redundant because the target system is being retired or replaced, or because the decision has already made the choice the action was meant to produce?" If no → null; do not proceed.
 
-Relationship definitions:
-- blocks: the source decision imposes a restriction, freeze, prohibition, or incompatible constraint that prevents the target action item from proceeding as stated.
-    If the action item can proceed by incorporating the decision as a constraint or updating its deliverable, use null.
-    - Example: decision "Defer all non-critical deployments pending security review" blocks action_item "Deploy new billing service to production".
-    - Example: decision "Freeze all schema changes until migration is complete" blocks action_item "Add nullable audit_ts column to events table".
-    - Example: decision "Require legal sign-off before any PII export" blocks action_item "Export historical user activity logs for the data science team".
-- null: the decision does not prevent the action item from proceeding, or the relationship is only contextual.
-    - Example: decision "Adopt statistical fraud scoring for phase one" and action_item "Sync on updated metric names for the support dashboard" — same monitoring domain but the metric sync can proceed regardless.
-    - Example: decision "Use PostgreSQL for all storage" and action_item "Write onboarding documentation for new engineers" — unrelated concerns.
-    - Example: decision "Search indexes must not be used as the system of record" and action_item "Write the search storage design note" — the design note can proceed by documenting that constraint; the decision changes required content but does not prevent the task.
+### Not blocks
+- The decision changes the context or parameters of the action item but the action item can still proceed by incorporating that change.
+  Counter-example: "Increase the minimum re-order quantity for all components to 500 units" is NOT blocks for "Review Q3 component inventory and flag shortfalls" — the decision changes the threshold but doesn't prevent the review → null.
+- The decision makes the action item redundant or obsolete by replacing the system or tool the action item was targeting — "no longer needed" is not the same as "prevented from executing."
+  Counter-example: "Retire the legacy HR portal and migrate to the new platform" is NOT blocks for "Add the new-hire checklist to the legacy HR portal" — the task is no longer useful, but there is no constraint preventing it from being executed as stated → null.
+- The decision shares the same domain or system but does not directly prevent execution.
+  Counter-example: "Require all firmware releases to pass hardware-in-the-loop testing" is NOT blocks for "Update the firmware build toolchain to the latest compiler version" — same firmware domain, but the testing requirement does not prevent the toolchain update → null.
+- The decision makes the choice that the action item was supposed to produce, rendering the action item obsolete — but obsolescence is not a prohibition.
+  Counter-example: "Adopt PostgreSQL as the standard database for all new services" is NOT blocks for "Evaluate PostgreSQL, MySQL, and CockroachDB and recommend a database" — the decision has already made the choice the action item was meant to produce, but nothing prevents the evaluation from proceeding → null.
 
-Counter-examples:
-- decision "Adopt Redis for session storage" does NOT block action_item "Implement OAuth provider integration" — the session storage choice is a constraint for the OAuth implementation but does not prevent the work from starting.
-- decision "Enable mutual TLS for all inter-service calls" does NOT block action_item "Set up CI/CD pipeline for the frontend" — they share infrastructure concerns but the CI/CD pipeline setup is independent.
-- decision "Cap exchange-rate cache TTL to 2 min for settlement calculations" does NOT block action_item "Benchmark cache hit rates under peak load" — the decision changes the TTL parameter but does not prevent the benchmarking task.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. Ask: could someone execute this action item right now if they chose to? If yes but it would be pointless or wasteful, use null — blocks requires that execution is physically, legally, or logically impossible, not merely unnecessary.
+2. **blocks** — if the decision imposes a restriction or freeze that makes execution impossible as stated. Ask: "Does this decision impose a restriction, freeze, or prohibition that prevents the action item from proceeding as stated?" If yes → blocks.
+3. Otherwise → null.
+
+## Positive examples
+- "Halt all external vendor onboarding until the procurement audit is complete" blocks "Onboard the new translation services vendor" — the halt is an explicit prohibition that makes onboarding impossible to proceed as stated.
+- "Require board sign-off before committing to any multi-year infrastructure contract" blocks "Sign the three-year data-centre colocation agreement" — the sign-off requirement is an incompatible constraint that prevents execution without prior approval.
 """
 
 _PROMPTS: dict[ConceptType, str] = {
@@ -133,7 +161,14 @@ _PROMPTS: dict[ConceptType, str] = {
 }
 
 
-class DecisionCrossTypeResolutionAgent(BaseCrossTypeResolutionAgent[_CrossTypeDecisionEntry]):
+_RESULT_MODELS: dict[ConceptType, type[_DecisionResult]] = {
+    ConceptType.RISK: _DecisionToRiskResult,
+    ConceptType.OPEN_QUESTION: _DecisionToOpenQuestionResult,
+    ConceptType.ACTION_ITEM: _DecisionToActionItemResult,
+}
+
+
+class DecisionCrossTypeResolutionAgent(BaseCrossTypeResolutionAgent):
     """Resolves Decision → Risk (mitigates), Decision → OpenQuestion (resolves), Decision → ActionItem (blocks)."""
 
     def __init__(self, llm: BaseChatModel, config: ResolutionLLMConfig, target_type: ConceptType) -> None:
@@ -141,8 +176,8 @@ class DecisionCrossTypeResolutionAgent(BaseCrossTypeResolutionAgent[_CrossTypeDe
         self._target_type = target_type
 
     @property
-    def _result_model(self) -> type[_CrossTypeDecisionResult]:
-        return _CrossTypeDecisionResult
+    def _result_model(self) -> type[_DecisionResult]:
+        return _RESULT_MODELS[self._target_type]
 
     @property
     def _system_prompt(self) -> str:

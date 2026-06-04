@@ -1,0 +1,48 @@
+description: >
+  Negative: the team raises an unresolved question about which A/B testing approach to adopt,
+  but then assigns a concrete investigation to a named person who explicitly accepts that the
+  assignment will settle the question. The Open Question is absorbed — no OQ should be extracted.
+  Models that over-extract will emit a spurious Open Question alongside the Action Item.
+
+tags:
+  tier: negative
+  difficulty: hard
+  focus: [open_question]
+  detail: "investigation assigned with explicit acceptance absorbs OQ"
+
+transcript: |
+  Before we commit to the new experiment roadmap, we need to sort out which A/B testing
+  approach we're going with. The question is whether we buy a third-party platform or
+  build the assignment and bucketing layer in-house. Both have real trade-offs and we
+  haven't evaluated them properly yet.
+  Right — vendor cost is predictable but we lose flexibility on custom metrics. Building
+  in-house gives us full control but could take two sprints just to get a reliable
+  bucketing service.
+  We shouldn't decide without numbers. We need an actual cost and effort estimate before
+  we can pick a direction.
+  Agreed, we can't commit to the experiment roadmap until that question is answered.
+  Omar, can you pull together a proper comparison — vendor pricing, estimated build effort,
+  and a recommendation — by the end of next week? That should give us what we need to close this.
+  Yes, absolutely. That comparison will answer it. I'll have a written recommendation ready
+  by next Friday.
+
+expected:
+  open_question: []
+
+  action_item:
+    - quote: "Omar, can you pull together a proper comparison — vendor pricing, estimated build effort,\n\
+        and a recommendation — by the end of next week? That should give us what we need to close this.\n\
+        Yes, absolutely. That comparison will answer it. I'll have a written recommendation ready\n\
+        by next Friday."
+      title: Produce A/B testing approach comparison and recommendation
+      description: >
+        Omar will prepare a written comparison of third-party A/B testing vendors versus
+        an in-house build, covering vendor pricing, estimated build effort, and a final
+        recommendation. He explicitly confirmed this will answer the open question about
+        which approach to adopt.
+      task: Prepare a comparison of vendor vs. in-house A/B testing options with pricing, effort estimate, and a recommendation.
+      assignee: Omar
+      due: by next Friday
+
+  decision: []
+  risk: []

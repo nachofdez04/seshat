@@ -1,0 +1,70 @@
+description: >
+  Three simultaneous Decision rejection criteria: contingent deferral (waiting on load-test
+  results before committing to a serving stack), agenda-only revisit note (put it on the
+  next PI planning), and vague strategic alignment with explicit non-commitment ("this is
+  clearly the right direction but we're not deciding today"). No Decision is extractable.
+  The unresolved serving-stack choice is an Open Question; the load-test assignment is an
+  Action Item.
+
+tags:
+  tier: negative
+  difficulty: hard
+  focus: [decision]
+  detail: "contingent deferral, agenda-only note, strategic alignment without commitment"
+
+transcript: |
+  We need to land on a serving infrastructure for the new recommendation model before the
+  Q4 launch. The two candidates are keeping the batch pipeline we have today or switching to
+  a real-time feature store with online inference. Engineering favours the real-time path
+  — it unlocks personalisation use cases we can't do today.
+  I think everyone agrees the real-time direction is where we want to go eventually. That
+  said, we have no idea what the latency profile looks like under production load. Our
+  estimates are all based on synthetic benchmarks.
+  Exactly. Until we run a proper load test against the candidate stack with real traffic
+  patterns, we're just guessing. I'm not comfortable committing to a serving architecture
+  on guesswork.
+  Agreed — we're not deciding this today. Once the load test is done and we have actual
+  p99 numbers, we can make a real call. Not before.
+  So what do we do with the launch timeline? We can't leave this open forever.
+  Let's put it on the next PI planning agenda. That gives us six weeks to run the load test
+  and come back with data. We bring the results to PI planning and close it there.
+  That works for me. It's clearly the right strategic direction, but "clearly right" isn't
+  the same as "decided." We need the numbers first.
+  Agreed. So to be explicit: no decision today. The architecture question stays open until
+  after the load test.
+  Ravi, can you own the load test? We need p50, p95, and p99 latency under two-times peak
+  traffic, compared across both candidates.
+  Sure. I can have results ready three weeks before PI planning.
+
+expected:
+  decision: []
+
+  open_question:
+    - quote: "We need to land on a serving infrastructure for the new recommendation model before the\n\
+        Q4 launch. The two candidates are keeping the batch pipeline we have today or switching to\n\
+        a real-time feature store with online inference. Engineering favours the real-time path\n\
+        — it unlocks personalisation use cases we can't do today.\n\
+        I think everyone agrees the real-time direction is where we want to go eventually. That\n\
+        said, we have no idea what the latency profile looks like under production load. Our\n\
+        estimates are all based on synthetic benchmarks.\n\
+        Exactly. Until we run a proper load test against the candidate stack with real traffic\n\
+        patterns, we're just guessing. I'm not comfortable committing to a serving architecture\n\
+        on guesswork.\n\
+        Agreed — we're not deciding this today. Once the load test is done and we have actual\n\
+        p99 numbers, we can make a real call. Not before."
+      title: Which serving infrastructure should the recommendation model use for Q4?
+      description: The team cannot choose between the existing batch pipeline and a real-time feature store until load-test results are available. The decision is explicitly deferred to PI planning.
+      question: Should the recommendation model use the existing batch pipeline or switch to a real-time feature store with online inference?
+      context: The team favours the real-time direction strategically but has no production latency data; the choice is contingent on load-test results and will be revisited at the next PI planning session.
+
+  action_item:
+    - quote: "Ravi, can you own the load test? We need p50, p95, and p99 latency under two-times peak\n\
+        traffic, compared across both candidates.\n\
+        Sure. I can have results ready three weeks before PI planning."
+      title: Run load test comparing batch pipeline vs real-time feature store
+      description: Ravi will run a load test measuring p50, p95, and p99 latency at 2x peak traffic for both serving candidates, with results ready three weeks before PI planning.
+      task: Run a load test comparing batch pipeline and real-time feature store under 2x peak traffic, capturing p50, p95, and p99 latency.
+      assignee: Ravi
+      due: three weeks before PI planning
+
+  risk: []

@@ -1,0 +1,37 @@
+description: >
+  Negative cases for Risk and Open Question: a concern is raised and immediately
+  dismissed — "That path is protected now" — so it must not be extracted as a Risk.
+  A question is raised and fully answered before the meeting ends — "no flag needed" —
+  so it must not be extracted as an Open Question. The answer commits the team to a
+  concrete rollout path, so it is a Decision.
+
+tags:
+  tier: negative
+  difficulty: easy
+  focus: [risk, open_question]
+  detail: "dismissed concern, question answered in-meeting"
+
+transcript: |
+  There's a chance the new endpoint could time out under high load — we saw that last time.
+  We already added circuit breaker logic in the last release. That path is protected now.
+  Good point, no issue there then.
+  One question: do we need feature flags for the rollout, or can we go straight to all users?
+  The analytics dashboard shows 95% of users are on a compatible client version. We can ship
+  to everyone immediately — no flag needed.
+  Perfect, that settles it.
+
+expected:
+  decision:
+    - quote: "One question: do we need feature flags for the rollout, or can we go straight to all users?\n\
+        The analytics dashboard shows 95% of users are on a compatible client version. We can ship\n\
+        to everyone immediately — no flag needed.\n\
+        Perfect, that settles it."
+      title: Ship new endpoint to all users without feature flag
+      description: The team decided the new endpoint can be rolled out immediately to all users without a feature flag.
+      decision: Ship the new endpoint to all users immediately without a feature flag.
+      rationale: Analytics show 95% of users are on a compatible client version.
+      alternatives_considered:
+        - Use feature flags for the rollout.
+  risk: []
+  open_question: []
+  action_item: []

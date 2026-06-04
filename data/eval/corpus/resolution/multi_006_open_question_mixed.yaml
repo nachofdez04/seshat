@@ -1,0 +1,63 @@
+corpus_id: multi_006_open_question_mixed
+description: >
+  Mixed open_question multi-target: one source open question against five KB nodes
+  spanning decision, open_question, and action_item types. Expected labels: blocks one
+  decision (unresolved question prevents a downstream decision from being finalised),
+  depends_on one open_question (source cannot be answered without first answering the
+  target), null three (same project area, no logical dependency — including the benchmark
+  action item, which informs the answer but is not a prerequisite the OQ depends on).
+  Tests that the open_question agent correctly distinguishes blocking from dependency,
+  and correctly assigns null to action items in the same domain.
+
+tags:
+  tier: multi
+  pairing: mixed
+  types: [action_item, decision, open_question]
+  relations: [blocks, depends_on]
+  difficulty: medium
+
+source_nodes:
+  - id: oq_shard_key_selection
+    type: open_question
+    title: What column should be used as the shard key for the events table?
+    description: The team has not agreed on which column to use as the shard key for the events table. The choice will significantly affect query patterns and hot-spot risk.
+    quote: "We still haven't picked the shard key for the events table — tenant_id and created_at are both on the table but neither is obviously right."
+
+kb_nodes:
+  - id: decision_partition_events_table
+    type: decision
+    title: Partition the events table by tenant to improve query isolation
+    description: The team decided to partition the events table by tenant, but deferred the specific partitioning column and strategy pending the shard key decision.
+    quote: "We're partitioning events by tenant — the exact column is TBD once we settle the shard key."
+
+  - id: oq_hot_shard_mitigation
+    type: open_question
+    title: How should we mitigate hot-shard risk if a single tenant generates disproportionate event volume?
+    description: If the shard key produces uneven distribution, some shards may receive much higher write loads than others. The team has not decided how to handle this.
+    quote: "If one tenant hammers the events table, their shard becomes a hot spot — we need a mitigation strategy."
+
+  - id: oq_events_table_retention
+    type: open_question
+    title: What is the retention period for the events table?
+    description: The team has not agreed on how long events should be retained before archival or deletion.
+    quote: "How long do we keep events in the hot table before archiving? No one has decided."
+
+  - id: oq_shard_key_for_audit_log
+    type: open_question
+    title: What column should be used as the shard key for the audit log table?
+    description: Separately from the events table, the team is also undecided on the shard key for the audit log table.
+    quote: "Same question applies to the audit log table — what do we shard on there?"
+
+  - id: action_benchmark_shard_candidates
+    type: action_item
+    title: Benchmark tenant_id and created_at as shard key candidates on the events table
+    description: The engineering team will run benchmarks comparing tenant_id and created_at as shard key candidates, measuring query latency and write distribution.
+    quote: "Run the benchmarks — tenant_id vs created_at on the events table, latency and distribution. We decide once we have the numbers."
+
+expected_relations:
+  - source: oq_shard_key_selection
+    target: decision_partition_events_table
+    rel_type: blocks
+  - source: oq_shard_key_selection
+    target: oq_hot_shard_mitigation
+    rel_type: depends_on

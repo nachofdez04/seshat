@@ -73,12 +73,25 @@ Strong success criteria let the LLM loop independently. Weak criteria ("make it 
 
 ## Project Structure
 
-This is an MVP — structure will be updated as components are defined. Expected layout:
-
 ```
-src/          # Application source code
-tests/        # pytest test suite
-pyproject.toml
+seshat/
+├── src/seshat/
+│   ├── agents/          # LLM agents: identification (extraction) and resolution families
+│   ├── blob_store/      # S3 blob store abstraction (aioboto3)
+│   ├── config/          # Pydantic settings (EvalConfig, LLMConfig, ConfidenceWeights, …)
+│   ├── eval/            # MLflow-backed eval harnesses and calibration meta-scorers
+│   ├── knowledge_store/ # Postgres-backed KB node persistence
+│   ├── models/          # Pydantic domain models (KBNode, enums, …)
+│   ├── observability/   # MLflow tracing and run management
+│   ├── pipeline/        # ExtractionOrchestrator and extraction sub-pipeline
+│   ├── secrets/         # AWS Secrets Manager helpers
+│   ├── utils/           # Shared utilities
+│   └── vector_store/    # pgvector semantic search abstraction
+├── tests/               # pytest test suite (unit/ and integration/)
+├── data/eval/           # Ground-truth YAML corpus fixtures for the eval harnesses
+├── alembic/             # DB migration scripts
+├── docs/                # Architecture docs, SDD, design specs
+└── pyproject.toml       # Single source of truth for deps, tool config, metadata
 ```
 ## Running Tests
 

@@ -1,0 +1,121 @@
+corpus_id: realistic_003_incident_response
+description: >
+  Realistic multi-source, multi-KB: an incident response process overhaul meeting
+  produces four source nodes (two decisions, one risk, one action item) resolved
+  against a KB of eight nodes from the previous meeting. Tests:
+  - decision supersedes a prior decision (PagerDuty replaces OpsGenie entirely)
+  - decision conflicts_with a prior decision (backend team unilaterally claims data pipeline scope without formally dissolving the data team rotation — both active simultaneously)
+  - decision resolves a prior open question (backend scope expansion settles the ownership debate)
+  - risk amends a prior risk (same concern, more specific failure condition)
+  - action item mitigates a prior risk (runbooks directly reduce MTTR for undocumented services)
+  - three null pairs (same incident response domain, no direct logical connection)
+
+grey_area:
+  - pair: [src_decision_pagerduty_primary, kb_decision_data_team_oncall]
+    note: >
+      The PagerDuty mandate ("one tool, all teams") could be read as conflicting with the
+      data team's separate on-call rotation if "separate rotation" is interpreted as implying
+      a separate tool (OpsGenie). Under that reading, both decisions are simultaneously active
+      and enforce contradictory tooling for the data team's rotation, making conflicts_with
+      arguable. Scored as null because the two decisions govern different axes — which alerting
+      tool to use vs who owns the data-pipeline rotation — and the PagerDuty decision does not
+      directly prevent the data team from maintaining their rotation structure; it only mandates
+      the tool. A conflicts_with prediction is an understandable inference but not canonical.
+
+tags:
+  tier: realistic
+  pairing: mixed
+  types: [action_item, decision, open_question, risk]
+  relations: [amends, conflicts_with, mitigates, resolves, supersedes]
+  difficulty: hard
+
+source_nodes:
+  - id: src_decision_pagerduty_primary
+    type: decision
+    title: PagerDuty is the single alerting and on-call management tool for all teams
+    description: The team decided to standardise on PagerDuty as the sole alerting and on-call rotation management tool, replacing the mix of OpsGenie and homegrown scripts currently in use.
+    quote: "PagerDuty is it — one tool, all teams. OpsGenie is out, the scripts are out. Agreed."
+
+  - id: src_decision_backend_oncall_scope
+    type: decision
+    title: The backend on-call rotation covers all services, including data pipeline services
+    description: The backend engineering team decided to expand their on-call rotation to include data pipeline services. The data team has not been formally notified and their existing rotation has not been dissolved.
+    quote: "Backend on-call will cover the data pipeline services going forward — we're not waiting for the data team to hand over formally."
+
+  - id: src_risk_runbook_gaps
+    type: risk
+    title: Incomplete runbooks for newly added data pipeline services increase MTTR during incidents
+    description: The data pipeline services being added to the backend on-call rotation lack runbooks. On-call engineers unfamiliar with these services will have no documented recovery steps, increasing mean time to resolution.
+    quote: "Those pipeline services have no runbooks — the first time someone gets paged for one at 3am, they're flying blind."
+
+  - id: src_action_write_pipeline_runbooks
+    type: action_item
+    title: Write runbooks for all data pipeline services being added to the backend on-call rotation
+    description: The data engineering team will write runbooks for each pipeline service before the rotation handover, covering failure modes, recovery steps, and escalation contacts.
+    quote: "Data engineering, write the runbooks for every pipeline service before we hand over to backend on-call — one per service."
+
+kb_nodes:
+  - id: kb_decision_opsgenie_primary
+    type: decision
+    title: OpsGenie is the primary alerting and on-call management tool
+    description: The team standardised on OpsGenie for alerting and on-call management across all backend services.
+    quote: "OpsGenie for all alerting and on-call — one tool across the backend."
+
+  - id: kb_decision_data_team_oncall
+    type: decision
+    title: Data pipeline services are managed by a separate data team on-call rotation
+    description: The data team maintains its own on-call rotation for data pipeline services, separate from the backend engineering rotation.
+    quote: "Data pipeline on-call stays with the data team — they know those services best."
+
+  - id: kb_oq_oncall_ownership
+    type: open_question
+    title: Should the backend on-call rotation absorb the data team on-call responsibilities?
+    description: The team has been debating whether to consolidate on-call ownership by merging the data team rotation into the backend rotation, or to keep them separate.
+    quote: "Do we merge the data team into the backend on-call rota, or keep them separate? We haven't decided."
+
+  - id: kb_risk_mttr_undocumented_services
+    type: risk
+    title: Undocumented services in the on-call rotation increase mean time to resolution
+    description: Services added to the on-call rotation without runbooks or documentation increase the risk of prolonged incidents because engineers lack recovery guidance.
+    quote: "Every undocumented service we add to on-call is a liability — incidents take longer to resolve when there's no playbook."
+
+  - id: kb_risk_alert_fatigue
+    type: risk
+    title: Alert fatigue from low-fidelity alerts reduces on-call engineer responsiveness
+    description: A high volume of low-priority or duplicate alerts desensitises on-call engineers, increasing the risk that critical alerts are missed or responded to slowly.
+    quote: "Too many noisy alerts and on-call starts ignoring them — that's how critical pages get missed."
+
+  - id: kb_action_configure_opsgenie_rotations
+    type: action_item
+    title: Configure OpsGenie on-call rotations for all backend services
+    description: The platform team needs to configure the on-call rotation schedules in OpsGenie for all backend services.
+    quote: "Platform team, configure the backend on-call rotations in OpsGenie before the next sprint ends."
+
+  - id: kb_action_audit_alert_rules
+    type: action_item
+    title: Audit and prune low-fidelity alert rules in OpsGenie
+    description: The team identified that many alert rules fire too frequently on transient conditions. An audit to remove or raise thresholds on low-fidelity rules is needed.
+    quote: "Audit the alert rules and kill the noisy ones — if it fires every five minutes it's not an alert, it's wallpaper."
+
+  - id: kb_action_select_alerting_tool
+    type: action_item
+    title: Evaluate PagerDuty and OpsGenie and recommend an alerting tool
+    description: The platform lead was asked to evaluate both tools and produce a recommendation before the next planning cycle.
+    quote: "Platform lead, evaluate PagerDuty vs OpsGenie and give us a recommendation next cycle."
+
+expected_relations:
+  - source: src_decision_pagerduty_primary
+    target: kb_decision_opsgenie_primary
+    rel_type: supersedes
+  - source: src_decision_backend_oncall_scope
+    target: kb_decision_data_team_oncall
+    rel_type: conflicts_with
+  - source: src_decision_backend_oncall_scope
+    target: kb_oq_oncall_ownership
+    rel_type: resolves
+  - source: src_risk_runbook_gaps
+    target: kb_risk_mttr_undocumented_services
+    rel_type: amends
+  - source: src_action_write_pipeline_runbooks
+    target: kb_risk_mttr_undocumented_services
+    rel_type: mitigates

@@ -1,0 +1,69 @@
+corpus_id: multi_003_decision_cross_type_mixed
+description: >
+  Cross-type decision multi-target: one source decision against six KB nodes spanning
+  risk, open_question, and action_item types. Expected labels: mitigates one risk,
+  resolves one open_question, blocks one action_item, null three (one per type).
+  Tests that the cross-type decision agent assigns the correct label to each target
+  type and correctly abstains on the null cases within the same mixed-type KB.
+
+tags:
+  tier: multi
+  pairing: mixed
+  types: [action_item, decision, open_question, risk]
+  relations: [blocks, mitigates, resolves]
+  difficulty: medium
+
+source_nodes:
+  - id: decision_schema_freeze
+    type: decision
+    title: Freeze all schema changes until the Q3 data platform migration is complete
+    description: The platform team decided to halt all database schema changes across all services until the Q3 data platform migration finishes, to prevent conflicting state mid-migration.
+    quote: "No schema changes until the Q3 data platform migration is done — we cannot have conflicting state mid-migration."
+
+kb_nodes:
+  - id: risk_conflicting_schema
+    type: risk
+    title: Concurrent schema changes may corrupt the data platform migration
+    description: If services continue applying schema changes while the data platform migration is in progress, the migration may encounter inconsistent table states and fail mid-run, causing data corruption.
+    quote: "If we keep applying schema changes while the migration runs, we risk corrupting the intermediate state — migration tools assume a stable schema."
+
+  - id: risk_deploy_downtime
+    type: risk
+    title: Blue-green deploy cutover may cause brief connection pool exhaustion
+    description: During blue-green deploy cutovers, the connection pool may momentarily be saturated if both old and new instances are draining simultaneously.
+    quote: "We've seen the pool spike during cutover — old and new instances both holding connections at the same time."
+
+  - id: oq_schema_change_policy
+    type: open_question
+    title: Should we halt schema changes during the Q3 data platform migration?
+    description: The team has been debating whether all schema changes should be paused for the duration of the Q3 data platform migration to avoid conflicting state mid-run.
+    quote: "Do we pause all schema changes for the Q3 migration window, or allow them to continue with extra care? We haven't decided."
+
+  - id: oq_retention_policy
+    type: open_question
+    title: What is the data retention period for archived tenant records?
+    description: The team has not agreed on how long archived tenant records should be retained before deletion.
+    quote: "We still haven't agreed on the retention window for archived tenant records."
+
+  - id: action_add_column
+    type: action_item
+    title: Add audit_ts column to the events table
+    description: The backend team needs to add a nullable audit_ts timestamp column to the events table as part of the audit logging feature.
+    quote: "Ravi, add the audit_ts column to the events table before the sprint ends."
+
+  - id: action_update_runbook
+    type: action_item
+    title: Update the on-call runbook for the payments service
+    description: The on-call rotation runbook for the payments service needs updating to reflect the new escalation path.
+    quote: "Someone update the payments runbook — the escalation path is out of date."
+
+expected_relations:
+  - source: decision_schema_freeze
+    target: risk_conflicting_schema
+    rel_type: mitigates
+  - source: decision_schema_freeze
+    target: oq_schema_change_policy
+    rel_type: resolves
+  - source: decision_schema_freeze
+    target: action_add_column
+    rel_type: blocks

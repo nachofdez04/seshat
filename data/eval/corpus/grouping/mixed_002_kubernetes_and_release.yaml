@@ -1,0 +1,25 @@
+corpus_id: mixed_002_kubernetes_and_release
+description: >
+  Three decisions: two belong to the same Kubernetes migration initiative and should merge,
+  the third is about the release process and must stay separate.
+
+tags:
+  concept_type: decision
+  difficulty: medium
+  scenario: mixed
+  detail: "two Kubernetes migration items merge; release cadence stays singleton"
+
+items:
+  - id: k8s-workloads
+    title: "Migrate all stateless workloads to Kubernetes by end of Q3"
+    description: "The team committed to migrating all stateless services to Kubernetes by the end of Q3, prioritising workloads with the highest horizontal scaling needs first and deferring stateful services to a separate track."
+  - id: k8s-namespace
+    title: "One Kubernetes namespace per deployment environment"
+    description: "The team decided to provision a dedicated Kubernetes namespace for each deployment environment (dev, staging, prod) to enforce isolation of secrets, network policies, and resource quotas per environment."
+  - id: semver-releases
+    title: "Adopt semantic versioning for all service releases"
+    description: "The team agreed to enforce semantic versioning (MAJOR.MINOR.PATCH) across all services, with breaking API changes requiring a MAJOR bump and automated validation in the CI pipeline to prevent accidental breakage."
+
+expected_groups:
+  - [k8s-workloads, k8s-namespace]
+  - [semver-releases]

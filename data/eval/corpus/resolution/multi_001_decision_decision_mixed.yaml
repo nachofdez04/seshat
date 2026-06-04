@@ -1,0 +1,63 @@
+corpus_id: multi_001_decision_decision_mixed
+description: >
+  Same-type decision↔decision multi-target: one source decision against five KB decisions.
+  Expected labels: supersedes two (replaces both the free-choice policy and the direct-write
+  permission — both are explicitly negated by the new mandate), amends one (narrows a broader
+  routing policy without replacing it), null two (unrelated concerns). Tests that the agent
+  uses supersedes when the source explicitly rescinds the target.
+
+tags:
+  tier: multi
+  pairing: same_type
+  types: [decision]
+  relations: [amends, supersedes]
+  difficulty: medium
+
+source_nodes:
+  - id: decision_centralise_logging
+    type: decision
+    title: Centralise all service logs through the platform logging service
+    description: The infrastructure team decided all services must route logs through the central platform logging service, prohibiting direct writes to any logging destination.
+    quote: "All services must route logs through the platform logging service — no direct writes to any destination from this point forward."
+
+kb_nodes:
+  - id: decision_any_destination
+    type: decision
+    title: Teams may route logs to any destination they choose
+    description: The infrastructure team allowed each team to send logs to whichever logging destination best suited their service — CloudWatch, Datadog, or any other sink.
+    quote: "Each team picks their own logging sink — we don't mandate a central destination."
+
+  - id: decision_direct_cloudwatch
+    type: decision
+    title: Services may write logs directly to CloudWatch
+    description: The infrastructure team permitted services to write logs directly to CloudWatch, without routing through any intermediary.
+    quote: "Services can write logs directly to CloudWatch — keep it simple."
+
+  - id: decision_route_to_observability_stack
+    type: decision
+    title: All services should route logs to the observability stack
+    description: The infrastructure team required all services to send their logs to the shared observability stack, without specifying which component within that stack to target.
+    quote: "All services must send logs to the observability stack — no local-only logging."
+
+  - id: decision_deploy_strategy
+    type: decision
+    title: Use blue-green deployments for all production releases
+    description: The team standardised on blue-green deployments to reduce downtime risk during production releases.
+    quote: "Blue-green for all prod releases going forward. Agreed."
+
+  - id: decision_feature_flags
+    type: decision
+    title: Gate all new features behind feature flags
+    description: New product features must be deployed behind feature flags to allow controlled rollout.
+    quote: "Every new feature ships behind a flag — no exceptions."
+
+expected_relations:
+  - source: decision_centralise_logging
+    target: decision_any_destination
+    rel_type: supersedes
+  - source: decision_centralise_logging
+    target: decision_direct_cloudwatch
+    rel_type: supersedes
+  - source: decision_centralise_logging
+    target: decision_route_to_observability_stack
+    rel_type: amends

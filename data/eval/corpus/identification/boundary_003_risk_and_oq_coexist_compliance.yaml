@@ -1,0 +1,40 @@
+description: >
+  Risk and Open Question coexist: a concrete compliance exposure is acknowledged
+  substantively (Risk), but no mitigation path, owner, or decision is established.
+  The unresolved compliance response is a genuine Open Question. Both must be extracted.
+
+tags:
+  tier: boundary
+  difficulty: hard
+  focus: [risk, open_question]
+  detail: "risk and OQ from same exchange, no mitigation path"
+
+transcript: |
+  We are logging customer email addresses in the analytics event payload.
+  If those logs are retained in the US region, we may violate the EU data processing agreement.
+  That is more than a policy question; it could create a compliance incident if we ship beta with the current logging.
+  Agreed. That is a real compliance exposure.
+
+expected:
+  risk:
+    - quote: "We are logging customer email addresses in the analytics event payload.\n\
+        If those logs are retained in the US region, we may violate the EU data processing agreement.\n\
+        That is more than a policy question; it could create a compliance incident if we ship beta with the current logging.\n\
+        Agreed. That is a real compliance exposure."
+      title: Analytics logs may violate EU data processing agreement
+      description: Customer email addresses in analytics logs retained in the US region may violate the EU data processing agreement and create a compliance incident during beta.
+      type: future
+      risk: Analytics event logs containing customer email addresses may create an EU data processing compliance incident if retained in the US region during beta.
+
+  open_question:
+    - quote: "We are logging customer email addresses in the analytics event payload.\n\
+        If those logs are retained in the US region, we may violate the EU data processing agreement.\n\
+        That is more than a policy question; it could create a compliance incident if we ship beta with the current logging.\n\
+        Agreed. That is a real compliance exposure."
+      title: How should email logging be changed to avoid EU data residency exposure before beta?
+      description: The group acknowledged a compliance exposure from logging email addresses in the US region but established no mitigation path, owner, or decision.
+      question: How should analytics event logging be changed or governed to avoid EU data processing compliance exposure before beta?
+      context: The group has not established a mitigation path or owner; no next step was assigned in the transcript.
+
+  decision: []
+  action_item: []

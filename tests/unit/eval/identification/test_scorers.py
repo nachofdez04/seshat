@@ -177,3 +177,49 @@ class TestFieldAccuracyFeedback:
         feedbacks = scorer(inputs=inputs, outputs=outputs, expectations=expectations)
         by_name = {f.name: f.value for f in feedbacks}
         assert by_name["action_item.assignee"] == pytest.approx(1.0)
+
+
+class TestNegativeCheckFeedback:
+    def test_spurious_rate_one_when_prediction_on_negative_example(self):
+        # DECISION predicted but nothing expected → spurious_rate = 1.0
+        inputs = {"transcript": TRANSCRIPT, "corpus_id": "001"}
+        outputs = {
+            "nodes": [
+                make_node(quote=_DECISION_QUOTE, transcript=TRANSCRIPT, type=ConceptType.DECISION).model_dump(
+                    mode="json"
+                )
+            ]
+        }
+        expectations = {"expected_nodes": []}
+        feedbacks = scorer(inputs=inputs, outputs=outputs, expectations=expectations)
+        by_name = {f.name: f.value for f in feedbacks}
+        assert by_name["decision.spurious_rate"] == pytest.approx(1.0)
+
+    def test_spurious_rate_zero_when_no_prediction_on_negative_example(self):
+        # No nodes predicted, nothing expected → spurious_rate = 0.0 for all types
+        inputs = {"transcript": TRANSCRIPT, "corpus_id": "001"}
+        outputs = {"nodes": []}
+        expectations = {"expected_nodes": []}
+        feedbacks = scorer(inputs=inputs, outputs=outputs, expectations=expectations)
+        by_name = {f.name: f.value for f in feedbacks}
+        for ctype in ConceptType:
+            assert by_name[f"{ctype.value}.spurious_rate"] == pytest.approx(0.0)
+
+    def test_spurious_rate_only_for_negative_types_when_mixed(self):
+        # DECISION has expected node, RISK does not — only RISK gets spurious_rate
+        inputs = {"transcript": TRANSCRIPT, "corpus_id": "001"}
+        outputs = {
+            "nodes": [
+                make_node(quote=_DECISION_QUOTE, transcript=TRANSCRIPT, type=ConceptType.DECISION).model_dump(
+                    mode="json"
+                ),
+                make_node(quote=_RISK_QUOTE, transcript=TRANSCRIPT, type=ConceptType.RISK).model_dump(mode="json"),
+            ]
+        }
+        expectations = {"expected_nodes": [corpus_node(_DECISION_QUOTE, ConceptType.DECISION).model_dump(mode="json")]}
+        feedbacks = scorer(inputs=inputs, outputs=outputs, expectations=expectations)
+        by_name = {f.name: f.value for f in feedbacks}
+        assert "decision.spurious_rate" not in by_name
+        assert by_name["risk.spurious_rate"] == pytest.approx(1.0)
+        assert by_name["action_item.spurious_rate"] == pytest.approx(0.0)
+        assert by_name["open_question.spurious_rate"] == pytest.approx(0.0)

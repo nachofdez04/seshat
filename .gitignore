@@ -37,6 +37,7 @@ coverage.xml
 .streamlit/secrets.toml
 
 # Local data — KB, Chroma, MLflow artifacts (per spec)
+.seshat/
 data/*
 !data/eval/
 

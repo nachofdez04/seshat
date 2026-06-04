@@ -1,0 +1,28 @@
+corpus_id: null_005_decision_action_item_unrelated
+description: >
+  Cross-type decision→action_item discriminating: a decision and an action item from
+  the same project with no blocks relationship. The decision concerns a design choice;
+  the action item concerns an unrelated operational task that does not depend on it.
+
+tags:
+  tier: "null"
+  pairing: cross_type
+  types: [action_item, decision]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: decision_pagination
+    type: decision
+    title: Use cursor-based pagination for all list API endpoints
+    description: The team chose cursor-based pagination over offset pagination for all list endpoints to ensure consistent performance at scale.
+    quote: "All list endpoints will use cursor-based pagination — offset pagination breaks down at scale."
+
+kb_nodes:
+  - id: action_oncall
+    type: action_item
+    title: Update the on-call runbook with the new escalation path
+    description: Following the org restructure, the on-call escalation path has changed. The runbook must be updated to reflect the new contacts and SLA targets before the next on-call rotation.
+    quote: "Update the on-call runbook before the next rotation — the escalation contacts have changed."
+
+expected_relations: []

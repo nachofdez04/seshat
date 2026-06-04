@@ -1,0 +1,57 @@
+description: >
+  Baseline: one obvious item per type, direct quotes, specific titles. All four agents
+  should extract exactly one item each with high confidence.
+
+tags:
+  tier: happy-path
+  difficulty: easy
+  focus: [decision, risk, action_item, open_question]
+
+transcript: |
+  We need to pick a database for the new service. Options are PostgreSQL or MySQL.
+  PostgreSQL has native JSONB and better full-text search. We need both.
+  Agreed. Let's go with PostgreSQL.
+  Good. Priya, can you set up the schema migrations by end of week?
+  Sure, I'll have it done by Friday.
+  We also need to decide the caching layer. Redis or Memcached?
+  We don't have the load numbers yet to make that call. Let's defer.
+  And there's a risk with the migration timeline. If the staging environment is still
+  down on Thursday, we can't validate before the Friday deadline.
+  That's a real concern. We haven't got a fix date from infra yet.
+
+expected:
+  decision:
+    - quote: "We need to pick a database for the new service. Options are PostgreSQL or MySQL.\n\
+        PostgreSQL has native JSONB and better full-text search. We need both.\n\
+        Agreed. Let's go with PostgreSQL."
+      title: Use PostgreSQL for the new service
+      description: The team chose PostgreSQL over MySQL for the new service, citing JSONB and full-text search requirements.
+      decision: Use PostgreSQL for the new service database.
+      rationale: PostgreSQL has native JSONB and better full-text search, both of which are required.
+      alternatives_considered: ["MySQL"]
+
+  risk:
+    - quote: "And there's a risk with the migration timeline. If the staging environment is still\n\
+        down on Thursday, we can't validate before the Friday deadline.\n\
+        That's a real concern. We haven't got a fix date from infra yet."
+      title: Staging environment outage may block migration validation
+      description: If staging is still down on Thursday, the team cannot validate the migration before the Friday deadline.
+      type: blocker
+      risk: Staging environment outage may prevent migration validation before the Friday deadline.
+
+  open_question:
+    - quote: "We also need to decide the caching layer. Redis or Memcached?\n\
+        We don't have the load numbers yet to make that call. Let's defer."
+      title: Which caching layer — Redis or Memcached?
+      description: The team deferred the caching layer decision pending load test results.
+      question: Which caching layer should the new service use — Redis or Memcached?
+      context: The team lacks load numbers needed to make the call.
+
+  action_item:
+    - quote: "Good. Priya, can you set up the schema migrations by end of week?\n\
+        Sure, I'll have it done by Friday."
+      title: Set up schema migrations
+      description: Priya will set up schema migrations for the new service by Friday.
+      task: Set up the schema migrations for the new service.
+      assignee: Priya
+      due: by Friday

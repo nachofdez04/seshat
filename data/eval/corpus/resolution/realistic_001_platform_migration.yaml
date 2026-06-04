@@ -1,0 +1,125 @@
+corpus_id: realistic_001_platform_migration
+description: >
+  Realistic multi-source, multi-KB: a platform migration planning meeting produces four source
+  nodes (two decisions, one risk, one action item) which are resolved against a KB of eight
+  nodes from the previous meeting (decisions, risks, open questions, action items).
+  Tests same-type and cross-type resolution in a single pass:
+  - decision supersedes a prior decision (old migration approach replaced)
+  - two decisions mitigate the same prior risk (Flyway adoption eliminates mixed tooling; freeze prevents conflicting changes during rollout)
+  - decision resolves a prior open question (platform choice settled)
+  - risk amends a prior risk (more specific failure mode for the same concern)
+  - action item depends_on a prior action item (cannot start until staging is ready)
+  - three null pairs (unrelated concerns that must not be linked)
+
+grey_area:
+  - pair: [src_risk_partial_rollout, kb_decision_adhoc_scripts]
+    note: >
+      The risk agent predicts blocks because the partial rollout risk makes ad-hoc scripts
+      dangerous. In reality kb_decision_adhoc_scripts is superseded by src_decision_adopt_flyway
+      in the same run, but the risk agent has no visibility into sibling-decision supersessions.
+      The post-processing step in orchestrator._run_resolution strips blocks against superseded
+      targets, so this spurious prediction is eliminated at the pipeline level.
+
+tags:
+  tier: realistic
+  pairing: mixed
+  types: [action_item, decision, open_question, risk]
+  relations: [amends, depends_on, mitigates, resolves, supersedes]
+  difficulty: hard
+
+source_nodes:
+  - id: src_decision_adopt_flyway
+    type: decision
+    title: Adopt Flyway for all database migrations going forward
+    description: The team decided to standardise on Flyway as the migration toolchain, replacing the ad-hoc SQL scripts currently maintained per service.
+    quote: "We're standardising on Flyway — the per-service ad-hoc scripts are unmanageable. Agreed."
+
+  - id: src_decision_freeze_schema
+    type: decision
+    title: Freeze all schema changes until the Flyway rollout is complete
+    description: No service may apply schema changes until all services have been onboarded to Flyway, to prevent migration-state conflicts during the rollout.
+    quote: "Nothing touches the schema until every service is on Flyway — we can't have mixed migration state mid-rollout."
+
+  - id: src_risk_partial_rollout
+    type: risk
+    title: Services not yet onboarded to Flyway may apply conflicting schema changes during the freeze
+    description: If any service team is unaware of the freeze or bypasses it, ad-hoc schema changes during the Flyway rollout could corrupt migration state in services that have already onboarded.
+    quote: "The real risk is a team that hasn't heard about the freeze applying a script manually — that breaks Flyway's state tracking for the whole cluster."
+
+  - id: src_action_onboard_payments
+    type: action_item
+    title: Onboard the payments service to Flyway
+    description: Omar will migrate the payments service from its ad-hoc SQL scripts to Flyway-managed migrations as the first onboarding target.
+    quote: "Omar, payments service first — get it onto Flyway and prove out the process."
+
+kb_nodes:
+  - id: kb_decision_adhoc_scripts
+    type: decision
+    title: Each service maintains its own ad-hoc SQL migration scripts
+    description: Each service team manages schema migrations independently using plain SQL scripts checked into their service repository.
+    quote: "Each team owns their schema scripts — no shared tooling needed at this scale."
+
+  - id: kb_decision_migration_toolchain_open
+    type: decision
+    title: Migration toolchain selection deferred pending prototype evaluation
+    description: The team deferred the migration toolchain decision pending a prototype evaluation of Flyway and Liquibase, with no deadline set.
+    quote: "Let's prototype both Flyway and Liquibase before we pick — no rush."
+
+  - id: kb_risk_mixed_migration_state
+    type: risk
+    title: Mixed migration tooling across services may cause schema drift
+    description: If some services use the new toolchain while others continue with ad-hoc scripts, schema drift between services becomes harder to detect and resolve.
+    quote: "If we end up with half the services on a new tool and half on scripts, we'll have no single view of migration state."
+
+  - id: kb_risk_deploy_downtime
+    type: risk
+    title: Blue-green deploy cutover may cause brief connection pool exhaustion
+    description: During blue-green deploy cutovers, the connection pool may momentarily be saturated if both old and new instances are draining simultaneously.
+    quote: "We've seen the pool spike during cutover — old and new instances both holding connections at the same time."
+
+  - id: kb_oq_toolchain_choice
+    type: open_question
+    title: Should we use Flyway or Liquibase for database migrations?
+    description: The team has not yet chosen between Flyway and Liquibase; both were shortlisted after the prototype evaluation.
+    quote: "Flyway or Liquibase — we need to pick one before we can start onboarding services."
+
+  - id: kb_oq_rollback_strategy
+    type: open_question
+    title: What is the rollback strategy if a Flyway migration fails mid-deployment?
+    description: The team has not defined a rollback procedure for failed Flyway migrations in production.
+    quote: "If a migration fails halfway, what do we do? We haven't defined that yet."
+
+  - id: kb_action_provision_staging
+    type: action_item
+    title: Provision a dedicated staging environment for Flyway onboarding tests
+    description: The platform team needs to provision a staging environment before any service can be onboarded to Flyway for testing.
+    quote: "Platform team, provision staging first — nothing can be onboarded until we have somewhere to test."
+
+  - id: kb_action_update_runbook
+    type: action_item
+    title: Update the on-call runbook for the payments service
+    description: The on-call rotation runbook for the payments service needs updating to reflect the new escalation path.
+    quote: "Someone update the payments runbook — the escalation path is out of date."
+
+expected_relations:
+  - source: src_decision_adopt_flyway
+    target: kb_decision_adhoc_scripts
+    rel_type: supersedes
+  - source: src_decision_adopt_flyway
+    target: kb_decision_migration_toolchain_open
+    rel_type: supersedes
+  - source: src_decision_adopt_flyway
+    target: kb_oq_toolchain_choice
+    rel_type: resolves
+  - source: src_decision_adopt_flyway
+    target: kb_risk_mixed_migration_state
+    rel_type: mitigates
+  - source: src_decision_freeze_schema
+    target: kb_risk_mixed_migration_state
+    rel_type: mitigates
+  - source: src_risk_partial_rollout
+    target: kb_risk_mixed_migration_state
+    rel_type: amends
+  - source: src_action_onboard_payments
+    target: kb_action_provision_staging
+    rel_type: depends_on

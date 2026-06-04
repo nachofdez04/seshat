@@ -1,0 +1,15 @@
+description: >
+  Verifier must reject a description that infers a rejected alternative not named in the
+  quote. "Chosen over MySQL" is a plausible inference but the quote names only PostgreSQL.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: medium
+  detail: "rejected alternative (MySQL) inferred but absent from quote"
+
+nodes:
+  - title: "Use PostgreSQL"
+    description: "PostgreSQL was chosen over MySQL as the sole persistence layer."
+    quote: "we'll use PostgreSQL for all our persistence needs, the current DB engine does not perform well enough"
+    expected_supported: false

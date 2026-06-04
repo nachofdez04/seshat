@@ -1,0 +1,14 @@
+corpus_id: two_singletons
+description: "Two unrelated decisions — each should be a singleton group."
+
+items:
+  - id: on-call-rotation
+    title: "Switch to weekly on-call rotation"
+    description: "The team agreed to move from bi-weekly to weekly on-call rotations starting next sprint, citing engineer burnout under the current schedule and the need to distribute the load more evenly."
+  - id: api-versioning
+    title: "Use URL versioning for all public APIs"
+    description: "The team decided that all public API endpoints will use URL-based versioning (/v1/, /v2/), chosen over header-based versioning for its debuggability and simplicity for external consumers."
+
+expected_groups:
+  - [on-call-rotation]
+  - [api-versioning]

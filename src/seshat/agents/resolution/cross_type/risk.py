@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from seshat.agents.resolution.base import BaseCrossTypeResolutionAgent, _EntryBase, _ResultBase
+from seshat.agents.resolution.base import BaseCrossTypeResolutionAgent, _CrossTypeEntry, _ResultBase
 from seshat.models.enums import ConceptType, RelationshipType
 
 if TYPE_CHECKING:
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from seshat.config.settings import ResolutionLLMConfig
 
 
-class _CrossTypeRiskEntry(_EntryBase):
+class _CrossTypeRiskEntry(_CrossTypeEntry):
     rel_type: Literal[RelationshipType.BLOCKS] | None  # type: ignore[override]
 
 
@@ -21,109 +21,123 @@ class _CrossTypeRiskResult(_ResultBase[_CrossTypeRiskEntry]): ...
 _RISK_DECISION_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Risk → Decision pairs.
 
+## Relation definitions
+
+### blocks
+The risk, if unresolved, makes it impossible or definitionally wrong to act on the decision as stated.
+- Example: "Export classification ruling for this component is still pending with the trade-compliance office" blocks "Ship the updated hardware module to the overseas manufacturing partner" — the decision cannot be legally enacted until the ruling is known.
+
+## Task
 You receive a source risk (current meeting) and a list of target decisions (prior meeting KB).
-For each target, determine whether the risk directly hinders or prevents the decision from being executed or enforced.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source risk that states the unresolved condition that makes enacting the decision impossible — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source risk → target decision only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source risk → target decision only.
-- Require a direct execution dependency — the risk must make the specific decision impossible or dangerous to execute as stated.
-- A risk that raises concerns about a decision's consequences without stopping it does NOT block it.
-- A risk that affects the same domain as the decision without directly obstructing its execution does NOT block it.
-- A risk does NOT block a decision whose purpose is to defer, reject, investigate, or postpone the risky work unless the risk prevents that deferral or investigation itself.
-- A risk that can be handled as an implementation constraint does NOT block the decision unless the decision cannot be safely acted on as stated.
+## Over-extraction guards
 
-Selection priority:
-  1. Use blocks if the risk, if unresolved, would make it unsafe, illegal, or operationally impossible to act on the decision as stated.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the risk directly threatens the feasibility of the decision. Ask: "Does this unresolved risk make it impossible or definitionally wrong to enact this decision — not just risky or suboptimal?" If no → null; do not proceed.
 
-Relationship definitions:
-- blocks: the source risk makes the target decision unsafe, illegal, operationally impossible, or invalid to execute/enforce as stated.
-    The risk must be a concrete prerequisite or obstacle. A risk that merely describes a possible downside, tradeoff, or consequence of the decision is null.
-    - Example: risk "Legal sign-off pending on data residency" blocks decision "Deploy EU tenant data to region X".
-    - Example: risk "Load test results show the new storage layer cannot handle peak throughput" blocks decision "Migrate all writes to the new storage layer by end of quarter".
-    - Example: risk "Certificate authority validation unavailable in the eu-west-1 region" blocks decision "Enforce mutual TLS for all services deployed in eu-west-1".
-- null: the risk does not block the decision, or only raises concerns without stopping execution.
-    - Example: risk "Stale exchange-rate cache corrupting settlement calculations" and decision "Adopt RabbitMQ as the asynchronous job queue" — they share a data-quality concern but the queueing decision can be written and adopted regardless.
-    - Example: risk "Invoice export service degrades above 5 000 writes/min" and decision "Enforce code review for all production changes" — different domains entirely.
-    - Example: risk "Automated incident classification alerts may become noise without operations triage" and decision "Defer incident classification until triage ownership is clarified" — the risk motivates the deferral but does not block executing the deferral decision.
+### Not blocks
+- The risk describes a concern, consequence, or tradeoff related to the decision without making it impossible or definitionally wrong to act on.
+  Counter-example: "The chosen open-source library has no commercial support tier" is NOT blocks for "Standardise on that library for all internal data-transformation jobs" — the support gap is a tradeoff to manage, not a concrete obstacle to adopting it → null.
+- The risk motivates, informs, or is addressed by the decision without preventing execution.
+  Counter-example: "Firmware rollback capability not yet validated on the new hardware revision" is NOT blocks for "Defer the firmware upgrade until rollback has been validated" — the risk motivates the deferral but does not prevent executing it → null.
+- The risk is a symptom of the current situation, not a prerequisite the decision depends on.
+  Counter-example: "Teams may misapply the new expense-approval policy during the transition period" is NOT blocks for "Adopt the revised expense-approval policy company-wide" — the risk describes a rollout hazard; the decision can be adopted regardless → null.
 
-Counter-examples:
-- risk "Interim request caps becoming permanent technical debt" does NOT block decision "Set request limits for the billing API" — the risk flags a long-term concern, not an obstacle to the decision itself.
-- risk "Third-party vendor may not meet SLA guarantees" does NOT block decision "Use vendor X for log aggregation" — the risk is a consequence of the decision, not a blocker; the decision can still be executed.
-- risk "Document conversion may fail for files above 512 MB" does NOT block decision "Standardise on PDF/A for archived documents" — they share the document-processing domain but the format decision can be adopted regardless.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. **blocks** — the risk makes it impossible or definitionally wrong to act on the decision as stated. Ask: "Does the unresolved risk make it impossible or definitionally wrong to act on this decision?" If yes → blocks.
+2. Otherwise → null.
+
+## Boundary examples
+- blocks vs null:
+  - "Load test shows the new message broker cannot sustain the required throughput at peak" → blocks "Migrate all event publishing to the new message broker" — executing the decision would concretely fail.
+  - "The new message broker may experience elevated latency under sustained load" → null "Standardise on the new message broker for non-critical notification events" — risk is a concern; the decision can still be adopted.
+
+## Positive examples
+- "Regulatory sandbox approval for the new product feature is still outstanding" blocks "Launch the new product feature to all customers" — the decision cannot be executed without the approval.
 """
 
 _RISK_OPEN_QUESTION_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Risk → OpenQuestion pairs.
 
+## Relation definitions
+
+### blocks
+The risk makes every possible answer to the question premature or definitionally invalid until it is resolved. The risk withholds a constraint, fact, or regulatory outcome that determines what answers are even permissible — not just one factor to weigh.
+- Example: "Compliance audit may prohibit storing session tokens longer than 24 h" blocks "What session token TTL should we use?" — every TTL answer is invalid until the audit outcome is known.
+
+## Task
 You receive a source risk (current meeting) and a list of target open questions (prior meeting KB).
-For each target, determine whether the risk directly prevents the open question from being meaningfully answered.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source risk that states the unresolved condition that makes every possible answer to the question premature — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source risk → target open question only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source risk → target open question only.
-- Require a direct dependency — the risk must make it impossible or pointless to answer the question until the risk is resolved.
-- A risk that is relevant to the question's answer without preventing the analysis does NOT block it.
-- A risk in the same domain that does not constrain the question's answer space does NOT block it.
-- A risk concerning one possible option does NOT block an open question about choosing among options unless the risk must be resolved before any option can be evaluated.
-- A risk that should be considered as an input to the answer is null unless it makes every answer premature, unsafe, or operationally invalid.
+## Over-extraction guards
 
-Selection priority:
-  1. Use blocks if, while the risk is unresolved, any answer to the open question would be premature, unsafe, or operationally invalid.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the risk withholds information that determines what answers to the question are even permissible. Ask: "Does this risk make every possible answer to the question premature or definitionally invalid — not just harder to evaluate, less certain, or ruling out one candidate while leaving defensible alternatives?" If no → null; do not proceed.
 
-Relationship definitions:
-- blocks: the source risk makes the target open question unanswerable, premature, or operationally invalid until the risk is resolved.
-    The risk must determine whether the question has a valid answer at all, not merely be one factor to consider while answering it.
-    - Example: risk "Legal review still pending on data residency" blocks open_question "Where should EU tenant data be hosted?" — the legal constraint must be known before the question can be answered.
-    - Example: risk "Load test shows the current payment gateway cannot sustain peak checkout traffic" blocks open_question "Should we route all checkouts through the new payment gateway this quarter?" — the performance data directly gates the decision.
-    - Example: risk "Compliance audit may prohibit storing session tokens longer than 24 h" blocks open_question "What session token TTL should we use?" — the TTL answer depends on the audit outcome.
-- null: the risk does not prevent the question from being analysed or answered, or only raises concerns in the same domain.
-    - Example: risk "Design language inadvertently locks in a single search vendor" and open_question "Automated Ticket Routing: Build vs. Buy Decision" — both are platform choices but the build/buy analysis can proceed independently.
-    - Example: risk "Pipeline may fail for messages above 512 KB" and open_question "What branching strategy should we use?" — unrelated concerns.
-    - Example: risk "A managed search vendor may not meet latency targets" and open_question "Should we use hosted search, self-managed search, or database-native search?" — the risk informs option evaluation but does not prevent comparing the options.
+### Not blocks
+- The risk informs or motivates the question but a defensible answer can still be given despite the risk.
+  Counter-example: "A managed search vendor may not meet latency targets" is NOT blocks for "Should we use hosted, self-managed, or database-native search?" — the risk informs one option but the question can still be analysed and answered → null.
+- The risk is a symptom of the situation — the question can be answered regardless of whether the risk is resolved.
+  Counter-example: "Engineers unfamiliar with the new auth service may escalate incidents incorrectly" is NOT blocks for "Should we consolidate on-call ownership across all services?" — the risk follows from expansion decisions; it doesn't gate the ownership question → null.
+- The risk rules out one or more candidate answers but a defensible answer can still be given from the remaining options.
+  Counter-example: "Refresh tokens stored in browser localStorage are vulnerable to XSS exfiltration" is NOT blocks for "What is the recommended client-side token storage pattern?" — the risk rules out localStorage, but a defensible answer (e.g., httpOnly cookies) can still be given without resolving the risk → null.
 
-Counter-examples:
-- risk "Cache warming failure causes elevated latency after deployments" does NOT block open_question "What cache TTL should we use for product catalogue data?" — the risk is a consequence of a cache decision, not a prerequisite for making it; the question can still be analysed.
-- risk "Stale exchange-rate cache may corrupt settlement calculations" does NOT block open_question "What monitoring stack should we adopt?" — same data concern but the monitoring question can be answered regardless.
-- risk "Third-party vendor may not meet SLA guarantees" does NOT block open_question "Which vendor should we use for log aggregation?" — the risk informs the answer but does not make it impossible to evaluate options and decide.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. **blocks** — only if every possible answer to the question would be premature or definitionally invalid until the risk is resolved. Ask: "Can a defensible answer be given to this question despite the risk?" If yes → null. If no → blocks.
+2. Otherwise → null.
+
+## Boundary examples
+- blocks vs null:
+  - "Load test shows payment gateway cannot sustain peak checkout traffic" → blocks "Should we route all checkouts through the new gateway this quarter?" — the performance data makes every answer to the question invalid until resolved.
+  - "Third-party vendor may not meet SLA guarantees" → null "Which vendor should we use for log aggregation?" — risk informs the evaluation; a defensible answer can still be given.
+
+## Positive examples
+- "Legal review still pending on data residency" blocks "Where should EU tenant data be hosted?" — no valid answer exists until the legal constraint is known.
 """
 
 _RISK_ACTION_ITEM_PROMPT = """\
 You are a cross-type relationship resolution agent evaluating Risk → ActionItem pairs.
 
+## Relation definitions
+
+### blocks
+The risk makes the action item impossible to complete correctly as stated — proceeding would produce incorrect or harmful results, or the task literally cannot be executed until the risk is resolved.
+- Example: "The new labelling schema contains unresolved conflicts between two taxonomy working groups" blocks "Re-label the entire training corpus using the new labelling schema" — executing would embed the conflicting labels into the corpus.
+
+## Task
 You receive a source risk (current meeting) and a list of target action items (prior meeting KB).
-For each target, determine whether the risk directly prevents the action item from being safely or meaningfully executed.
+For each target, fill rationale first (your reasoning for the label or for null), then quote in evidence the specific clause from the source risk that states the unresolved condition that makes completing the action item impossible — if you cannot point to a specific clause, set evidence to null and rel_type to null. Every target MUST appear in the output.
+Relationships are directed: source risk → target action item only.
+null is the correct and safe rel_type answer for any pair that does not clearly pass every test below.
 
-Rules:
-- Every target MUST appear in the output — including those with rel_type=null.
-- Relationships are directed: source risk → target action item only.
-- Require a direct execution dependency — the risk must make it unsafe, impossible, or operationally invalid to execute the specific action item.
-- A risk that raises concerns about consequences without stopping execution does NOT block it.
-- A risk that affects the same system or domain without directly obstructing the task does NOT block it.
-- A risk does NOT block an action item whose purpose is to investigate, validate, document, or mitigate that risk, unless the action itself would be unsafe or impossible.
-- A risk that changes how the action item should be done is null if the action can still proceed with that constraint.
+## Over-extraction guards
 
-Selection priority:
-  1. Use blocks if proceeding with the action item while the risk is unresolved would be unsafe, illegal, or would cause the action item to fail or be meaningless.
-  2. Otherwise, use null.
+### Concern domain check (hard stop)
+Before assigning any label, confirm the risk directly threatens the correctness or executability of the action item. Ask: "Would proceeding with this action item while this risk is unresolved produce incorrect or harmful results, or make it impossible to complete?" If no → null; do not proceed.
 
-Relationship definitions:
-- blocks: the source risk makes the target action item unsafe, impossible, operationally invalid, or meaningless to execute until the risk is resolved.
-    The risk must create a specific, concrete obstacle to executing the task. If the task is investigation, validation, documentation, or mitigation work that can proceed because of the risk, use null.
-    - Example: risk "Shared Redis session mode may break tenant isolation" blocks action_item "Roll out shared Redis sessions to all web applications" — rolling out would break isolation guarantees.
-    - Example: risk "Certificate authority for eu-west-2 is unavailable" blocks action_item "Enable mutual TLS for all services in eu-west-2" — the task cannot be completed without a working CA.
-    - Example: risk "Load test shows current throughput limit is 200 RPS, not 500" blocks action_item "Set checkout rate limiting threshold to 500 RPS in production" — the action would be based on incorrect capacity data.
-- null: the risk does not prevent the action item from proceeding, or raises concerns without creating a concrete obstacle.
-    - Example: risk "Interim request caps becoming permanent technical debt" and action_item "Billing Worker Scaling Proposal" — the risk flags a debt concern but the proposal work can proceed.
-    - Example: risk "Invoice export service degrades above 5 000 writes/min" and action_item "Write runbook for on-call incident response" — same operations domain, no execution dependency.
-    - Example: risk "Cache TTL may corrupt settlement calculations" and action_item "Evaluate safe cache TTLs for exchange-rate data" — the risk motivates the evaluation but does not block doing it.
+### Not blocks
+- The risk raises concerns relevant to the action item's domain but the task can still be executed or started.
+  Counter-example: "The new supplier's lead times may increase during peak season" is NOT blocks for "Audit current inventory levels and flag items below safety stock" — same procurement domain, but the auditing task is not obstructed → null.
+- The action item's purpose is to investigate, validate, or mitigate the risk — the risk cannot block its own resolution work.
+  Counter-example: "Batch job scheduling conflicts may cause data gaps in the nightly report" is NOT blocks for "Map all batch job dependencies and identify scheduling conflicts" — the action item is meant to investigate the risk, not be blocked by it → null.
+- The risk makes the action item's outcome less certain or more complex but the task can still proceed.
+  Counter-example: "Legacy ERP integration may produce duplicate records during the cutover window" is NOT blocks for "Update the field-mapping configuration for the new ERP connector" — the duplication risk is a concern during cutover; the configuration update can proceed independently → null.
 
-Counter-examples:
-- risk "Cache warming failure causes elevated latency after deployments" does NOT block action_item "Set up CI/CD pipeline for the admin frontend" — the risk concerns backend cache, not frontend CI/CD.
-- risk "API rate limiting may allow a single client to exhaust capacity" does NOT block action_item "Implement OAuth provider integration" — they share the API layer but the OAuth implementation is not gated on the rate limiting concern.
-- risk "Search index may saturate under high read load" does NOT block action_item "Archive old audit logs to cold storage" — the archiving task may interact with storage but is not obstructed by search read saturation.
+## Selection
+Once the concern domain check passes, select the first label that applies:
+1. **blocks** — the action item cannot be completed correctly until the risk is resolved. Ask: "Would proceeding with this action item while the risk is unresolved produce incorrect or harmful results, or make the task impossible to execute?" If yes → blocks.
+2. Otherwise → null.
+
+## Positive examples
+- "The reference dataset used for model validation contains a known data-quality error that skews precision metrics" blocks "Publish the model validation report using the reference dataset" — the report would be built on incorrect data.
+- "Stress test shows the candidate infrastructure cannot handle the required concurrent user load" blocks "Set the platform's advertised concurrent user capacity to the target figure" — the action would publish a figure that contradicts measured reality.
 """
 
 _PROMPTS: dict[ConceptType, str] = {

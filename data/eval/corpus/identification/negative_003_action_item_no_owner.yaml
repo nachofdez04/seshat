@@ -1,0 +1,24 @@
+description: >
+  Action item negatives: a direct assignment is refused, so no action item should be
+  emitted; a vague "we should" follow-up has no identifiable owner, so it should also
+  be ignored. Tests owner evidence and vague collective ownership boundaries.
+
+tags:
+  tier: negative
+  difficulty: easy
+  focus: [action_item]
+  detail: "refused assignment, ownerless suggestion"
+
+transcript: |
+  The migration checklist still needs the rollback section filled in.
+  Priya, can you own that before the pilot?
+  I can't take it this sprint; I'm already covering the incident review.
+  Okay, we'll find someone else later.
+  We should also audit the dashboard alerts before launch.
+  Agreed, let's keep that in mind.
+
+expected:
+  decision: []
+  risk: []
+  open_question: []
+  action_item: []

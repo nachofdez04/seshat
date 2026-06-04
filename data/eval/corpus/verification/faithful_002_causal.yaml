@@ -1,0 +1,14 @@
+description: >
+  Verifier must accept a description that correctly attributes the reason given in the quote.
+
+tags:
+  tier: faithful
+  source: quote
+  difficulty: easy
+  detail: "causal claim matches quote exactly"
+
+nodes:
+  - title: "Switch to SSO"
+    description: "SSO will be adopted to simplify the login flow."
+    quote: "let's switch to SSO, it will simplify the login flow"
+    expected_supported: true

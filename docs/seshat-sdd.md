@@ -115,7 +115,7 @@ Dequeues jobs from `AsyncioTaskQueue` and orchestrates the pipeline stages. Main
 
 2. **Chunking** — applies TextTiling (NLTK) to segment the transcript into topical chunks. If the chunking sanity check (§12) indicates systematic mis-segmentation, falls back to fixed-size overlapping windows (500-token windows, 100-token overlap).
 
-3. **Pass 1 — Multi-Agent Extraction** — for each chunk and each `ConceptType`, runs the corresponding extraction agent concurrently. Collects `KBNode` candidates with `relationships: []`. Action item agents additionally record an optional `assignee: str | None`.
+3. **Pass 1 — Multi-Agent Extraction** — for each chunk and each `ConceptType`, runs the corresponding extraction agent concurrently. Collects `KBNode` candidates with `relationships: []`. Action item agents additionally record `assignee: str` (required; ownerless items are not emitted — see Known Limitations).
 
 4. **Within-Meeting Deduplication** — merges nodes of the same type within a single meeting: exact title match (primary), then embedding similarity ≥ 0.85 (fallback). No `SUPERSEDES` relationship is created within a single job.
 
@@ -173,7 +173,7 @@ This section captures only the "spine" models used to connect components. Full f
 
 **`TranscriptDocument`** — `job_id: UUID`, `raw_text: str`, token count metadata, segments/chunks (when attached), `metadata: TranscriptMetadata` (participants, meeting title, date, optional tags).
 
-**`KBNode`** — `id: UUID`, `job_id: UUID`, `concept_type: ConceptType` (`DECISION`, `RISK`, `ACTION_ITEM`, `OPEN_QUESTION`), `title: str`, `content: str`, `source_quote: str`, `confidence: float`, `assignee: str | None` (action items only), `due: str | None` (action items only).
+**`KBNode`** — `id: UUID`, `job_id: UUID`, `concept_type: ConceptType` (`DECISION`, `RISK`, `ACTION_ITEM`, `OPEN_QUESTION`), `title: str`, `content: str`, `source_quote: str`, `confidence: float`, `assignee: str` (action items only; required — see Known Limitations), `due: str | None` (action items only).
 
 **`KBRelationship`** — `id: UUID`, `from_node_id: UUID`, `to_node_id: UUID`, `relationship_type` (`SUPERSEDES`, `AMENDS`, `CONFLICTS_WITH`, `DEPENDS_ON`, `ASSIGNED_TO`).
 
@@ -227,16 +227,16 @@ Central registry maps `ConceptType` → agent implementation:
 
 | `ConceptType` | Agent |
 |---------------|-------|
-| `DECISION` | `DecisionExtractionAgent` |
-| `RISK` | `RiskExtractionAgent` |
-| `ACTION_ITEM` | `ActionItemExtractionAgent` |
-| `OPEN_QUESTION` | `OpenQuestionExtractionAgent` |
+| `DECISION` | `DecisionIdentificationAgent` |
+| `RISK` | `RiskIdentificationAgent` |
+| `ACTION_ITEM` | `ActionItemIdentificationAgent` |
+| `OPEN_QUESTION` | `OpenQuestionIdentificationAgent` |
 
-Adding a concept type: implement an agent class (LangChain chain/tool) and add it to the registry.
+Adding a concept type: implement an agent class (inheriting `_BaseIdentificationAgent`) and add it to the registry.
 
 **Pass 1 — Extraction**
 
-For each chunk and each registered concept type, constructs a prompt with the `TranscriptDocument` segment in a `<transcript>` block, lightweight KB hints in a `<context>` block, and a strict `<instructions>` block. Agents produce `KBNode` candidates with `relationships: []` and an optional `assignee` for action items. Non-conforming responses are rejected and optionally retried.
+For each chunk and each registered concept type, constructs a prompt using a standardised layout: `## Definition` (concept boundary), `## Task` (extraction instruction with hard stops), `### Field identification rules` (one bullet per output field), `## Over-extraction guards` (logical binary tests + typed counter-examples), `## Boundary examples` (positive and negative per pair), and `## Positive criteria`. Agents produce `KBNode` candidates with `relationships: []` and an optional `assignee` for action items. Non-conforming responses are rejected and optionally retried.
 
 **Pass 2 — RAG + Resolution**
 
@@ -267,6 +267,15 @@ Default: TextTiling (NLTK), tuned for long-form transcripts. If the chunking san
 Two signals (verification agent, spaCy heuristics) combined via weighted normalised sum. When verification is disabled, its weight redistributes to heuristics. Result is a float in [0, 1]. Used for reviewer prioritisation and auto-approval threshold policies.
 
 Full formula, default weights, and signal availability are defined in [docs/superpowers/specs/2026-04-21-seshat-design.md](superpowers/specs/2026-04-21-seshat-design.md).
+
+### Threshold Calibration
+
+`src/seshat/eval/calibration/` provides two meta-scorers for empirically tuning the parameters above:
+
+- **`IdentificationMetaScorer`** — sweeps `confidence_threshold` (the auto-approval cut-off) and `ConfidenceWeights` across the eval corpus, reporting F1 curves so the optimal values can be read off and committed to config.
+- **`RetrievalMetaScorer`** — sweeps the vector similarity threshold used by `NodeRetriever` to tune the precision/recall tradeoff for the retrieval step.
+
+Both emit `SweepResult` objects and log to MLflow. Recalibrate any time agent prompts, model provider/version, or scoring weights change.
 
 ---
 
@@ -302,8 +311,26 @@ At minimum, the following metrics should be emitted:
 
 ### Release Gate & Evaluation Harness
 
-**`seshat eval`** runs the extraction pipeline in-process (bypassing the API and worker) against a curated synthetic dataset and writes `data/eval_gate.json`. Metrics: retrieval recall@5; per-concept-type precision and recall.
+The eval harness runs five independent passes, each with its own corpus under `data/eval/corpus/<pass>/`, runner, scorer, and gate targets. Passes are togglable via `EvalConfig` and can be run individually; `upsert_gate` carries over blocks from the existing file so a partial run only updates what it ran.
 
-**Release gate:** the worker refuses to accept jobs at startup unless `data/eval_gate.json` is present and contains `passed=true`. Gate criteria (retrieval recall@5 and per-concept-type precision/recall targets) are defined in the design spec (§12).
+**Identification pass** — extraction quality. Per-concept-type precision, recall, spurious rate against quote-anchored ground truth. Additional field-level accuracy scores (assignee, due, rationale, risk type) are logged to MLflow as observability signals but are not gated.
 
-**Regression gate:** any change to agent system prompts, model provider/version, or confidence scoring weights or heuristics must be accompanied by a passing `seshat eval` run that regenerates `data/eval_gate.json`.
+**Resolution pass** — relationship inference quality. Corpus cases supply source nodes, KB nodes, and expected `(source, target, rel_type)` triples; scorer does exact triple match → per-concept-type precision and recall.
+
+**Retrieval pass** — vector search quality. Corpus cases supply a query node, candidate pool, and expected relevant IDs; scorer measures recall@5 (gated) and precision@5 (logged).
+
+**Verification pass** — verification agent quality. Precision and recall against ground-truth accept/reject decisions.
+
+**Grouping pass** — grouping agent quality. Group hit rate (gated) and exact match (logged).
+
+**Gate file** (`data/eval_gate.json`) — `GateResult` with five metric blocks (`identification_metrics`, `resolution_metrics`, `retrieval_metrics`, `verification_metrics`, `grouping_metrics`) plus a computed `passed` field. A `None` block means the pass was not run and is not a failure; `passed` is `false` if all blocks are `None`. The worker refuses to accept jobs at startup unless the gate file is present and `passed=true`.
+
+**Regression gate:** any change to agent system prompts, model provider/version, or confidence scoring weights or heuristics must be accompanied by a passing eval run (at minimum the affected passes) that updates `data/eval_gate.json`. Gate thresholds are centralised in `src/seshat/eval/thresholds.py`.
+
+## Known Limitations
+
+### Action Item: ownerless tasks are not captured
+
+The `ActionItem` model enforces `assignee: str` (non-nullable). The identification agent prompt requires an identifiable owner before emitting — anonymous self-references and explicitly unowned work are suppressed. As a result, legitimate follow-up tasks that emerged from a meeting without a named owner (e.g. "someone from the platform team needs to handle this") are silently dropped rather than captured with a null assignee.
+
+**Workaround:** none currently. Downstream consumers should be aware that the action item list may be incomplete for meetings where ownership was discussed but not formally assigned. A future improvement could introduce a separate concept type or a low-confidence ownerless task variant, but this is deferred until there is evidence of user need from real transcripts.

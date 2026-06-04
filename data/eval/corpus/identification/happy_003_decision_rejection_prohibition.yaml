@@ -1,0 +1,32 @@
+description: >
+  Decision edge case: a settled group-level commitment can be expressed as a rejection
+  or prohibition. The team rules out client-side caching for the auth token endpoint
+  because stale tokens create a security exposure. This should be a Decision, not just
+  a statement of preference.
+
+tags:
+  tier: happy-path
+  difficulty: medium
+  focus: [decision]
+
+transcript: |
+  Should we allow client-side caching on the auth token endpoint to reduce load?
+  No. Caching auth tokens client-side means revoked tokens stay valid until the cache expires.
+  That is a security exposure we cannot accept. No client-side caching on that endpoint, ever.
+  Agreed. No client-side caching on that endpoint.
+
+expected:
+  decision:
+    - quote: "Should we allow client-side caching on the auth token endpoint to reduce load?\n\
+        No. Caching auth tokens client-side means revoked tokens stay valid until the cache expires.\n\
+        That is a security exposure we cannot accept. No client-side caching on that endpoint, ever.\n\
+        Agreed. No client-side caching on that endpoint."
+      title: Prohibit client-side caching on the auth token endpoint
+      description: The team ruled out client-side caching on the auth token endpoint because stale cached tokens would remain valid after revocation, creating a security exposure.
+      decision: Prohibit client-side caching on the auth token endpoint.
+      rationale: Cached tokens stay valid after revocation, creating a security exposure.
+      alternatives_considered: ["Client-side caching to reduce load"]
+
+  risk: []
+  open_question: []
+  action_item: []

@@ -1,0 +1,93 @@
+corpus_id: multi_007_immutable_deploys_mixed_sources
+description: >
+  Mixed-source multi-target: two source nodes (one Decision, one ActionItem) against
+  six KB nodes spanning decisions and action items. Expected labels:
+  conflicts_with two (one per source type — the decision contradicts an active
+  deployment strategy; the action item contradicts an active rollback ownership
+  assignment), blocks one (the new deployment policy blocks an in-flight deployment
+  action item that assumes the old strategy), supersedes one (the source action item
+  absorbs a narrower prior task assigned to the same person), null two (same release
+  domain, no logical connection). Tests that the model correctly fires conflicts_with
+  for both Decision and ActionItem agents in the same fixture, and correctly
+  discriminates it from blocks and supersedes.
+
+grey_area:
+  - pair: [action_rollback_owned_by_alice, action_alice_rollback_payments_only]
+    note: >
+      The source (Alice owns rollback across all services) absorbs the target (Alice
+      documents rollback for payments only) — the narrow task is redundant once the
+      broader assignment exists. Scored as supersedes because the target is no longer
+      a separately tracked deliverable; it has been subsumed. amends is an
+      understandable prediction given that the same person expands scope rather than
+      replacing a different owner, and the target's work remains implicitly required.
+
+tags:
+  tier: multi
+  pairing: mixed
+  types: [action_item, decision]
+  relations: [blocks, conflicts_with, supersedes]
+  difficulty: hard
+
+source_nodes:
+  - id: decision_immutable_deploys
+    type: decision
+    title: All production deployments must use immutable artefact promotion — no in-place upgrades
+    description: The platform team decided that all production deployments must promote immutable artefacts through the pipeline. In-place upgrades of any kind are prohibited from this point forward.
+    quote: "Immutable artefact promotion only — no in-place upgrades in production, ever. If you need to change something, you cut a new artefact."
+
+  - id: action_rollback_owned_by_alice
+    type: action_item
+    title: Alice will own and maintain the rollback procedure for all production services
+    description: The reliability team assigned Alice as the single owner responsible for designing, documenting, and maintaining the rollback procedure across all production services.
+    quote: "Alice, rollback ownership is yours across the board — design it, document it, keep it current."
+
+kb_nodes:
+  - id: decision_in_place_upgrades
+    type: decision
+    title: Database schema changes must be applied using in-place upgrades to avoid downtime
+    description: The platform team decided that database schema changes must use in-place upgrade scripts rather than full artefact replacement, to minimise downtime during schema migrations.
+    quote: "Schema migrations go in-place — we can't afford the downtime of a full artefact swap every time we change a column."
+
+  - id: decision_release_cadence
+    type: decision
+    title: Production releases are gated on a weekly release window every Tuesday
+    description: The platform team decided that all production deployments must be scheduled within the Tuesday release window to allow the on-call team to monitor for issues during business hours.
+    quote: "Nothing ships to production outside the Tuesday release window — the on-call team needs to be there when we push."
+
+  - id: action_deploy_payments_inplace
+    type: action_item
+    title: Deploy the new payments service version using the in-place upgrade procedure
+    description: The payments team was assigned to deploy the latest payments service version using the existing in-place upgrade procedure before the next release window.
+    quote: "Payments team, deploy the new version using the in-place procedure — get it done before Tuesday's window."
+
+  - id: action_rollback_owned_by_bob
+    type: action_item
+    title: Bob will own and maintain the rollback procedure for all production services
+    description: The reliability team assigned Bob as the owner of the rollback procedure across all production services, responsible for its design and upkeep.
+    quote: "Bob, you own rollback across the board — keep it documented and current."
+
+  - id: action_alice_rollback_payments_only
+    type: action_item
+    title: Alice will document the rollback procedure for the payments service
+    description: Alice was assigned to document the rollback procedure specifically for the payments service, covering only that single service's recovery steps.
+    quote: "Alice, write up the rollback steps for the payments service — just that one for now."
+
+  - id: action_rotate_deploy_keys
+    type: action_item
+    title: Rotate the deployment pipeline credentials before the next release window
+    description: The security team needs to rotate the credentials used by the deployment pipeline before Tuesday's release window to close a flagged access review finding.
+    quote: "Rotate the deploy pipeline credentials before Tuesday — security flagged them in the access review."
+
+expected_relations:
+  - source: decision_immutable_deploys
+    target: decision_in_place_upgrades
+    rel_type: conflicts_with
+  - source: decision_immutable_deploys
+    target: action_deploy_payments_inplace
+    rel_type: blocks
+  - source: action_rollback_owned_by_alice
+    target: action_rollback_owned_by_bob
+    rel_type: conflicts_with
+  - source: action_rollback_owned_by_alice
+    target: action_alice_rollback_payments_only
+    rel_type: supersedes

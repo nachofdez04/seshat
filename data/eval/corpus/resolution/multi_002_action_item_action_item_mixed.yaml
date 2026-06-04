@@ -1,0 +1,64 @@
+corpus_id: multi_002_action_item_action_item_mixed
+description: >
+  Same-type action_item↔action_item multi-target: one source action item against five KB
+  action items. Expected labels: supersedes one (old task absorbed), blocks one (source must
+  complete before target can start), depends_on one (source cannot proceed without target),
+  null two (unrelated workstreams). Tests the full same-type action_item relationship set
+  in a single pass and validates anti-symmetry: blocks and depends_on are each assigned
+  in only one direction.
+
+tags:
+  tier: multi
+  pairing: same_type
+  types: [action_item]
+  relations: [blocks, depends_on, supersedes]
+  difficulty: medium
+
+source_nodes:
+  - id: action_rewrite_migration
+    type: action_item
+    title: Rewrite the full tenant data migration script from scratch
+    description: Priya will rewrite the entire tenant migration script after the scope review revealed the patch approach is unworkable. The new script will replace all prior incremental migration work.
+    quote: "Priya, scrap the patch — rewrite the full migration script from scratch. The incremental approach won't hold."
+
+kb_nodes:
+  - id: action_patch_migration
+    type: action_item
+    title: Patch the existing tenant migration script to handle null owner fields
+    description: Priya will patch the existing migration script to handle null owner fields introduced by the new schema.
+    quote: "Priya, patch the migration script to handle null owner fields before the next deploy."
+
+  - id: action_provision_staging
+    type: action_item
+    title: Provision the staging environment for migration testing
+    description: The platform team needs to provision a fresh staging environment before migration testing can begin. Nothing migration-related can run until this is done.
+    quote: "Platform team, provision staging before anyone tries to run migrations — we have nothing to test against right now."
+
+  - id: action_run_smoke_tests
+    type: action_item
+    title: Run smoke tests on the migrated tenant data
+    description: QA must run smoke tests against the migrated data once the migration script completes successfully on staging.
+    quote: "Once the migration runs cleanly on staging, QA runs the smoke tests."
+
+  - id: action_update_docs
+    type: action_item
+    title: Update the API documentation for the new billing endpoints
+    description: Tariq will update the public API documentation to reflect the new billing endpoints introduced in this sprint.
+    quote: "Tariq, update the API docs for the billing endpoints by end of sprint."
+
+  - id: action_rotate_keys
+    type: action_item
+    title: Rotate the production API keys for the payments service
+    description: The security team needs to rotate the production API keys for the payments service following the credential audit.
+    quote: "Rotate the payments service API keys in production — the credential audit flagged them."
+
+expected_relations:
+  - source: action_rewrite_migration
+    target: action_patch_migration
+    rel_type: supersedes
+  - source: action_rewrite_migration
+    target: action_run_smoke_tests
+    rel_type: blocks
+  - source: action_rewrite_migration
+    target: action_provision_staging
+    rel_type: depends_on

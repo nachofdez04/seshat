@@ -4,6 +4,7 @@ import pytest
 
 from seshat.config.settings import EvalConfig
 from seshat.eval.resolution.corpus_loader import build_kb_nodes, load_corpus
+from tests.unit.eval.conftest import TagFilterContractTests
 
 
 @pytest.fixture(scope="class")
@@ -28,7 +29,11 @@ class TestCorpusLoader:
             assert isinstance(uid, uuid.UUID)
 
 
-class TestProductionCorpus:
+class TestProductionCorpus(TagFilterContractTests):
+    load_corpus = staticmethod(load_corpus)
+    corpus_dir_attr = "resolution_corpus_dir"
+    tag_key = "tier"
+
     def test_all_files_load_and_slugs_resolve(self, eval_corpus: EvalConfig):
         examples = load_corpus(eval_corpus.resolution_corpus_dir)
         assert len(examples) > 0

@@ -1,0 +1,12 @@
+description: "Basic: grounded description passes, hallucinated number fails."
+
+nodes:
+  - title: "Use PostgreSQL"
+    description: "PostgreSQL will be used for persistence."
+    quote: "we'll use PostgreSQL for all our persistence needs"
+    expected_supported: true
+
+  - title: "Migrate 47 services"
+    description: "The team agreed to migrate all 47 microservices by Q3."
+    quote: "we decided to move to Kubernetes for the new services"
+    expected_supported: false

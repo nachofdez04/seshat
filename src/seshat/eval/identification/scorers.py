@@ -5,7 +5,6 @@ from typing import Any
 
 import mlflow.genai
 from mlflow.entities import Feedback
-from rapidfuzz import fuzz
 
 from seshat.eval.identification.matcher import MatchedNode, MatchResult, match_nodes
 from seshat.eval.models import IdentificationCorpusNode
@@ -38,6 +37,7 @@ def scorer(inputs: dict, outputs: dict, expectations: dict) -> list[Feedback]:
     result = match_nodes(transcript, expected, predicted)
     feedbacks = _precision_recall_feedback(result)
     feedbacks += _field_accuracy_feedback(result.matched)
+    feedbacks += _negative_check_feedback(expected, predicted)
     return feedbacks
 
 
@@ -95,6 +95,8 @@ def _field_accuracy_feedback(matched: list[MatchedNode]) -> list[Feedback]:
 def _field_accuracy_fuzzy_fields_feedback(
     ctype: ConceptType, expected_fields: dict[str, Any], predicted_fields: dict[str, Any]
 ) -> list[Feedback]:
+    from rapidfuzz import fuzz
+
     feedbacks: list[Feedback] = []
 
     for field in _FUZZY_FIELDS.get(ctype, []):
@@ -153,6 +155,24 @@ def _field_accuracy_set_fields_feedback(
         score = len(exp_set & pred_set) / len(exp_set)
         feedbacks.append(Feedback(name=f"{ctype.value}.{field}", value=score))
 
+    return feedbacks
+
+
+def _negative_check_feedback(
+    expected: list[IdentificationCorpusNode],
+    predicted: list[KBNode],
+) -> list[Feedback]:
+    expected_types = {n.type for n in expected}
+    predicted_by_type: dict[ConceptType, int] = defaultdict(int)
+    for n in predicted:
+        predicted_by_type[n.type] += 1
+
+    feedbacks: list[Feedback] = []
+    for ctype in ConceptType:
+        if ctype in expected_types:
+            continue
+        rate = 1.0 if predicted_by_type[ctype] > 0 else 0.0
+        feedbacks.append(Feedback(name=f"{ctype}.spurious_rate", value=rate))
     return feedbacks
 
 

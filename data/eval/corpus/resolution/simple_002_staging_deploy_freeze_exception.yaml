@@ -1,0 +1,31 @@
+corpus_id: simple_002_staging_deploy_freeze_exception
+description: >
+  Same-type decision↔decision baseline: one decision amends another by adding a scoped
+  exception. The original staging deployment schedule remains broadly active; the source
+  adds a conditional clause that narrows when it applies.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [decision]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_skip_staging_deploy_during_freeze
+    type: decision
+    title: Skip the Tuesday staging deployment during active release freezes
+    description: During any active release freeze, the regular Tuesday staging deployment must be skipped to avoid introducing untested changes into a frozen environment.
+    quote: "If we're in a release freeze, skip the Tuesday staging deploy — we can't be pushing changes into a frozen environment."
+
+kb_nodes:
+  - id: decision_staging_deploys_tuesday
+    type: decision
+    title: Deploy to staging every Tuesday afternoon
+    description: The team standardised on running staging deployments every Tuesday afternoon to keep the staging environment in sync with the latest development builds.
+    quote: "We'll do staging deployments every Tuesday afternoon going forward."
+
+expected_relations:
+  - source: decision_skip_staging_deploy_during_freeze
+    target: decision_staging_deploys_tuesday
+    rel_type: amends

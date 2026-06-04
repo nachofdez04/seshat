@@ -1,0 +1,29 @@
+corpus_id: null_008_risk_action_item_unrelated
+description: >
+  Cross-type risk→action_item discriminating: a risk and an action item from the same
+  project where the risk does not block the action item. The risk concerns a potential
+  performance regression; the action item concerns updating internal documentation —
+  same project, no causal link.
+
+tags:
+  tier: "null"
+  pairing: cross_type
+  types: [action_item, risk]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: risk_perf
+    type: risk
+    title: New search index may degrade query performance under high cardinality
+    description: Load testing shows the new composite index on the search table performs well at current data volumes but may degrade significantly once the cardinality exceeds 10 million rows, which is expected in six months.
+    quote: "The new index is fine now but load tests show it degrades badly past 10M rows — we'll hit that in about six months."
+
+kb_nodes:
+  - id: action_docs_update
+    type: action_item
+    title: Update the internal architecture diagram in Confluence
+    description: The architecture diagram in Confluence has not been updated since the service split six months ago. It needs to reflect the current topology before the next team onboarding session.
+    quote: "The Confluence architecture diagram is six months out of date — update it before the next onboarding session."
+
+expected_relations: []

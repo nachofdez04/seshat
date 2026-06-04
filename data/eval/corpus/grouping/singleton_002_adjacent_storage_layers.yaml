@@ -1,0 +1,22 @@
+corpus_id: singleton_002_adjacent_storage_layers
+description: >
+  Two data storage decisions that share a domain but serve different purposes — persistence
+  vs. caching. They must remain as separate singletons despite the surface-level overlap.
+
+tags:
+  concept_type: decision
+  difficulty: medium
+  scenario: singleton
+  detail: "same data storage domain but different layers — persistence vs. caching"
+
+items:
+  - id: postgres-persistence
+    title: "Use PostgreSQL for all persistent operational data"
+    description: "The team standardised on PostgreSQL as the sole persistence layer for all operational data, ruling out document stores and distributed SQL alternatives on the grounds of operational simplicity and existing team expertise."
+  - id: redis-cache
+    title: "Use Redis as the read-through caching layer"
+    description: "The team decided to place Redis in front of PostgreSQL for all frequently-read queries, with a TTL-based invalidation strategy, to reduce database load and keep p99 read latencies under 20 ms."
+
+expected_groups:
+  - [postgres-persistence]
+  - [redis-cache]

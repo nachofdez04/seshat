@@ -5,10 +5,23 @@ from seshat.eval.gate import read_gate, upsert_gate, write_gate
 from seshat.eval.models import GateResult
 
 
+def _passing_resolution() -> dict[str, float]:
+    return {
+        "action_item.precision": 0.82,
+        "action_item.recall": 0.80,
+        "decision.precision": 0.82,
+        "decision.recall": 0.80,
+        "open_question.precision": 0.82,
+        "open_question.recall": 0.80,
+        "risk.precision": 0.82,
+        "risk.recall": 0.80,
+    }
+
+
 def _passing_identification() -> dict[str, float]:
     return {
         "decision.precision": 0.85,
-        "decision.recall": 0.78,
+        "decision.recall": 0.82,
         "risk.precision": 0.77,
         "risk.recall": 0.81,
         "open_question.precision": 0.76,
@@ -23,7 +36,7 @@ class TestGateReadWrite:
         result = GateResult(
             run_id="run-123",
             identification_metrics=_passing_identification(),
-            resolution_metrics={"precision": 0.82, "recall": 0.80},
+            resolution_metrics=_passing_resolution(),
             retrieval_metrics={"recall_at_5": 0.75, "precision_at_5": 0.60},
         )
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -36,7 +49,7 @@ class TestGateReadWrite:
         assert loaded.resolution_metrics is not None
         assert loaded.retrieval_metrics is not None
         assert loaded.identification_metrics["decision.precision"] == 0.85
-        assert loaded.resolution_metrics["precision"] == 0.82
+        assert loaded.resolution_metrics["action_item.precision"] == 0.82
         assert loaded.retrieval_metrics["recall_at_5"] == 0.75
 
     def test_round_trip_with_none_blocks(self):
@@ -71,7 +84,9 @@ class TestGateResultPassed:
         assert GateResult(run_id="r", identification_metrics=m).passed is False
 
     def test_resolution_below_target_fails(self):
-        assert GateResult(run_id="r", resolution_metrics={"precision": 0.50, "recall": 0.85}).passed is False
+        m = _passing_resolution()
+        m["action_item.precision"] = 0.50
+        assert GateResult(run_id="r", resolution_metrics=m).passed is False
 
     def test_retrieval_below_target_fails(self):
         assert GateResult(run_id="r", retrieval_metrics={"recall_at_5": 0.60, "precision_at_5": 0.80}).passed is False
@@ -91,18 +106,68 @@ class TestGateResultPassed:
             is True
         )
 
+    def test_identification_spurious_rate_below_threshold_passes(self):
+        m = _passing_identification()
+        m["decision.spurious_rate"] = 0.05
+        assert GateResult(run_id="r", identification_metrics=m).passed is True
+
+    def test_identification_spurious_rate_above_threshold_fails(self):
+        m = _passing_identification()
+        m["decision.spurious_rate"] = 0.20
+        assert GateResult(run_id="r", identification_metrics=m).passed is False
+
+    def test_verification_below_precision_fails(self):
+        assert (
+            GateResult(
+                run_id="r",
+                verification_metrics={"precision": 0.50, "recall": 0.85},
+            ).passed
+            is False
+        )
+
+    def test_verification_below_recall_fails(self):
+        assert (
+            GateResult(
+                run_id="r",
+                verification_metrics={"precision": 0.90, "recall": 0.70},
+            ).passed
+            is False
+        )
+
+    def test_verification_meets_targets_passes(self):
+        assert (
+            GateResult(
+                run_id="r",
+                verification_metrics={"precision": 0.90, "recall": 0.85},
+            ).passed
+            is True
+        )
+
+    def test_grouping_below_group_hit_rate_fails(self):
+        assert GateResult(run_id="r", grouping_metrics={"group_hit_rate": 0.70, "exact_match": 0.50}).passed is False
+
+    def test_grouping_meets_group_hit_rate_passes(self):
+        assert GateResult(run_id="r", grouping_metrics={"group_hit_rate": 0.85, "exact_match": 0.70}).passed is True
+
+    def test_grouping_exact_match_not_gated(self):
+        # exact_match=0 but group_hit_rate above threshold — should pass
+        assert GateResult(run_id="r", grouping_metrics={"group_hit_rate": 0.85, "exact_match": 0.0}).passed is True
+
+    def test_grouping_none_not_gated(self):
+        assert GateResult(run_id="r", identification_metrics=_passing_identification()).passed is True
+
 
 class TestUpsertGate:
     def test_upsert_preserves_existing_blocks(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             gate_path = Path(tmpdir) / "gate.json"
             write_gate(GateResult(run_id="r1", identification_metrics=_passing_identification()), gate_path)
-            result = upsert_gate(gate_path, run_id="r2", resolution_metrics={"precision": 0.85, "recall": 0.82})
+            result = upsert_gate(gate_path, run_id="r2", resolution_metrics=_passing_resolution())
 
         assert result.identification_metrics is not None
         assert result.resolution_metrics is not None
         assert result.identification_metrics["decision.precision"] == 0.85
-        assert result.resolution_metrics["precision"] == 0.85
+        assert result.resolution_metrics["action_item.precision"] == 0.82
 
     def test_upsert_creates_file_if_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:

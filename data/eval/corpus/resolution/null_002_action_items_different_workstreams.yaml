@@ -1,0 +1,34 @@
+corpus_id: null_002_action_items_different_workstreams
+description: >
+  Same-type action_item↔action_item discriminating: two action items from the same
+  sprint that are thematically adjacent (both concern platform work) but have no
+  ordering dependency, supersedes, or conflict relationship between them.
+
+tags:
+  tier: "null"
+  pairing: same_type
+  types: [action_item]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: action_docs
+    type: action_item
+    title: Write API documentation for the new endpoints
+    description: Fatima will write the API documentation for the three new endpoints added in this sprint, to be published in the developer portal by end of week.
+    quote: "Fatima, write up the API docs for the new endpoints — publish them to the dev portal by Friday."
+
+  - id: action_alerts
+    type: action_item
+    title: Configure PagerDuty alerts for the ingestion pipeline
+    description: Kofi will set up PagerDuty routing rules for ingestion pipeline error alerts so the on-call engineer is notified within five minutes of a failure.
+    quote: "Kofi, set up PagerDuty alerts for ingestion failures — five-minute notification target."
+
+kb_nodes:
+  - id: action_audit
+    type: action_item
+    title: Audit IAM roles and remove unused permissions
+    description: Security team has requested an IAM permissions audit before the next compliance review. Unused roles must be identified and removed.
+    quote: "Before the compliance review, audit the IAM roles and strip out anything unused."
+
+expected_relations: []

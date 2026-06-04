@@ -1,0 +1,35 @@
+description: >
+  Open Question coverage: two independent unresolved choices are explicitly deferred
+  in a short transcript. Neither should be treated as a Decision, Risk, or Action Item.
+
+tags:
+  tier: happy-path
+  difficulty: easy
+  focus: [open_question]
+
+transcript: |
+  We need to settle two launch defaults before the beta checklist is complete.
+  First, should trial workspaces start with sample data enabled or disabled?
+  We don't have product guidance yet, so keep that open.
+  Second, what should the default invite expiry be: 7 days or 30 days?
+  Security has not given us a recommendation, so that also stays open for now.
+
+expected:
+  open_question:
+    - quote: "First, should trial workspaces start with sample data enabled or disabled?\n\
+        We don't have product guidance yet, so keep that open."
+      title: Should trial workspaces start with sample data enabled?
+      description: The team has not decided whether trial workspaces should start with sample data enabled or disabled because product guidance is pending.
+      question: Should trial workspaces start with sample data enabled or disabled?
+      context: Product guidance is pending, so the default remains open.
+
+    - quote: "Second, what should the default invite expiry be: 7 days or 30 days?\n\
+        Security has not given us a recommendation, so that also stays open for now."
+      title: What should the default invite expiry be?
+      description: The team has not decided whether the default invite expiry should be 7 days or 30 days because security guidance is pending.
+      question: Should the default invite expiry be 7 days or 30 days?
+      context: Security has not provided a recommendation, so the default remains open.
+
+  decision: []
+  risk: []
+  action_item: []

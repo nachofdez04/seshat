@@ -1,0 +1,27 @@
+description: >
+  Verifier uses the full transcript (not just the quote) and must accept a description
+  that synthesises information from multiple turns. The description is grounded in the
+  transcript even though no single sentence contains all the facts.
+
+tags:
+  tier: faithful
+  source: transcript
+  difficulty: medium
+  detail: "cross-turn synthesis; grounded in transcript not just quote"
+
+transcript: |
+  Sarah: We need to decide on the API versioning strategy before the release.
+  Tom: I think we should use URL versioning — /v1/, /v2/ — it's the simplest approach.
+  Sarah: Agreed. Let's go with URL versioning and document it in the API guidelines.
+  Tom: I'll add it to the guidelines today.
+
+nodes:
+  - title: "Adopt URL versioning for APIs"
+    description: "The team agreed to use URL-based versioning (/v1/, /v2/) and document it in the API guidelines."
+    quote: "Let's go with URL versioning and document it in the API guidelines."
+    expected_supported: true
+
+  - title: "Tom updates API guidelines"
+    description: "Tom will update the API guidelines to reflect the URL versioning decision made by the team."
+    quote: "I'll add it to the guidelines today."
+    expected_supported: true

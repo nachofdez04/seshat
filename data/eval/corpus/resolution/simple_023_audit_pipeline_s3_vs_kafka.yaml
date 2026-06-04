@@ -1,0 +1,34 @@
+corpus_id: simple_023_audit_pipeline_s3_vs_kafka
+description: >
+  Same-type action_item↔action_item baseline: two active tasks that cannot both be
+  executed as stated — they implement the same pipeline using incompatible architectural
+  approaches. Neither task cancels the other; both remain assigned from separate work
+  streams. The correct label is CONFLICTS_WITH, not SUPERSEDES (neither explicitly
+  rescinds the other), not BLOCKS (the tasks are not sequentially ordered — they
+  directly contradict each other).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [action_item]
+  relations: [conflicts_with]
+  difficulty: easy
+
+source_nodes:
+  - id: action_audit_pipeline_s3_batch
+    type: action_item
+    title: Configure the audit log pipeline to write to S3 with a 5-minute batch flush interval
+    description: The infrastructure team assigned a task to configure the audit log pipeline to batch-write audit events directly to S3, flushing every 5 minutes to reduce write overhead.
+    quote: "Configure the audit pipeline to batch to S3 — 5-minute flush interval. No need for real-time, we just need durability."
+
+kb_nodes:
+  - id: action_audit_pipeline_kafka_streaming
+    type: action_item
+    title: Configure the audit log pipeline to stream audit events to Kafka for real-time delivery
+    description: The compliance team assigned a task to stream audit events to Kafka in real time, providing sub-second delivery guarantees to downstream consumers.
+    quote: "Audit events go to Kafka — real-time streaming, no batching. Compliance needs sub-second delivery."
+
+expected_relations:
+  - source: action_audit_pipeline_s3_batch
+    target: action_audit_pipeline_kafka_streaming
+    rel_type: conflicts_with

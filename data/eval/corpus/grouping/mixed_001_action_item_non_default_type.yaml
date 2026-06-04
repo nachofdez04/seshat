@@ -1,0 +1,22 @@
+corpus_id: mixed_001_action_item_non_default_type
+description: >
+  Two action items from completely unrelated workstreams — infrastructure upgrade and
+  documentation. Each should remain a singleton group. Exercises the non-default concept_type path.
+
+tags:
+  concept_type: action_item
+  difficulty: easy
+  scenario: singleton
+  detail: "exercises non-default concept_type path; unrelated workstreams"
+
+items:
+  - id: upgrade-postgres
+    title: "Upgrade PostgreSQL to version 16 before end of Q3"
+    description: "Tariq will own the PostgreSQL upgrade to version 16 before the end of Q3, coordinating with the DBA team on the migration plan and ensuring a zero-downtime cutover using the blue-green procedure already approved for the platform."
+  - id: update-api-docs
+    title: "Update API documentation for v2 endpoints before partner onboarding"
+    description: "Priya will update the public API documentation to fully cover the new v2 endpoints, including request/response schemas and authentication changes, before the scheduled partner onboarding call next sprint."
+
+expected_groups:
+  - [upgrade-postgres]
+  - [update-api-docs]

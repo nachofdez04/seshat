@@ -1,0 +1,38 @@
+description: >
+  Simple mixed coverage: one concrete future Risk and one unrelated Open Question
+  appear in the same short transcript. The risk has a stated failure mode and group
+  acknowledgement; the open question is a deferred product choice.
+
+tags:
+  tier: boundary
+  difficulty: medium
+  focus: [risk, open_question]
+  detail: "risk and unrelated OQ coexist"
+
+transcript: |
+  The nightly export job still runs on the primary database.
+  If the export overlaps with peak traffic, it could saturate read connections and slow down checkout.
+  That's a real risk for launch week; we do not have isolation in place yet.
+  Separately, do we show the new billing banner to all admins or only account owners?
+  Product has not decided the audience yet, so it is not settled.
+
+expected:
+  risk:
+    - quote: "The nightly export job still runs on the primary database.\n\
+        If the export overlaps with peak traffic, it could saturate read connections and slow down checkout.\n\
+        That's a real risk for launch week; we do not have isolation in place yet."
+      title: Nightly export may slow checkout during peak traffic
+      description: The nightly export job runs on the primary database and could saturate read connections during peak traffic, slowing checkout during launch week.
+      type: future
+      risk: The nightly export job may saturate primary database read connections during peak traffic and slow checkout.
+
+  open_question:
+    - quote: "Separately, do we show the new billing banner to all admins or only account owners?\n\
+        Product has not decided the audience yet, so it is not settled."
+      title: Who should see the new billing banner?
+      description: The team has not decided whether the new billing banner should be shown to all admins or only account owners because product review is pending.
+      question: Should the new billing banner be shown to all admins or only account owners?
+      context: Product has not decided the audience yet, so the choice remains open.
+
+  decision: []
+  action_item: []

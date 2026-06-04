@@ -1,0 +1,32 @@
+description: >
+  Risk boundaries: a risk-like one-liner receives no substantive reaction and should
+  not be extracted. A separate external approval dependency is actively blocking a
+  named release deliverable and is treated by the group as a blocker.
+
+tags:
+  tier: happy-path
+  difficulty: medium
+  focus: [risk]
+
+transcript: |
+  The dashboard export might time out for very large tenants.
+  Anyway, the main release issue is still security approval.
+  Security approval for the mobile release is missing, so QA cannot start the release
+  validation run.
+  That blocks Friday's release candidate.
+  Yes, we cannot cut the RC until security signs off.
+
+expected:
+  risk:
+    - quote: "Security approval for the mobile release is missing, so QA cannot start the release\n\
+        validation run.\n\
+        That blocks Friday's release candidate.\n\
+        Yes, we cannot cut the RC until security signs off."
+      title: Missing security approval blocks mobile release validation
+      description: QA cannot start the mobile release validation run or cut Friday's release candidate until security signs off.
+      type: blocker
+      risk: Missing security approval blocks QA validation and the Friday mobile release candidate.
+
+  decision: []
+  open_question: []
+  action_item: []

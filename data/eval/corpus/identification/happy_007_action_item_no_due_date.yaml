@@ -1,0 +1,30 @@
+description: >
+  Action item field edge: a concrete follow-up task has an identifiable owner but no
+  deadline. The Action Item should be extracted with due set to null rather than an
+  inferred date.
+
+tags:
+  tier: happy-path
+  difficulty: easy
+  focus: [action_item]
+
+transcript: |
+  The onboarding guide is missing the new API token rotation flow.
+  Lena, can you update the onboarding guide with the token rotation steps?
+  Yes, I will update the guide and send it to the partner support channel.
+  Good, that will unblock the support team.
+
+expected:
+  action_item:
+    - quote: "The onboarding guide is missing the new API token rotation flow.\n\
+        Lena, can you update the onboarding guide with the token rotation steps?\n\
+        Yes, I will update the guide and send it to the partner support channel."
+      title: Update onboarding guide with API token rotation steps
+      description: Lena will update the onboarding guide with the new API token rotation steps and send it to the partner support channel.
+      task: Update the onboarding guide with the API token rotation steps and send it to the partner support channel.
+      assignee: Lena
+      due: null
+
+  decision: []
+  risk: []
+  open_question: []

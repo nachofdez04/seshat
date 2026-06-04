@@ -3,10 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from seshat.agents.resolution.base import ResolvedRelationship
 from seshat.agents.resolution.cross_type.registry import CrossTypeResolutionRegistry
+from seshat.agents.resolution.registry import ResolutionRegistry
 from seshat.agents.resolution.same_type.registry import SameTypeResolutionRegistry
 from seshat.config.settings import ResolutionLLMConfig
-from seshat.models.enums import ConceptType
+from seshat.models.enums import ConceptType, RelationshipType
 from tests.helpers import make_node
 
 
@@ -16,6 +18,10 @@ def _make_same_type_registry() -> SameTypeResolutionRegistry:
 
 def _make_cross_type_registry() -> CrossTypeResolutionRegistry:
     return CrossTypeResolutionRegistry(llm=MagicMock(), config=ResolutionLLMConfig())
+
+
+def _make_resolution_registry() -> ResolutionRegistry:
+    return ResolutionRegistry(llm=MagicMock(), config=ResolutionLLMConfig())
 
 
 class TestSameTypeResolutionRegistry:
@@ -39,9 +45,6 @@ class TestSameTypeResolutionRegistry:
 
     @pytest.mark.asyncio
     async def test_resolve_all_partitions_by_type_and_collects_results(self):
-        from seshat.agents.resolution.base import ResolvedRelationship
-        from seshat.models.enums import RelationshipType
-
         registry = _make_same_type_registry()
 
         rel = MagicMock(spec=ResolvedRelationship)
@@ -102,9 +105,6 @@ class TestCrossTypeResolutionRegistry:
 
     @pytest.mark.asyncio
     async def test_resolve_all_dispatches_to_matching_pair_agent(self):
-        from seshat.agents.resolution.base import ResolvedRelationship
-        from seshat.models.enums import RelationshipType
-
         registry = _make_cross_type_registry()
 
         rel = MagicMock(spec=ResolvedRelationship)
@@ -147,6 +147,35 @@ class TestCrossTypeResolutionRegistry:
         assert failed == []
         for agent in registry._agents_mapping.values():
             agent.resolve.assert_not_called()
+
+
+class TestResolutionRegistry:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stripped_type", ["blocks"])
+    async def test_invalid_rel_targeting_superseded_node_is_stripped(self, stripped_type):
+        source = make_node("src")
+        kb_target = make_node("kb1")
+
+        def _make_rel(rel_type: RelationshipType):
+            rel = MagicMock(spec=ResolvedRelationship)
+            rel.source_id = source.id
+            rel.target_id = kb_target.id
+            rel.rel_type = rel_type
+            return rel
+
+        supersedes_rel = _make_rel(RelationshipType.SUPERSEDES)
+        spurious_rel = _make_rel(RelationshipType(stripped_type))
+
+        registry = _make_resolution_registry()
+        registry._same_type.resolve_all = AsyncMock(return_value=([supersedes_rel, spurious_rel], []))
+        registry._cross_type.resolve_all = AsyncMock(return_value=([], []))
+
+        resolved, _ = await registry.resolve_all(source_nodes=[source], per_source_targets={source.id: [kb_target]})
+
+        rel_types = {r.rel_type for r in resolved}
+        assert RelationshipType(stripped_type) not in rel_types
+        assert RelationshipType.SUPERSEDES in rel_types
+        assert len(resolved) == 1
 
 
 class TestGlobalSemaphoreForwarding:

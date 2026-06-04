@@ -127,5 +127,9 @@ markers = [
     "llm: requires a live LLM API key (any provider); subset of integration",
     "agents: requires a live LLM API key; subset of llm",
     "embedding: requires an embeddings API key; subset of llm",
+    "eval: eval harness tests (unit and integration); excluded from CI, run locally after agent/RAG changes",
 ]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["src/seshat/eval/*"]

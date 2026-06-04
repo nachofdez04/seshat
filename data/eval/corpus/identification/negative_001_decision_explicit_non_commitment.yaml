@@ -1,0 +1,30 @@
+description: >
+  Boundary: a proposal that sounds like a decision but is explicitly not committed. The
+  group agrees the migration is the right direction ("agreed in principle") but explicitly
+  refuses to commit today. The main topic — architecture choice — is not a Decision.
+  The scheduling note ("revisit in Q3") is not a Decision because it only places the
+  topic on a future agenda.
+  No Open Question: the group agrees on the direction; what remains is timing and scope,
+  which are not surfaced as a concrete unresolved choice in this exchange.
+  The primary assertion is that models do not over-extract a Decision from
+  strong-sounding agreement when an explicit non-commitment is present.
+
+tags:
+  tier: negative
+  difficulty: easy
+  focus: [decision]
+  detail: "explicit non-commitment, agenda-only note"
+
+transcript: |
+  We should probably migrate the monolith to microservices at some point — the current
+  architecture is becoming a bottleneck. That's the right direction strategically.
+  Agreed in principle, but we're not committing to anything today. There's a lot of
+  dependencies to untangle and we don't have the bandwidth right now.
+  Let's revisit this in Q3 once the platform team has finished the observability work.
+  Yes — put it on the Q3 planning agenda, not the current sprint.
+
+expected:
+  decision: []
+  open_question: []
+  risk: []
+  action_item: []

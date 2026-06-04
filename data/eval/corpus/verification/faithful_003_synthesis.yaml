@@ -1,0 +1,16 @@
+description: >
+  Verifier must accept a description that synthesises two turns of the same quote into
+  a coherent summary without adding facts. The quote contains both the decision and the
+  rationale; the description captures both faithfully.
+
+tags:
+  tier: faithful
+  source: quote
+  difficulty: medium
+  detail: "multi-turn synthesis; no new facts added"
+
+nodes:
+  - title: "Adopt URL versioning for APIs"
+    description: "URL-based API versioning was chosen as the simplest approach and will be documented in the API guidelines."
+    quote: "I think we should use URL versioning — /v1/, /v2/ — it's the simplest approach.\nAgreed. Let's go with URL versioning and document it in the API guidelines."
+    expected_supported: true

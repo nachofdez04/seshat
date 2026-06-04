@@ -1,0 +1,30 @@
+corpus_id: simple_005_retry_backoff_cap_narrowed
+description: >
+  Same-type open_question↔open_question baseline: a follow-up question amends
+  (narrows and clarifies) an earlier, broader open question about the same topic.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [open_question]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: question_narrow
+    type: open_question
+    title: Should the retry backoff cap be 30 s or 60 s for the payment service specifically?
+    description: After agreeing to add retry backoff, the team realised the cap value needs a decision specifically for the payment service, where latency SLAs are tighter.
+    quote: "For the payment service specifically — should the backoff cap be 30 seconds or 60? The SLA is tighter there."
+
+kb_nodes:
+  - id: question_broad
+    type: open_question
+    title: What retry backoff strategy should the platform use?
+    description: Broad open question about whether and how to implement retry backoff across all platform services.
+    quote: "We haven't decided on a retry backoff strategy yet — do we even want one?"
+
+expected_relations:
+  - source: question_narrow
+    target: question_broad
+    rel_type: amends

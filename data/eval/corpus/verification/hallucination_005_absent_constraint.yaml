@@ -1,0 +1,16 @@
+description: >
+  Verifier must reject a description that adds a constraint not stated in the quote.
+  The quote commits to using PostgreSQL; the description adds "for OLTP only" which
+  is a scoping constraint the group never said.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: medium
+  detail: "scope constraint (OLTP only) absent from quote"
+
+nodes:
+  - title: "Use PostgreSQL"
+    description: "PostgreSQL will be used for OLTP workloads only; analytics will use a separate store."
+    quote: "we'll use PostgreSQL for all our persistence needs"
+    expected_supported: false

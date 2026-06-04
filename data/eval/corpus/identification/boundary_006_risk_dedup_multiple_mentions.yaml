@@ -1,0 +1,45 @@
+description: >
+  Risk deduplication and Open Question: the same indexing-lag failure mode is mentioned
+  twice — the Risk agent should emit one Risk using the most complete supporting exchange.
+  The group also explicitly states the capacity numbers are unknown and no next step is
+  assigned, leaving an unresolved factual need — a genuine Open Question.
+
+tags:
+  tier: boundary
+  difficulty: hard
+  focus: [risk, open_question]
+  detail: "same failure mode mentioned twice, single risk extracted"
+
+transcript: |
+  The import path still worries me. If search indexing falls behind during the tenant import,
+  customers could see stale search results for newly migrated records.
+  Noted. Quick status first: let's do that after the updates.
+  Quick status: API changes are merged and the importer dry-run finished last night.
+  Back to the indexing concern: the importer can enqueue a million record updates in one burst.
+  If indexing lags behind that burst, customers may see stale search results for several hours
+  after migration, and support will not be able to tell whether records are missing or just delayed.
+  That's a real launch risk. We do not have those capacity numbers yet.
+
+expected:
+  risk:
+    - quote: "Back to the indexing concern: the importer can enqueue a million record updates in one burst.\n\
+        If indexing lags behind that burst, customers may see stale search results for several hours\n\
+        after migration, and support will not be able to tell whether records are missing or just delayed.\n\
+        That's a real launch risk. We do not have those capacity numbers yet."
+      title: Indexing lag may show stale search results after tenant import
+      description: If indexing falls behind the tenant import burst, customers may see stale search results for several hours and support may not know whether records are missing or delayed.
+      type: future
+      risk: Indexing lag after the tenant import may cause stale search results and support ambiguity about missing versus delayed records.
+
+  open_question:
+    - quote: "Back to the indexing concern: the importer can enqueue a million record updates in one burst.\n\
+        If indexing lags behind that burst, customers may see stale search results for several hours\n\
+        after migration, and support will not be able to tell whether records are missing or just delayed.\n\
+        That's a real launch risk. We do not have those capacity numbers yet."
+      title: What indexing capacity is needed to handle large tenant import bursts?
+      description: The group does not have the capacity numbers needed to assess whether indexing can absorb large tenant import bursts without unacceptable search lag.
+      question: What indexing capacity is needed to absorb large tenant import bursts without causing unacceptable search result lag?
+      context: The group explicitly stated the capacity numbers are not yet available and no next step was assigned in the transcript.
+
+  decision: []
+  action_item: []

@@ -1,0 +1,30 @@
+corpus_id: simple_004_vendor_rate_limit_risk_refined
+description: >
+  Same-type risk↔risk baseline: a refined risk entry amends an earlier, less precise one
+  about the same concern. The earlier risk is not removed — only its scope is updated.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [risk]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: risk_refined
+    type: risk
+    title: Vendor API rate limit may cause silent data loss during peak ingestion
+    description: Further analysis revealed that exceeding the vendor API rate limit does not raise an error — it silently drops records, leading to data loss rather than a visible failure.
+    quote: "We checked — when you hit the rate limit it just drops records silently. That's worse than an error."
+
+kb_nodes:
+  - id: risk_original
+    type: risk
+    title: Vendor API rate limit may cause ingestion failures
+    description: Initial risk that hitting the vendor API rate limit could cause ingestion failures during peak load.
+    quote: "There's a risk the vendor API rate limit kicks in during peak load and breaks ingestion."
+
+expected_relations:
+  - source: risk_refined
+    target: risk_original
+    rel_type: amends

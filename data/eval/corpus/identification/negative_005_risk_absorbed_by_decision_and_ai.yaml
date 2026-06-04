@@ -1,0 +1,45 @@
+description: >
+  Risk resolved by meeting end: a risk is raised and substantively discussed, but the
+  group immediately commits to a fix and assigns it. By end of meeting the risk is fully
+  diagnosed, resolved, and actioned — so the Risk agent must stay silent. The absence of
+  a no-rate-limiting Risk node is the key assertion; a Decision and an Action Item should
+  be extracted instead.
+
+tags:
+  tier: negative
+  difficulty: medium
+  focus: [risk]
+  detail: "failure mode absorbed by decision and action item"
+
+transcript: |
+  We have no rate limiting on the public API right now. If a client hammers it, we'll
+  exhaust the database connection pool and bring down the whole service.
+  That's happened in staging — a runaway integration test took down the environment for
+  twenty minutes last week.
+  We need to fix this before the external beta. We'll enforce a per-client rate limit of
+  200 requests per minute at the API gateway level. That's the decision.
+  Agreed. Lena, can you configure the rate limiting rules in the gateway by end of this sprint?
+  Yes, I'll have it done by Friday.
+
+expected:
+  decision:
+    - quote: "We need to fix this before the external beta. We'll enforce a per-client rate limit of\n\
+        200 requests per minute at the API gateway level. That's the decision.\n\
+        Agreed."
+      title: Enforce 200 req/min per-client rate limit at the API gateway
+      description: The team decided to enforce a per-client rate limit of 200 requests per minute at the API gateway level before the external beta.
+      decision: Enforce a per-client rate limit of 200 requests per minute at the API gateway.
+      rationale: No rate limiting currently risks exhausting the database connection pool under hammering, bringing down the whole service.
+      alternatives_considered: []
+
+  action_item:
+    - quote: "Lena, can you configure the rate limiting rules in the gateway by end of this sprint?\n\
+        Yes, I'll have it done by Friday."
+      title: Configure API gateway rate limiting rules
+      description: Lena will configure the per-client rate limiting rules in the API gateway by Friday.
+      task: Configure the per-client rate limiting rules in the API gateway.
+      assignee: Lena
+      due: by Friday
+
+  risk: []
+  open_question: []

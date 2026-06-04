@@ -1,0 +1,32 @@
+corpus_id: simple_021_migration_downtime_risk_narrowed
+description: >
+  Same-type risk↔risk baseline: a new risk note refines the scope of an earlier one.
+  The original risk is not invalidated — the new note narrows the conditions under which
+  it applies. The correct label is AMENDS. This is the only positive case for the
+  risk same-type agent and establishes the baseline.
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [risk]
+  relations: [amends]
+  difficulty: easy
+
+source_nodes:
+  - id: risk_narrowed
+    type: risk
+    title: Database migration downtime risk applies only during peak trading hours (09:00–17:00 UTC)
+    description: After further analysis, the team determined that the migration-induced lock contention only causes unacceptable downtime if the migration runs during peak trading hours. Off-peak runs are within the agreed maintenance window.
+    quote: "We re-ran the estimates — the downtime risk is only real if we migrate during trading hours. Off-peak we're fine."
+
+kb_nodes:
+  - id: risk_original
+    type: risk
+    title: Database migration may cause unacceptable downtime during the release window
+    description: The schema migration locks several high-traffic tables and the estimated lock duration exceeds the agreed maintenance window, risking unplanned downtime.
+    quote: "The migration locks the orders table for up to three minutes — that exceeds our maintenance window and could cause real downtime."
+
+expected_relations:
+  - source: risk_narrowed
+    target: risk_original
+    rel_type: amends

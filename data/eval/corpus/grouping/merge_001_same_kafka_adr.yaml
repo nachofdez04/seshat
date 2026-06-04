@@ -1,0 +1,20 @@
+corpus_id: merge_001_same_kafka_adr
+description: >
+  Two decisions that are clearly about the same Kafka ADR and should be grouped together.
+
+tags:
+  concept_type: decision
+  difficulty: easy
+  scenario: merge
+  detail: "same Kafka ADR — topic selection and partitioning strategy"
+
+items:
+  - id: kafka-event-bus
+    title: "Use Kafka for the event bus"
+    description: "The team chose Kafka over RabbitMQ as the event bus for the platform, citing superior throughput for high-volume pipelines, native log compaction, and long-term replay capability as the deciding factors."
+  - id: kafka-partitioning
+    title: "Partition Kafka topics by tenant ID"
+    description: "The team decided that all Kafka topics will be partitioned by tenant ID to guarantee ordered delivery per tenant and prevent noisy-neighbour effects across tenants on shared topics."
+
+expected_groups:
+  - [kafka-event-bus, kafka-partitioning]

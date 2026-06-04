@@ -1,0 +1,32 @@
+corpus_id: simple_017_vendor_agnostic_vs_native_sdk
+description: >
+  Same-type decision↔decision baseline: two active decisions that are mutually incompatible.
+  Neither replaces the other — both are live and directly contradict each other on the same
+  topic. The correct label is CONFLICTS_WITH, not SUPERSEDES (which would imply one cancels
+  the other) and not AMENDS (which would imply one refines the other).
+
+tags:
+  tier: simple
+  pairing: same_type
+  types: [decision]
+  relations: [conflicts_with]
+  difficulty: easy
+
+source_nodes:
+  - id: decision_vendor_lock_in
+    type: decision
+    title: All new integrations must use vendor-agnostic abstractions
+    description: The platform team decided that all new third-party integrations must be written behind an abstraction layer to avoid vendor lock-in, regardless of delivery timelines.
+    quote: "Every new integration goes behind an abstraction layer — I don't care if it slows us down slightly, we need to stay vendor-agnostic."
+
+kb_nodes:
+  - id: decision_native_sdk
+    type: decision
+    title: Use the vendor's native SDK directly for all new integrations to meet the Q3 deadline
+    description: The delivery team decided to use vendor SDKs directly in all new integrations to move faster and ship before the Q3 deadline.
+    quote: "We're using the native SDKs directly — wrapping everything will cost us weeks and we can't miss Q3."
+
+expected_relations:
+  - source: decision_vendor_lock_in
+    target: decision_native_sdk
+    rel_type: conflicts_with

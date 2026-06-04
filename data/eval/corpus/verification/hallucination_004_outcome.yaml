@@ -1,0 +1,16 @@
+description: >
+  Verifier must reject a description that asserts a concrete outcome when the quote only
+  expresses intent. "Migrate immediately" is not in the quote — the quote only says the
+  direction has been decided.
+
+tags:
+  tier: hallucination
+  source: quote
+  difficulty: medium
+  detail: "outcome (immediately, this sprint) absent from quote"
+
+nodes:
+  - title: "Migrate Memcached to Redis"
+    description: "The team decided to migrate Memcached to Redis immediately, starting this sprint."
+    quote: "we'll move away from Memcached and standardise on Redis going forward"
+    expected_supported: false

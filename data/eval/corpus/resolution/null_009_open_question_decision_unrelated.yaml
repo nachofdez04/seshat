@@ -1,0 +1,29 @@
+corpus_id: null_009_open_question_decision_unrelated
+description: >
+  Cross-type open_question→decision discriminating: an open question and a decision
+  from the same project where the question does not block the decision. The question
+  concerns a future feature scope; the decision concerns a tooling choice already made —
+  same team, no dependency.
+
+tags:
+  tier: "null"
+  pairing: cross_type
+  types: [decision, open_question]
+  relations: []
+  difficulty: easy
+
+source_nodes:
+  - id: question_i18n
+    type: open_question
+    title: Should the v2 API support internationalisation from launch or in a follow-up release?
+    description: The product team has not decided whether to include full i18n support in the v2 API launch or defer it to a follow-up release. The answer affects the data model design but has not been resolved.
+    quote: "Do we ship i18n support in the v2 API launch, or defer it? We haven't agreed yet."
+
+kb_nodes:
+  - id: decision_linter
+    type: decision
+    title: Enforce ESLint with the Airbnb config in all frontend repositories
+    description: The frontend guild agreed to standardise on ESLint with the Airbnb configuration across all frontend repositories, enforced via pre-commit hooks.
+    quote: "We'll enforce ESLint with the Airbnb config across all frontend repos, with a pre-commit hook."
+
+expected_relations: []

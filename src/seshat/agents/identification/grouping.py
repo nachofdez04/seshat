@@ -4,7 +4,7 @@ import json
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from seshat.agents.base import RetryExhaustedError, _BaseAgent
 from seshat.agents.identification.base import AnchoredConcept, ConceptModel
@@ -21,15 +21,18 @@ _GROUPING_PROMPT = """\
 You are a concept grouping agent.
 
 You receive a list of identified items of the same type. Each item has an id, title, and description.
-Your task is to organise them into thematic groups — clusters of items that belong to the same topic, initiative, or decision thread.
+Your task is to organise them into thematic groups — clusters of items that belong to the same initiative, decision thread, or tightly coupled set of choices that a practitioner would document under a single heading.
+
+When NOT to group:
+- Do not group items merely because they share a domain or technology area.
+  Counter-example: "PostgreSQL as the persistence layer" and "Redis as the caching layer" are different architectural decisions even though both concern data storage.
+- Do not group items because they occurred in the same meeting or were raised by the same person. Proximity in time or speaker does not imply a shared initiative.
+- Do not group items that address different operational concerns. An API versioning decision and an on-call rotation policy are both platform decisions, but they belong to separate threads.
+- When in doubt, use a singleton group. An incorrect merge is harder to recover from than an overly fine split.
 
 Rules:
 - Every item MUST appear in exactly one group.
 - A group may contain a single item (singleton group) if it genuinely stands alone.
-- Prefer fewer, broader groups over many narrow ones.
-- group_title: short noun phrase naming the theme (e.g. "Profile Cache", "Kafka ADR", "PgBouncer Rollout").
-- group_description: one sentence summarising what the group is about. Must be distinct from any individual item description.
-- member_ids: list of item ids belonging to this group, in the order they appear in the input.
 """
 
 
@@ -40,9 +43,15 @@ class ConceptGroup(BaseModel, Generic[M]):
 
 
 class _GroupSchema(BaseModel):
-    group_title: str
-    group_description: str
-    member_ids: list[str]
+    group_title: str = Field(
+        description="Short noun phrase naming the initiative or thread (e.g. 'Kafka ADR', 'Auth Hardening', 'PgBouncer Rollout')."
+    )
+    group_description: str = Field(
+        description="One sentence summarising what the shared initiative is about. Must be distinct from any individual item description."
+    )
+    member_ids: list[str] = Field(
+        description="List of item ids belonging to this group, in the order they appear in the input."
+    )
 
 
 class _GroupingSchema(BaseModel):

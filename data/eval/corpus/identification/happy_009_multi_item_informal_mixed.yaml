@@ -1,0 +1,119 @@
+description: >
+  Hard happy-path: all four agent types, multiple items per type, informal phrasing
+  throughout. Domain is a GDPR consent management service. Tests phase-scoped decision,
+  self-assignment inferred from prior name mention, future risk, blocker risk, two
+  action items (one with due date, one without), and one open question blocked on
+  external legal input.
+
+tags:
+  tier: happy-path
+  difficulty: hard
+  focus: [decision, risk, action_item, open_question]
+
+transcript: |
+  Alright, let's sort out the consent service. We've got a few things to settle before
+  the sprint starts.
+  First up — storage. We need somewhere to keep consent records. Relational or
+  document store?
+  I'd lean relational. Consent records are structured and auditable, and we need
+  point-in-time queries for DSARs. A document store makes that messy.
+  Yeah that works for me. Let's go with Postgres for now, until we move to the
+  centralised data platform.
+  Sounds good. Agreed.
+  Okay, next thing. The consent banner — do we build it ourselves or use a third-party
+  CMP like OneTrust?
+  Building it ourselves is a lot of work. But legal hasn't confirmed whether OneTrust
+  covers our cross-border jurisdictions. That's still outstanding.
+  Right, we can't decide that until legal comes back. Let's keep it open.
+  Fair enough. Moving on — we do know we need a consent audit log regardless of which
+  banner we pick. Let's just do append-only writes to a dedicated audit table. No
+  deletes, ever.
+  Agreed, that's the right call. Audit records must be immutable.
+  Now, risk: our current consent schema doesn't have a version field. If we ever
+  update the consent wording, we won't know which version a user accepted. That's
+  going to be a problem when we do the next cookie policy update.
+  Yeah, that's a real gap. We should fix it before the first prod deploy.
+  And on that note — the consent service is completely missing from the DPIA we
+  submitted to the DPO last month. If that's not updated before we go live, we're
+  non-compliant on day one. The DPO has flagged it as a blocker.
+  Okay, so we have two things to action. Nadia, can you add a version field to the
+  consent schema and update the migration scripts? Can you get that done by end of
+  next week?
+  Yes, I'll take that.
+  And someone needs to update the DPIA to include the consent service. I can do that —
+  I worked on the original submission.
+  Great, Marcus, let's say before we request go-live sign-off, no hard date yet.
+  That works.
+
+expected:
+  decision:
+    - quote: "I'd lean relational. Consent records are structured and auditable, and we need\n\
+        point-in-time queries for DSARs. A document store makes that messy.\n\
+        Yeah that works for me. Let's go with Postgres for now, until we move to the\n\
+        centralised data platform.\n\
+        Sounds good. Agreed."
+      title: Use Postgres for consent record storage until data platform migration
+      description: The team chose Postgres over a document store as the consent record store, scoped to the period before migrating to the centralised data platform.
+      decision: Use Postgres for consent record storage for now, until the team migrates to the centralised data platform.
+      rationale: Consent records are structured and auditable; point-in-time queries for DSARs are difficult with a document store.
+      alternatives_considered: ["document store"]
+
+    - quote: "Fair enough. Moving on — we do know we need a consent audit log regardless of which\n\
+        banner we pick. Let's just do append-only writes to a dedicated audit table. No\n\
+        deletes, ever.\n\
+        Agreed, that's the right call. Audit records must be immutable."
+      title: Store consent audit log as append-only writes to a dedicated table
+      description: The team decided the consent audit log will use append-only writes to a dedicated audit table, with no deletions permitted.
+      decision: Write consent audit records as append-only to a dedicated audit table; deletions are not permitted.
+      rationale: Audit records must be immutable and the decision applies regardless of which consent banner is chosen.
+      alternatives_considered: []
+
+  risk:
+    - quote: "Now, risk: our current consent schema doesn't have a version field. If we ever\n\
+        update the consent wording, we won't know which version a user accepted. That's\n\
+        going to be a problem when we do the next cookie policy update.\n\
+        Yeah, that's a real gap. We should fix it before the first prod deploy."
+      title: Missing consent schema version field will cause compliance gaps on policy updates
+      description: Without a version field on consent records, the service cannot determine which wording version a user accepted, creating a compliance gap when consent wording changes.
+      type: future
+      risk: Absent a version field, the service cannot determine which consent wording version a user accepted, making it impossible to re-collect consent after policy updates.
+
+    - quote: "And on that note — the consent service is completely missing from the DPIA we\n\
+        submitted to the DPO last month. If that's not updated before we go live, we're\n\
+        non-compliant on day one. The DPO has flagged it as a blocker."
+      title: Consent service omitted from DPIA blocks go-live compliance
+      description: The consent service was not included in the Data Protection Impact Assessment submitted to the DPO, and the DPO has flagged this as a blocker to going live.
+      type: blocker
+      risk: Omission of the consent service from the DPIA means the product cannot go live without breaching GDPR compliance requirements.
+
+  action_item:
+    - quote: "Okay, so we have two things to action. Nadia, can you add a version field to the\n\
+        consent schema and update the migration scripts? Can you get that done by end of\n\
+        next week?\n\
+        Yes, I'll take that."
+      title: Add version field to consent schema and update migrations
+      description: Nadia will add a version field to the consent schema and update the migration scripts by end of next week.
+      task: Add a version field to the consent schema and update the migration scripts accordingly.
+      assignee: Nadia
+      due: by end of next week
+
+    - quote: "And someone needs to update the DPIA to include the consent service. I can do that —\n\
+        I worked on the original submission.\n\
+        Great, Marcus, let's say before we request go-live sign-off, no hard date yet.\n\
+        That works."
+      title: Update DPIA to include the consent service
+      description: Marcus will update the Data Protection Impact Assessment to cover the consent service before the team requests go-live sign-off.
+      task: Update the DPIA to include the consent service.
+      assignee: Marcus
+      due: null
+
+  open_question:
+    - quote: "The consent banner — do we build it ourselves or use a third-party\n\
+        CMP like OneTrust?\n\
+        Building it ourselves is a lot of work. But legal hasn't confirmed whether OneTrust\n\
+        covers our cross-border jurisdictions. That's still outstanding.\n\
+        Right, we can't decide that until legal comes back. Let's keep it open."
+      title: Build consent banner in-house or use a third-party CMP?
+      description: The team deferred the consent banner decision pending legal confirmation on whether OneTrust covers all required cross-border jurisdictions.
+      question: Should the team build the consent banner in-house or adopt a third-party CMP such as OneTrust?
+      context: Legal has not yet confirmed whether OneTrust covers the required cross-border jurisdictions; the decision is blocked on that external input.

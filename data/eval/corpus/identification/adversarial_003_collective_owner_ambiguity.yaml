@@ -1,0 +1,34 @@
+description: >
+  Adversarial: collective owner ambiguity. Three assignment patterns appear in the same
+  transcript: "we" with no specific team context (not valid), "the data engineering team"
+  (specific named role, valid), and "the team" with no qualifying context (ambiguous, not
+  valid). Only the named-role assignment should be extracted as an action item.
+
+tags:
+  tier: adversarial
+  difficulty: hard
+  focus: [action_item]
+  detail: "'we' and 'the team' rejected; specific named role accepted as owner"
+
+transcript: |
+  The schema migration for the analytics warehouse needs to happen before the Q3 reporting cycle.
+  We need to run the dry-run validation against staging first.
+  Yes, we'll get that sorted before the release.
+  The data engineering team should handle the actual migration execution, since they own the pipeline.
+  Agreed — let's make sure it's done by June 20th.
+  We also need to update the BI tool connection strings after the migration.
+  Right, the team will take care of that.
+
+expected:
+  action_item:
+    - quote: "The data engineering team should handle the actual migration execution, since they own the pipeline.\n\
+        Agreed — let's make sure it's done by June 20th."
+      title: Execute analytics warehouse schema migration
+      description: The data engineering team will execute the analytics warehouse schema migration by June 20th ahead of the Q3 reporting cycle.
+      task: Execute the schema migration for the analytics warehouse.
+      assignee: the data engineering team
+      due: by June 20th
+
+  decision: []
+  risk: []
+  open_question: []
