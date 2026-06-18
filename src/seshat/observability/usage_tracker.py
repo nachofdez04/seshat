@@ -11,6 +11,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
 from seshat.observability.usage_logger import log_token_metrics
+from seshat.transcription.base import AbstractTranscriber
+from seshat.utils.audio import audio_duration_seconds_ceil
 from seshat.utils.log import get_logger
 from seshat.utils.tokens import count_tokens
 
@@ -49,6 +51,7 @@ class UsageTracker:
         self._cache_read_tokens = 0
         self._cache_creation_tokens = 0
         self._embedding_input_tokens = 0
+        self._audio_seconds = 0
         self._lock = asyncio.Lock()
 
     @classmethod
@@ -75,6 +78,10 @@ class UsageTracker:
     def embedding_input_tokens(self) -> int:
         return self._embedding_input_tokens
 
+    @property
+    def audio_seconds(self) -> int:
+        return self._audio_seconds
+
     async def add(
         self,
         input_tokens: int = 0,
@@ -82,6 +89,7 @@ class UsageTracker:
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
         embedding_input_tokens: int = 0,
+        audio_seconds: int = 0,
     ) -> None:
         async with self._lock:
             self._input_tokens += input_tokens
@@ -89,6 +97,7 @@ class UsageTracker:
             self._cache_read_tokens += cache_read_tokens
             self._cache_creation_tokens += cache_creation_tokens
             self._embedding_input_tokens += embedding_input_tokens
+            self._audio_seconds += audio_seconds
 
         in_pct = self._input_tokens / self._max_input
         out_pct = self._output_tokens / self._max_output
@@ -139,6 +148,10 @@ class TokenBudgetCallback(AsyncCallbackHandler):
     def __init__(self, tracker: UsageTracker) -> None:
         self._tracker = tracker
 
+    @property
+    def tracker(self) -> UsageTracker:
+        return self._tracker
+
     async def on_llm_end(self, response: LLMResult, *, run_id: UUID, **kwargs: Any) -> None:
         for generations in response.generations:
             for gen in generations:
@@ -188,9 +201,42 @@ class TrackingEmbeddings(Embeddings):
         return result
 
     async def _record_embedding_cost(self, texts: list[str]) -> None:
-        usage_tracker = _run_tracker_var.get()
-        if usage_tracker is not None:
-            await usage_tracker._tracker.add(embedding_input_tokens=self._token_count(texts))
+        callback = _run_tracker_var.get()
+        if callback is None:
+            logger.warning("No active token budget tracker found in context; embedding tokens will not be tracked")
+            return
+
+        await callback.tracker.add(embedding_input_tokens=self._token_count(texts))
+
+
+class TrackingTranscriber(AbstractTranscriber):
+    """Wraps any AbstractTranscriber, reading audio duration via mutagen and
+    pushing ceiling-rounded seconds into the active UsageTracker (if one is set).
+    """
+
+    def __init__(self, transcriber: AbstractTranscriber) -> None:
+        self._transcriber = transcriber
+
+    async def transcribe(self, audio_bytes: bytes, extension: str) -> str:
+        result = await self._transcriber.transcribe(audio_bytes, extension)
+        await self._record_audio_duration(audio_bytes)
+        return result
+
+    async def _record_audio_duration(self, audio_bytes: bytes) -> None:
+        callback = _run_tracker_var.get()
+        if callback is None:
+            logger.warning("No active token budget tracker found in context; audio seconds will not be tracked")
+            return
+
+        duration_seconds = self._audio_duration_seconds(audio_bytes)
+        if duration_seconds is None:
+            logger.warning("Could not determine audio duration; audio seconds will not be tracked")
+            return
+
+        await callback.tracker.add(audio_seconds=duration_seconds)
+
+    def _audio_duration_seconds(self, audio_bytes: bytes) -> int | None:
+        return audio_duration_seconds_ceil(audio_bytes)
 
 
 def set_run_tracker(callback: TokenBudgetCallback) -> None:

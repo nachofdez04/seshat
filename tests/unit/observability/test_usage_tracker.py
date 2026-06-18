@@ -1,5 +1,6 @@
 """Tests for UsageTracker, TokenBudgetCallback, and track_token_budget."""
 
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -9,8 +10,10 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 from seshat.observability.usage_tracker import (
     TokenBudgetCallback,
     TokenBudgetExceededError,
+    TrackingTranscriber,
     UsageTracker,
     get_run_tracker,
+    set_run_tracker,
     track_token_budget,
 )
 
@@ -158,3 +161,62 @@ class TestTrackTokenBudget:
 
         assert len(trackers) == 2
         assert trackers[0] is not trackers[1]
+
+
+class TestUsageTrackerAudioSeconds:
+    async def test_accumulates_audio_seconds(self):
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        await tracker.add(audio_seconds=30)
+        await tracker.add(audio_seconds=45)
+        assert tracker.audio_seconds == 75
+
+    async def test_audio_seconds_independent_of_token_counts(self):
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        await tracker.add(input_tokens=100, audio_seconds=60)
+        assert tracker.input_tokens == 100
+        assert tracker.audio_seconds == 60
+
+
+class TestTrackingTranscriber:
+    async def test_delegates_to_inner_transcriber(self):
+        audio_bytes = b"\x00" * 16
+
+        inner_transcriber = AsyncMock()
+        inner_transcriber.transcribe.return_value = "hello world"
+
+        with patch("seshat.utils.audio.mutagen.File") as mock_mutagen:
+            mock_mutagen.return_value.info.length = 10.0
+            transcriber = TrackingTranscriber(inner_transcriber)
+            result = await transcriber.transcribe(audio_bytes, extension="mp3")
+
+        assert result == "hello world"
+        inner_transcriber.transcribe.assert_awaited_once_with(audio_bytes, "mp3")
+
+    async def test_records_audio_seconds_in_tracker(self):
+        audio_bytes = b"\x00" * 16
+
+        inner_transcriber = AsyncMock()
+        inner_transcriber.transcribe.return_value = ""
+
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        callback = TokenBudgetCallback(tracker)
+        set_run_tracker(callback)
+
+        with patch("seshat.utils.audio.mutagen.File") as mock_mutagen:
+            mock_mutagen.return_value.info.length = 7.3
+            transcriber = TrackingTranscriber(inner_transcriber)
+            await transcriber.transcribe(audio_bytes, extension="mp3")
+
+        assert tracker.audio_seconds == 8  # ceil(7.3)
+
+    async def test_skips_tracking_when_duration_unreadable(self):
+        inner_transcriber = AsyncMock()
+        inner_transcriber.transcribe.return_value = ""
+
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        set_run_tracker(TokenBudgetCallback(tracker))
+
+        transcriber = TrackingTranscriber(inner_transcriber)
+        await transcriber.transcribe(b"\x00" * 64, extension="mp3")
+
+        assert tracker.audio_seconds == 0
