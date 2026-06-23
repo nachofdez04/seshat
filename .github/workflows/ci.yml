@@ -40,7 +40,7 @@ jobs:
 
       - uses: ./.github/actions/setup
         with:
-          dependency-groups: test
+          dependency-groups: test,eval
 
       - name: Run unit tests
         run: PYTEST_ADDOPTS="" uv run pytest -m "not integration" --tb=short
@@ -55,7 +55,7 @@ jobs:
 
       - uses: ./.github/actions/setup
         with:
-          dependency-groups: test
+          dependency-groups: test,eval
 
       - name: Set up env
         run: |

@@ -1,0 +1,11 @@
+description: Minimal test corpus — one risk, used in integration tests for run_eval().
+
+transcript: |
+  There is a risk the deployment will fail if the staging environment is still down on Thursday.
+  We have no fix date from infra yet.
+
+expected:
+  risk:
+    - quote: "There is a risk the deployment will fail if the staging environment is still down on Thursday."
+      title: Deployment risk due to staging environment
+      description: The deployment may fail if the staging environment remains down on Thursday, with no fix date from infra.

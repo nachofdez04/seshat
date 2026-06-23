@@ -63,19 +63,34 @@ def make_node(
     type: ConceptType = ConceptType.DECISION,
     description: str = "Team decided to use PostgreSQL.",
     status: NodeStatus = NodeStatus.APPROVED,
+    quote: str | None = None,
+    transcript: str | None = None,
+    quote_anchors: list[QuoteAnchor] | None = None,
+    metadata: NodeMetadata | None = None,
 ) -> KBNode:
+    if quote_anchors is not None:
+        anchors = quote_anchors
+    elif quote is not None and transcript is not None:
+        start = transcript.index(quote)
+        anchors = [QuoteAnchor(transcript_file="test.txt", char_start=start, char_end=start + len(quote))]
+    else:
+        anchors = [QuoteAnchor(transcript_file="test.txt", char_start=0, char_end=22)]
+
+    if metadata is None:
+        metadata = NodeMetadata(
+            job_id="job-1",
+            meeting_date=date(2026, 4, 21),
+            ingestion_source=IngestionSource.JOB,
+            team=team,
+        )
+
     return KBNode(
         id=uuid5(NAMESPACE_DNS, node_id),
         type=type,
         title=title,
         description=description,
         confidence=confidence,
-        quote_anchors=[QuoteAnchor(transcript_file="test.txt", char_start=0, char_end=22)],
+        quote_anchors=anchors,
         status=status,
-        metadata=NodeMetadata(
-            job_id="job-1",
-            meeting_date=date(2026, 4, 21),
-            ingestion_source=IngestionSource.JOB,
-            team=team,
-        ),
+        metadata=metadata,
     )

@@ -108,6 +108,7 @@ class NodeRetriever:
             top_k=self._config.top_k,
             node_filter=node_filter,
             exclude_job_id=exclude_job_id,
+            score_threshold=self._config.min_score,
         )
 
     @async_retry()

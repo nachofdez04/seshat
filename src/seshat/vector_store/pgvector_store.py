@@ -55,11 +55,14 @@ class PGVectorStore(AbstractVectorStore):
         top_k: int,
         node_filter: NodeFilter | None = None,
         exclude_job_id: str | None = None,
+        score_threshold: float | None = None,
     ) -> list[SearchResult]:
         from seshat.models.api import SearchResult
 
         filter_dict = _build_filter(node_filter, exclude_job_id)
-        results = await self._store.asimilarity_search_with_relevance_scores(query, k=top_k, filter=filter_dict)
+        results = await self._store.asimilarity_search_with_relevance_scores(
+            query, k=top_k, filter=filter_dict, score_threshold=score_threshold
+        )
         return [SearchResult(node_id=doc.metadata["node_id"], score=score) for doc, score in results]
 
     async def delete(self, node_id: str) -> None:

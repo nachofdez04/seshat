@@ -1,0 +1,15 @@
+description: Minimal test corpus — one decision, used in integration tests for run_eval().
+
+transcript: |
+  We discussed the options. We're going to use PostgreSQL for the new service.
+  John will set up the initial schema by Friday.
+
+expected:
+  decision:
+    - quote: "We're going to use PostgreSQL for the new service."
+      title: Use PostgreSQL for the new service
+      description: The team decided to use PostgreSQL as the database for the new service.
+  action_item:
+    - quote: "John will set up the initial schema by Friday."
+      title: Set up initial schema
+      description: John will set up the initial database schema for the new service by Friday.

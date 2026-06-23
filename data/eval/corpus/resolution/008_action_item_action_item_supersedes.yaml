@@ -1,0 +1,23 @@
+corpus_id: 008_action_item_action_item_supersedes
+description: >
+  Same-type action_item↔action_item baseline: a new action item supersedes a cancelled
+  earlier one on the same topic. The original task is fully replaced.
+
+source_nodes:
+  - id: action_new
+    type: action_item
+    title: Migrate secrets to AWS Secrets Manager using the new onboarding script
+    description: After the manual migration approach was abandoned, Leila is tasked with migrating all service secrets to AWS Secrets Manager using the newly built onboarding script.
+    quote: "Leila, use the new onboarding script to migrate all secrets to Secrets Manager by end of next week."
+
+kb_nodes:
+  - id: action_old
+    type: action_item
+    title: Manually rotate and move secrets to AWS Secrets Manager
+    description: Original task to manually rotate and migrate service secrets to AWS Secrets Manager, assigned to Leila before the onboarding script existed.
+    quote: "Leila, please manually rotate and move all service secrets to Secrets Manager."
+
+expected_relations:
+  - source: action_new
+    target: action_old
+    rel_type: supersedes

@@ -1,0 +1,50 @@
+corpus_id: open-question-observability-tooling-retrieves-setup-tasks
+description: >
+  Cross-type (open_question→action_item): an open question about which
+  observability tooling to adopt should surface action items about
+  evaluating candidates, setting up the metrics pipeline, and defining log
+  retention policy, while ignoring unrelated tasks.
+
+query_node:
+  id: which-observability-tool
+  type: open_question
+  title: "Which observability platform should we adopt: Datadog, Grafana Stack, or something else?"
+  description: "The team has not agreed on a long-term observability platform. Three options are on the table: Datadog (managed, expensive), Grafana+Prometheus+Loki (self-hosted, complex), and a lightweight cloud-native solution."
+  quote: "Datadog, Grafana stack, or something else? We need to actually decide"
+
+candidate_nodes:
+  - id: run-observability-poc
+    type: action_item
+    title: "Run a two-week PoC comparing Datadog and Grafana Stack"
+    description: "Stand up both options in the staging environment, instrument two representative services, and produce a cost/complexity comparison before the next architecture review."
+    quote: "run a two-week PoC on both options in staging and bring the numbers to the arch review"
+  - id: instrument-services-metrics
+    type: action_item
+    title: "Instrument all services to emit Prometheus-compatible metrics"
+    description: "Regardless of the final platform choice, all services must emit standard Prometheus metrics so they can be scraped by any compatible backend."
+    quote: "emit Prometheus metrics from everything, that way we're not locked to a platform"
+  - id: define-log-retention-policy
+    type: action_item
+    title: "Define and implement a log retention policy"
+    description: "Agree on retention windows per log level and environment and configure the chosen log backend to enforce them."
+    quote: "agree on retention windows and configure the log backend to enforce them"
+  - id: schedule-offsite
+    type: action_item
+    title: "Schedule the Q3 team offsite"
+    description: "Book venue and travel for the Q3 team offsite, targeting the second week of August."
+    quote: "someone book the offsite for August, second week works for most people"
+  - id: update-privacy-policy
+    type: action_item
+    title: "Update the privacy policy page to reflect new data processing"
+    description: "The website privacy policy must be updated to document the new third-party analytics integration before it goes live."
+    quote: "legal says update the privacy policy before we turn on the new analytics"
+  - id: organise-team-lunch
+    type: action_item
+    title: "Organise a team lunch to welcome new joiners"
+    description: "Book a restaurant for a welcome lunch for the three new engineers joining next month."
+    quote: "let's do a lunch for the new people, somewhere near the office"
+
+expected_relevant_ids:
+  - run-observability-poc
+  - instrument-services-metrics
+  - define-log-retention-policy

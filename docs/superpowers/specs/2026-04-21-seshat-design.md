@@ -307,46 +307,58 @@ def get_request_settings(overrides: SeshatConfigOverride | None) -> SeshatConfig
 
 ### ExtractionConfig
 
+The base LLM config class is `_LLMConfig` (private). Three concrete subclasses cover the three LLM roles:
+
 ```python
-class LLMConfig(BaseModel):
-    provider: LLMProvider = LLMProvider.ANTHROPIC
-    model: str = "claude-sonnet-4-6"
+class _LLMConfig(BaseModel):
+    provider: LLMProvider
+    model: str
     temperature: float = 0.0
     max_retries: int = 3                  # per-call retry attempts on transient errors (API timeout, HTTP 429)
     timeout_seconds: float = 300.0        # per-request HTTP timeout in seconds
-    max_concurrent_calls: int = 50        # maximum number of simultaneous LLM calls
+    max_concurrent_calls: int = 5         # maximum number of simultaneous LLM calls
+    max_output_tokens: int | None = None  # per-call generation token cap; None = no limit
     api_key_secret_key: str | None = None # Secrets key for the LLM API key; defaults to '<provider>_api_key' if not set
 
-class VerificationConfig(LLMConfig):
-    provider: LLMProvider = LLMProvider.OPENAI   # must differ from ExtractionConfig.llm.provider — enforced by model_validator at startup
+class IdentificationLLMConfig(_LLMConfig):
+    provider: LLMProvider = LLMProvider.ANTHROPIC
+    model: str = "claude-sonnet-4-6"
+
+class VerificationLLMConfig(_LLMConfig):
+    provider: LLMProvider = LLMProvider.OPENAI   # must differ from identification.provider — enforced by model_validator at startup
     model: str = "gpt-5.4-nano"
     use_full_transcript: bool = True      # When False, verification uses only the extracted quote
 
-class ResolutionConfig(LLMConfig):
-    max_concurrent_calls: int = 10        # per-agent concurrency cap (overrides LLMConfig default)
+class ResolutionLLMConfig(_LLMConfig):
+    provider: LLMProvider = LLMProvider.ANTHROPIC
+    model: str = "claude-sonnet-4-6"
+    max_concurrent_calls: int = 10        # per-agent concurrency cap
     max_global_calls: int = 30            # global cap across all resolution agents combined
 
 class ExtractionConfig(BaseModel):
-    llm: LLMConfig = LLMConfig()
-    resolution: ResolutionConfig = ResolutionConfig()
+    identification: IdentificationLLMConfig = IdentificationLLMConfig()
+    resolution: ResolutionLLMConfig = ResolutionLLMConfig()
     concept_types: list[ConceptType] = list(ConceptType)
     confidence_threshold: float = 0.7
     per_type_thresholds: dict[ConceptType, float] | None = None  # overrides confidence_threshold per type; None = use global default for all types
     auto_mode: bool = False
-    max_output_tokens: int = 2048                   # output (generation) tokens per agent call
     max_total_input_tokens: int = 2_000_000         # aggregate input token cap across all agent calls in the extraction stage
     max_total_output_tokens: int = 500_000          # aggregate output token cap across all agent calls in the extraction stage
     max_hint_nodes: int = 20                        # most recent same-type KB nodes included in extraction-time hint
     max_hint_tokens: int = 1000                     # hard token cap on the hint; oldest nodes dropped first if exceeded
-    verification: VerificationConfig | None = None  # None = heuristics-only scoring; see Confidence Scoring
+    verification: VerificationLLMConfig | None = None  # None = heuristics-only scoring; see Confidence Scoring
     confidence_weights: ConfidenceWeights = ConfidenceWeights()
-    extraction_timeout_seconds: float | None = None # wall-clock cap on the full extraction pass; None = no cap
-    resolution_timeout_seconds: float | None = None # wall-clock cap on the full resolution pass; None = no cap
-    result_cache_enabled: bool = False              # in-memory extraction result cache keyed on hash(transcript + concept_type + model + prompt_hash); auto-set True by seshat eval regardless of config; False for production to avoid stale results across jobs
-    grouped_extraction_types: set[ConceptType] = {ConceptType.DECISION}  # types passed through the grouping step; toggleable without code deploy
+    identification_timeout_seconds: float | None = None  # wall-clock cap on the full identification pass; None = no cap
+    resolution_timeout_seconds: float | None = None      # wall-clock cap on the full resolution pass; None = no cap
+    grouped_identification_types: set[ConceptType] = {ConceptType.DECISION}  # types passed through the grouping step; toggleable without code deploy
 
-    # model_validator enforces: verification.provider != llm.provider (startup error if violated)
+    # model_validator enforces: verification.provider != identification.provider (startup error if violated)
     # and logs a warning when verification=None (heuristics-only)
+
+# Note: there is no result_cache_enabled field in ExtractionConfig.
+# Every eval run makes full LLM calls. Intermediate results are cached via read_or_run()
+# in src/seshat/eval/cache.py (keyed on corpus file hash) to avoid re-running the same
+# example during iteration — this is eval-internal and not exposed in ExtractionConfig.
 
 class ConfidenceWeights(BaseModel):
     verification: float = 0.70  # weight when verification agent is configured; ignored otherwise
@@ -383,6 +395,7 @@ class ConfidenceWeights(BaseModel):
 class RAGConfig(BaseModel):
     enabled: bool = True
     top_k: int = 5        # candidates retained from vector search (fed to graph traversal)
+    min_score: float = 0.5  # minimum similarity score [0, 1] to retain a retrieved result; calibrate against retrieval corpus before tightening
     max_context_tokens: int = 4000
     traversal_max_depth: int = 1                            # direct neighbours only for MVP
     traversal_rel_types: list[RelationshipType] | None = None  # None = all relationship types
@@ -454,8 +467,8 @@ class TranscriptionConfig(BaseModel):
 class ObservabilityConfig(BaseModel):
     mlflow_tracking_uri: str = "http://mlflow:5000"
     mlflow_experiment_name: str = "seshat"
-    # experiment_id is resolved from experiment_name at startup via the MLflow client —
-    # cached in-process and used to build deep links (see Section 9).
+    # experiment_id is NOT a config field — it is resolved at startup by setup_mlflow()
+    # and returned as a str for the caller to cache in-process.
 ```
 
 ---
@@ -678,7 +691,7 @@ The `verification=None` combination is the weakest: no verification agent. Valid
 
 ```python
 class ConfidenceBreakdown(BaseModel):
-    verification_enabled: bool           # True when a VerificationConfig is present
+    verification_enabled: bool           # True when a VerificationLLMConfig is present
     verification: float | None = None    # None when verification agent not configured
     heuristics: float                    # always present
     final: float                         # normalised weighted sum per formula above; echoes KBNode.confidence
@@ -768,7 +781,7 @@ Resolution is two parallel LLM calls routed through a `ResolutionRegistry` — b
 - `SameTypeResolutionRegistry` — one `BaseSameTypeResolutionAgent` per `ConceptType`; validates anti-symmetry (`supersedes`, `blocks`, `depends_on` cannot have A→B and B→A simultaneously) and mutual exclusion (`supersedes` + `conflicts_with` or `supersedes` + `amends` on the same pair are invalid).
 - `CrossTypeResolutionRegistry` — one `BaseCrossTypeResolutionAgent` per allowed `(source_type, target_type)` pair (9 pairs total: all permitted combinations from the relationship schema table below).
 
-Each agent receives per-source candidate lists (`per_source_targets: dict[UUID, list[KBNode]]`) from the RAG retrieval step, runs one LLM call per source node, and collects `ResolvedRelationship` objects. Global concurrency is bounded by `ResolutionConfig.max_global_calls`; per-agent concurrency by `ResolutionConfig.max_concurrent_calls`. Sources that exhaust retries are collected as `FailedResolutionSource` records and included in `ResolutionResult.failed_sources`.
+Each agent receives per-source candidate lists (`per_source_targets: dict[UUID, list[KBNode]]`) from the RAG retrieval step, runs one LLM call per source node, and collects `ResolvedRelationship` objects. Global concurrency is bounded by `ResolutionLLMConfig.max_global_calls`; per-agent concurrency by `ResolutionLLMConfig.max_concurrent_calls`. Sources that exhaust retries are collected as `FailedResolutionSource` records and included in `ResolutionResult.failed_sources`.
 
 **LLM interface:** agents use positional indices (0 = source node, 1+ = target nodes) in prompts to avoid UUID parsing complexity in LLM output. The agent maps indices back to UUIDs after the call.
 
@@ -944,7 +957,7 @@ The secrets factory reads `SecretsConfig.provider` and returns the appropriate i
 
 LocalStack emulates AWS Secrets Manager locally (`SERVICES=secretsmanager,s3`).
 
-> **Future hardening:** once provider requirements are stable, replace the flat `SecretsConfig` with a Pydantic v2 discriminated union (`EnvSecretsConfig | AWSSecretsConfig` on the `provider` discriminator; Azure and Vault variants added when needed). Each provider gets its own model with only the fields that make sense for it — invalid combinations become impossible at startup. The same pattern can be applied to `LLMConfig` and `TranscriptionConfig` for the same reason.
+> **Future hardening:** once provider requirements are stable, replace the flat `SecretsConfig` with a Pydantic v2 discriminated union (`EnvSecretsConfig | AWSSecretsConfig` on the `provider` discriminator; Azure and Vault variants added when needed). Each provider gets its own model with only the fields that make sense for it — invalid combinations become impossible at startup. The same pattern can be applied to `_LLMConfig` and `TranscriptionConfig` for the same reason.
 
 ---
 
@@ -1103,7 +1116,7 @@ class ErrorPayload(BaseModel):
 If a cap is exceeded, the job transitions to `FAILED` with `recoverable=True`. The `POST /jobs/{id}/retry` endpoint takes no body — to raise a cap, update the config and retry. The UI surfaces a retry button when `recoverable=True`.
 
 **Automatic retry policy:** transient errors (API timeout, HTTP 429 rate limit) are retried automatically before the stage transitions to `FAILED`. Per-stage policy:
-- **Max attempts:** 3 (configurable as `TranscriptionConfig.max_retries` and `LLMConfig.max_retries`)
+- **Max attempts:** 3 (configurable as `TranscriptionConfig.max_retries` and `_LLMConfig.max_retries` — inherited by `IdentificationLLMConfig`, `VerificationLLMConfig`, `ResolutionLLMConfig`)
 - **Backoff:** exponential with jitter — base 2s, multiplier 2×, max 60s. When a `Retry-After` header is present, it sets the minimum delay floor; jitter is applied on top: `delay = max(computed_backoff, retry_after_seconds) * uniform(0.8, 1.2)`
 - **Scope:** per-call retry within the stage. A stage that exhausts retries on any single call transitions to `FAILED` with `recoverable=True`
 
@@ -1299,8 +1312,14 @@ Captured per job/agent run:
 >
 > **v2 hardening:** separate the prompt/response artifact store from operational metrics with access controls (e.g. a restricted S3 prefix or a separate MLflow experiment with role-based visibility).
 
+**`setup_mlflow(config: ObservabilityConfig) -> str`** — called once at worker startup. Sets the tracking URI, enables `mlflow.langchain.autolog()`, resolves the experiment by name, and returns the experiment ID. The caller is responsible for caching the returned experiment ID in-process.
+
+**`mlflow_run_url(tracking_uri, experiment_id, run_id) -> str`** — helper that builds the deep-link URL (`{tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`). Defined in `src/seshat/observability/mlflow_setup.py`; not yet called from the pipeline — wiring into the worker/Streamlit is deferred.
+
+**`log_usage(run_id, stage, records)` / `log_cache_metrics(run_id, stage, ...)`** — helpers in `src/seshat/observability/usage_logger.py` that log `UsageRecord` token counts and prompt-cache metrics as MLflow metrics on the given run. Both resume the run via `mlflow.start_run(run_id=..., nested=True)` rather than creating new child runs. **Not yet wired into the pipeline** — the helper functions exist but are not called from any agent or pipeline stage. Wiring is deferred.
+
 **Streamlit integration:**
-- MVP: "View in MLflow" button deep-links to `{mlflow_tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`. `mlflow_run_id` comes from `JobResponse`; `experiment_id` is resolved once at startup from `ObservabilityConfig.mlflow_experiment_name` via the MLflow client and cached in-process — not exposed on the API.
+- MVP: "View in MLflow" button deep-links to `{mlflow_tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`. `mlflow_run_id` comes from `JobResponse`; `experiment_id` is the return value of `setup_mlflow()`, cached at worker startup — not exposed on the API.
 - v2: MLflow Python client renders usage, estimated cost, latency, and confidence distributions as native Plotly charts in the Streamlit app
 
 ---
@@ -1380,23 +1399,102 @@ data/               # gitignored — local KB, MLflow artifacts
 
 Evaluation is an MVP requirement — the `confidence_threshold=0.7` already in production config must have a calibration basis before any real data is processed.
 
+### Three Eval Passes
+
+The eval harness covers three pipeline stages independently:
+
+| Pass | Runner | What it measures |
+|------|--------|-----------------|
+| **Identification** | `IdentificationEvalRunner` | Precision/recall of node extraction per `ConceptType`, plus field-level accuracy |
+| **Resolution** | `ResolutionEvalRunner` | Precision/recall of inferred `KBRelationship`s |
+| **Retrieval** | `RetrievalEvalRunner` | recall@5 for vector search candidate surfacing |
+
+All three runners are in `src/seshat/eval/` and are exported from `seshat.eval`. Each is an independent library class — no CLI entrypoint exists yet; eval is invoked programmatically or from integration tests.
+
 ### Labelled Corpus
 
-A small set of **hand-crafted synthetic transcripts** with manually annotated expected extractions. Synthetic transcripts are preferred over real recordings: the correct extraction is fully controlled and unambiguous.
+Each pass has its own corpus directory under `data/eval/corpus/`:
 
-**Corpus creation scope:** the minimum corpus (10–15 transcripts, ≥15 instances per type, adversarial cases, and merge test pairs) must be completed before the extraction pipeline is considered testable end-to-end. It is built by the developer as part of the Operations / Evaluation tier — it is not generated by the pipeline and not a byproduct of implementation. Treat it as a first-class deliverable with its own task in the implementation plan.
+```
+data/eval/
+  corpus/
+    identification/   # one YAML per transcript
+    resolution/       # one YAML per scenario
+    retrieval/        # one YAML per query
+  test_corpus/
+    identification/   # small subset for integration tests
+    resolution/
+    retrieval/
+```
 
-- **Size:** enough transcripts to reach **at least 15 annotated instances per `ConceptType`** across the corpus (normal + adversarial combined). At ~3 instances per type per transcript, this means roughly 5 transcripts per type — achievable with 10–15 total transcripts if they are written to cover all types. Do not start threshold calibration until this minimum is met; below 15 instances per type, a single mis-annotated example shifts precision or recall by 7% or more, making the targets meaningless. Adversarial transcripts count toward the instance total if they contain annotated ground-truth instances of the relevant type.
-- **Location:** `tests/eval/corpus/` — versioned with the codebase
-- **Format:** one YAML file per transcript: `content` (the transcript text) + `expected_nodes: list[KBNode]` + `expected_relationships: list[KBRelationship]`
-- **Adversarial transcripts** (add before first real-data run): at minimum one transcript with confident-sounding but unsupported claims, one with ambiguous pronouncements that could be misclassified across `ConceptType`s, and one with injected instruction-like text in the transcript body. These must be hand-crafted and annotated. OOD testing (non-technical jargon, highly ambiguous transcripts) deferred to v2 when real data is available.
-- **Merge test cases** (required before chunking is introduced): at least 3 pairs of nodes that **should** merge (same concept, identical normalised title — deduplication is title exact-match only in MVP) and 3 pairs that **should not** merge (same topic, distinct titles). The release gate does not require cosine-similarity merge tests in the no-chunking MVP — these become relevant once multi-chunk extraction is introduced.
+Corpus files are **not** in `tests/`. They live in `data/eval/` because they are runtime artifacts that feed live LLM/embedding calls — not static test fixtures.
+
+**Identification corpus** (one YAML per transcript):
+
+```yaml
+corpus_id: "example-001"
+transcript: "<transcript text>"
+expected_nodes:
+  - quote: "<ground-truth span>"
+    type: decision
+    title: "<title>"
+    description: "<description>"
+    extra_fields:               # optional type-specific fields for field-accuracy scoring
+      rationale: "..."
+      assignee: "Priya"
+```
+
+`IdentificationCorpusNode` carries `extra_fields: dict[str, Any]` for field-level accuracy scoring (see §12 quality scoring below). `expected_nodes` is a list of `IdentificationCorpusNode`, not `KBNode`.
+
+**Resolution corpus** (one YAML per scenario):
+
+```yaml
+corpus_id: "clickhouse-vs-postgres"
+description: "ClickHouse scopes an exception to the PostgreSQL standard — AMENDS not SUPERSEDES"
+source_nodes:
+  - id: clickhouse-analytics   # human-readable slug
+    type: decision
+    title: "..."
+    description: "..."
+    quote: "..."
+kb_nodes:
+  - id: postgres-all
+    type: decision
+    ...
+expected_relations:
+  - source: clickhouse-analytics
+    target: postgres-all
+    rel_type: AMENDS
+# pairs not listed are implicitly UNRELATED
+```
+
+**Retrieval corpus** (one YAML per query):
+
+```yaml
+corpus_id: "action-surfaces-risk"
+description: "Action item about deadline should surface related risk in top-5"
+query_node:
+  id: delay-deadline
+  type: action_item
+  ...
+candidate_nodes:
+  - id: scope-creep-risk
+    ...
+expected_relevant_ids:
+  - scope-creep-risk
+```
+
+**Minimum corpus size** (identification pass): ≥15 annotated instances per `ConceptType` before threshold calibration. Below that, a single mis-annotated example shifts precision or recall by ~7%, making the gate targets meaningless.
+
+**Adversarial transcripts** (add before first real-data run): one transcript with unsupported claims, one with ambiguous pronouncements across `ConceptType`s, one with injected instruction-like text. OOD testing deferred to v2.
 
 ### Precision / Recall Targets
 
-> **Statistical caveat:** these targets are directional signals, not statistically validated thresholds. At the minimum corpus size (15 instances per type), a single instance shifts precision or recall by ~7%. Treat the targets as a floor for catching gross failures — a model that ignores a concept type entirely, or inverts confidence scores — not as a precise calibration. Widen the corpus with real or higher-volume synthetic data before treating these numbers as validated gates.
+Targets live in `src/seshat/eval/thresholds.py` — changing them requires a code review, not a config change.
 
-Targets are per `ConceptType` — extraction difficulty varies:
+> **Statistical caveat:** these targets are directional signals, not statistically validated thresholds. At the minimum corpus size, a single instance shifts precision or recall by ~7%. Treat them as a floor for catching gross failures, not a precise calibration.
+
+**Identification** (per `ConceptType`):
 
 | ConceptType | Precision target | Recall target | Notes |
 |-------------|-----------------|---------------|-------|
@@ -1405,69 +1503,115 @@ Targets are per `ConceptType` — extraction difficulty varies:
 | `OPEN_QUESTION` | ≥ 0.75 | ≥ 0.75 | Moderate difficulty |
 | `ACTION_ITEM` | ≥ 0.85 | ≥ 0.85 | Simpler extraction; higher bar |
 
-Relationship extraction is evaluated separately — high node precision/recall does not imply correct relationships:
+**Resolution** (global, not per-`RelationshipType` — corpus is too small for per-type breakdowns in MVP):
 
-| RelationshipType | Precision target | Recall target | Notes |
-|-----------------|-----------------|---------------|-------|
-| `CONFLICTS_WITH` | ≥ 0.75 | ≥ 0.75 | Missed conflicts accumulate silently in the KB |
-| `SUPERSEDES` | ≥ 0.80 | ≥ 0.75 | Wrong supersession corrupts decision history |
-| `MITIGATES` | ≥ 0.75 | ≥ 0.70 | Cross-type; harder to extract |
-| `RESOLVES` | ≥ 0.75 | ≥ 0.70 | Cross-type; Decision → OpenQuestion |
-| `BLOCKS` | ≥ 0.75 | ≥ 0.70 | Cross-type; Risk → Decision or OpenQuestion |
+| Metric | Target |
+|--------|--------|
+| Precision | ≥ 0.80 |
+| Recall | ≥ 0.80 |
 
-The eval corpus format is extended to include `expected_relationships: list[KBRelationship]` alongside `expected_nodes` — both are required fields in the YAML corpus files.
+Per-`RelationshipType` gate targets are deferred until the corpus is large enough. The scorer redesign needed to emit per-type feedback is also deferred; current global 0.80 thresholds are documented with a TODO in `thresholds.py`.
 
-### Threshold Calibration
+**Retrieval:**
 
-1. Run the extraction pipeline over the labelled corpus across a sweep of `confidence_threshold` values (0.5 → 0.9 in 0.05 steps).
-2. Plot the precision-recall curve **per `ConceptType`** — a single global curve conflates types with opposing biases (RISK is recall-biased, DECISION is precision-biased) and will sacrifice one for the other.
-3. Select per-type optimal thresholds from the curves. If a single global value can satisfy all per-type targets simultaneously, use it — otherwise document the per-type trade-off and choose a value with an explicit justification.
-4. The default `confidence_threshold=0.7` is the starting point; calibration may revise it. If per-type thresholds are warranted, add them via `ExtractionConfig.per_type_thresholds` — `None` means use the global default for all types.
+| Metric | Target |
+|--------|--------|
+| recall@5 | ≥ 0.70 |
 
-### Evaluation Entrypoint
+### Gate File
 
-`seshat eval` is a first-class CLI command alongside `seshat init`:
-
-```
-seshat eval [--threshold 0.7] [--model claude-sonnet-4-6]
-```
-
-**Bootstrap note:** `seshat eval` does not check or require `data/eval_gate.json` and does not submit jobs through the API worker — it invokes the extraction pipeline directly in-process. This breaks the circular dependency: the gate file can't exist before eval runs, and eval doesn't need it to run.
-
-Internally wraps `mlflow.genai.evaluate()`: the extraction pipeline is the model under test, the labelled corpus is the eval dataset, and custom scorers compute precision/recall per `ConceptType`. Each eval run is a versioned MLflow experiment — runs can be compared in the MLflow UI to detect regressions from prompt or model changes.
-
-On completion, `seshat eval` writes `data/eval_gate.json` with the following structure:
+Each eval run writes to a configurable `EvalConfig.gate_path` (typically `data/eval_gate.json`). The file is **gitignored** — it is a local runtime artifact and must be regenerated per environment.
 
 ```json
 {
-  "passed": true,
   "run_id": "<mlflow_run_id>",
   "timestamp": "<iso8601>",
-  "retrieval_recall_at_5": 0.82,
-  "precision_recall_by_type": {
-    "decision":      {"precision": 0.83, "recall": 0.78},
-    "risk":          {"precision": 0.76, "recall": 0.81},
-    "open_question": {"precision": 0.77, "recall": 0.76},
-    "action_item":   {"precision": 0.88, "recall": 0.86}
+  "passed": true,
+  "identification_metrics": {
+    "decision.precision": 0.83,
+    "decision.recall": 0.78,
+    "decision.f1": 0.80,
+    "risk.precision": 0.76,
+    "risk.recall": 0.81,
+    "open_question.precision": 0.77,
+    "open_question.recall": 0.76,
+    "action_item.precision": 0.88,
+    "action_item.recall": 0.86
+  },
+  "resolution_metrics": {
+    "precision": 0.82,
+    "recall": 0.81,
+    "f1": 0.81
+  },
+  "retrieval_metrics": {
+    "recall_at_5": 0.82,
+    "precision_at_5": 0.60
   }
 }
 ```
 
-`passed` is `true` only when both release gate conditions are met (see Release Gate below). The file is gitignored — it is a local runtime artifact and must be regenerated per environment.
+`passed` is a `@computed_field` (not stored as a literal field) — it is recomputed when the gate file is loaded. A gate where all three metric blocks are `None` is treated as failed (fail-closed). A `None` block means that pass was not run and is not evaluated; only non-`None` blocks are checked against their targets.
 
-> **Implementation note:** the exact `mlflow.genai.evaluate()` scorer API and `ChatAgent` interface should be verified against MLflow 3 docs at implementation time — the API is recent and may evolve.
+**Upsertable gate:** `upsert_gate(gate_path, run_id, identification_metrics=..., ...)` reads the existing gate file (if present), carries forward any blocks not explicitly supplied, recomputes `passed`, and writes back. This lets the three passes run independently — running only identification does not clear a previously-passed retrieval result.
+
+### EvalConfig
+
+```python
+class EvalConfig(BaseConfig):
+    corpus_base_dir: Path       # root — subdirs: identification/, resolution/, retrieval/
+    gate_path: Path             # full path including filename, e.g. data/eval_gate.json
+    observability: ObservabilityConfig = ObservabilityConfig(mlflow_experiment_name="seshat-eval")
+    run_identification: bool = True
+    run_resolution: bool = True
+    run_retrieval: bool = True
+    nli_scorer_enabled: bool = False          # NLI model not yet available; stub only
+    retrieval_score_threshold: float = 0.0    # 0.0 = no filtering during calibration runs
+
+    # Computed from corpus_base_dir:
+    identification_corpus_dir: Path   # corpus_base_dir / "identification"
+    resolution_corpus_dir: Path       # corpus_base_dir / "resolution"
+    retrieval_corpus_dir: Path        # corpus_base_dir / "retrieval"
+```
+
+`result_cache_enabled` does **not** exist in `ExtractionConfig` — every eval run makes full LLM calls. Intermediate prediction results are cached via `read_or_run` in `src/seshat/eval/cache.py` (keyed on corpus file hash) to avoid re-running the same example during iteration.
+
+### Quality Scoring (Identification Pass)
+
+Quality scoring layers on top of the precision/recall match result without affecting it. For each matched pair, additional scorers fire independently:
+
+- **Field-level accuracy** (always enabled): compares type-specific structured fields (`assignee`, `due`, `rationale`, `type`, `context`) from `extra_fields` against predicted values using deterministic fuzzy match. Output: `{ctype}.{field}/value` per field.
+- **NLI faithfulness** (deferred — `nli_scorer_enabled=False`): would check whether predicted `description` and `title` are entailed by the predicted quote span using a local cross-encoder. Blocked on model download availability.
+- **LLM-as-judge** (dropped): asymmetric with resolution/retrieval passes; field accuracy + optional NLI is the appropriate ceiling.
+
+Quality metrics are logged to MLflow for regression visibility. Quality gates are not yet defined — baselines must be established first.
+
+### Threshold Calibration
+
+1. Run the identification eval across a sweep of `confidence_threshold` values (0.5 → 0.9 in 0.05 steps).
+2. Plot the precision-recall curve **per `ConceptType`** — a single global curve conflates types with opposing biases.
+3. Select per-type optimal thresholds. If a single global value satisfies all targets, use it — otherwise document the trade-off.
+4. The default `confidence_threshold=0.7` is the starting point. If per-type thresholds are warranted, configure them via `ExtractionConfig.per_type_thresholds` — `None` means use the global default for all types.
+
+### Evaluation Entrypoint
+
+No `seshat eval` CLI command exists yet — eval is currently invoked programmatically or via integration tests. The `seshat eval` CLI is deferred; it will wrap `run_all()` from a future `eval/run_all.py` orchestrator module.
+
+**Bootstrap note:** eval does not check or require a pre-existing gate file and does not submit jobs through the API worker — it invokes pipeline components directly in-process. This breaks the circular dependency: the gate file can't exist before eval runs, and eval doesn't need it to run.
+
+Each eval run is a versioned MLflow experiment — runs can be compared in the MLflow UI to detect regressions from prompt or model changes.
 
 ### Release Gate
 
-No real meeting recordings may be processed until `seshat eval` has been run and **both** conditions are met:
-1. `recall@5 >= 0.7` on the retrieval baseline
-2. Per-`ConceptType` precision/recall targets met (see Precision/Recall Targets above)
+No real meeting recordings may be processed until eval has been run and all three conditions are met:
+1. `identification_metrics` pass all per-`ConceptType` precision/recall targets
+2. `resolution_metrics` precision and recall ≥ 0.80
+3. `retrieval_metrics` recall@5 ≥ 0.70
 
-**Enforcement:** on startup, the worker reads `data/eval_gate.json`. If the file is absent or `passed=false`, the worker refuses to accept jobs and logs a clear error directing the operator to run `seshat eval`. This is a startup check, not a per-request check — it runs once before the event loop begins accepting work. The check can be bypassed by setting `SESHAT_SKIP_EVAL_GATE=true` in the environment, but this must be an explicit act; the default is enforced.
+**Enforcement:** on startup, the worker reads the gate file at `EvalConfig.gate_path`. If the file is absent or `passed=False`, the worker refuses to accept jobs and logs a clear error. The check can be bypassed by setting `SESHAT_SKIP_EVAL_GATE=true`.
 
 ### Regression Gate
 
-Any change to an agent system prompt, model, or confidence scoring logic must be run through `seshat eval` before promotion. A change that improves one `ConceptType` at the cost of another is a regression — visible in MLflow as a metric degradation vs the baseline run. Re-running `seshat eval` after the change updates `data/eval_gate.json`; a failing run sets `passed=false` and the worker will refuse to start until a passing run is recorded.
+Any change to an agent system prompt, model, or confidence scoring logic must be run through eval before promotion. A change that improves one `ConceptType` at the cost of another is a regression — visible in MLflow as a metric degradation vs the baseline run. A failing run sets `passed=False` (computed on next gate file load) and the worker will refuse to start until a passing run is recorded.
 
 ---
 

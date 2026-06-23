@@ -1,0 +1,49 @@
+corpus_id: risk-db-no-backup-retrieves-mitigation-tasks
+description: >
+  Cross-type (risk→action_item): a risk about missing database backups
+  should surface action items about backup configuration and disaster-recovery
+  testing/runbook work, while ignoring unrelated tasks.
+
+query_node:
+  id: no-db-backup
+  type: risk
+  title: "Production database has no automated backup"
+  description: "The production PostgreSQL cluster runs without an automated backup schedule; a disk failure or accidental data deletion would cause permanent data loss."
+  quote: "there is no automated backup on the production database, we'd lose everything in a failure"
+
+candidate_nodes:
+  - id: configure-db-backup
+    type: action_item
+    title: "Configure automated daily snapshots for the production database"
+    description: "Set up a daily snapshot job for the PostgreSQL cluster with retention of 30 days, stored in a separate availability zone."
+    quote: "we need automated daily snapshots, 30-day retention, different AZ"
+  - id: test-restore-procedure
+    type: action_item
+    title: "Run a full database restore drill before the next release"
+    description: "Validate the restore procedure from backup snapshots in a staging environment to confirm recovery time meets the RTO target."
+    quote: "we have to actually test the restore before we go live, not just assume it works"
+  - id: document-recovery-runbook
+    type: action_item
+    title: "Write a disaster-recovery runbook for database failure scenarios"
+    description: "Create step-by-step runbook covering the most likely database failure modes and the recovery actions, including escalation contacts."
+    quote: "someone write the DR runbook for the database, engineers don't know what to do in a failure"
+  - id: redesign-dashboard
+    type: action_item
+    title: "Redesign the analytics dashboard for mobile viewports"
+    description: "The existing analytics dashboard is not usable on screens smaller than 1024 px; a mobile-first redesign is required before the public launch."
+    quote: "the dashboard looks terrible on phones, redesign it before launch"
+  - id: organise-team-lunch
+    type: action_item
+    title: "Organise a team lunch to welcome new joiners"
+    description: "Book a restaurant for a welcome lunch for the three new engineers joining next month."
+    quote: "let's do a lunch for the new people, somewhere near the office"
+  - id: update-privacy-policy
+    type: action_item
+    title: "Update the privacy policy page to reflect new data processing"
+    description: "The website privacy policy must be updated to document the new third-party analytics integration before it goes live."
+    quote: "legal says update the privacy policy before we turn on the new analytics"
+
+expected_relevant_ids:
+  - configure-db-backup
+  - test-restore-procedure
+  - document-recovery-runbook

@@ -396,6 +396,63 @@ class TestJobTimeout:
             await orchestrator.run_resolution(make_doc(), job_id="job-1")
 
 
+class TestKbHintIsolation:
+    """KB hint fetching happens in _run_identification, not inside _identify_concept_type."""
+
+    @pytest.mark.asyncio
+    async def test_identify_concept_type_accepts_kb_hint_and_does_not_query_kb(self):
+        """_identify_concept_type takes kb_hint as a parameter and never calls the KB itself."""
+        concept = _make_concept("Use PostgreSQL", quote="use PostgreSQL")
+        agent = MagicMock()
+        agent.identify = AsyncMock(return_value=[concept])
+        registry = MagicMock()
+        registry.get = MagicMock(return_value=agent)
+
+        orchestrator = _make_orchestrator(
+            extraction_registry=registry,
+            concept_types=[ConceptType.DECISION],
+        )
+
+        await orchestrator._identify_concept_type(
+            TRANSCRIPT, "blob-key", ConceptType.DECISION, "job-1", kb_hint="prebuilt hint"
+        )
+
+        orchestrator._kb.query.assert_not_called()
+        args, _ = agent.identify.call_args
+        assert args[1] == "prebuilt hint"
+
+    @pytest.mark.asyncio
+    async def test_run_identification_gathers_kb_hints_before_agent_calls(self):
+        """KB queries for all concept types are issued before any agent.identify call."""
+        call_log: list[str] = []
+
+        async def tracking_query(*args, **kwargs):
+            call_log.append("kb_query")
+            return []
+
+        async def tracking_identify(*args, **kwargs):
+            call_log.append("identify")
+            return []
+
+        agent = MagicMock()
+        agent.identify = tracking_identify
+        registry = MagicMock()
+        registry.get = MagicMock(return_value=agent)
+
+        orchestrator = _make_orchestrator(
+            extraction_registry=registry,
+            concept_types=[ConceptType.DECISION, ConceptType.RISK],
+        )
+        orchestrator._kb.query = tracking_query
+
+        await orchestrator.run_identification(make_doc(), job_id="job-1")
+
+        # All KB queries must precede any identify call
+        last_kb = max(i for i, e in enumerate(call_log) if e == "kb_query")
+        first_identify = min(i for i, e in enumerate(call_log) if e == "identify")
+        assert last_kb < first_identify
+
+
 class TestAssembleKbHint:
     def test_empty_nodes_returns_empty_string(self):
         assert _assemble_kb_hint([], max_hint_tokens=1000) == ""

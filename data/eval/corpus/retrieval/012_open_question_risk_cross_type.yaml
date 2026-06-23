@@ -1,0 +1,50 @@
+corpus_id: open-question-vendor-lock-in-retrieves-related-risks
+description: >
+  Cross-type (open_question→risk): an open question about multi-cloud
+  strategy should surface existing KB risks about vendor dependency and
+  discontinuation, migration/portability cost, and regulatory data residency,
+  while ignoring risks from unrelated domains.
+
+query_node:
+  id: multi-cloud-strategy
+  type: open_question
+  title: "Should we adopt a multi-cloud strategy to reduce vendor dependency?"
+  description: "The architecture team is debating whether to design the platform to run across two cloud providers from the start, or to remain single-cloud and defer portability."
+  quote: "do we go multi-cloud now or stay single-cloud and revisit later?"
+
+candidate_nodes:
+  - id: vendor-lock-in-risk
+    type: risk
+    title: "Deep vendor lock-in with cloud provider limits negotiating leverage"
+    description: "Heavy reliance on proprietary managed services increases switching costs and reduces the organisation's ability to renegotiate pricing or respond to service degradation."
+    quote: "we're so embedded in their ecosystem that we can't easily move or push back on pricing"
+  - id: proprietary-service-discontinuation
+    type: risk
+    title: "Proprietary managed service may be discontinued without notice"
+    description: "The workflow orchestration service used by the pipeline is a niche managed offering; if the provider discontinues it, migration would require significant re-engineering."
+    quote: "that managed service has a small user base, the provider could kill it any time"
+  - id: regulatory-data-residency
+    type: risk
+    title: "Single-region deployment may violate data residency requirements"
+    description: "Running all workloads in one geographic region may conflict with emerging data residency regulations in target markets, requiring costly re-architecture."
+    quote: "if we stay in one region we might break data residency rules in some markets"
+  - id: key-person-dependency
+    type: risk
+    title: "Only one engineer understands the legacy ETL pipeline"
+    description: "A single engineer holds all institutional knowledge of the legacy ETL system; their departure would severely impact the team's ability to maintain it."
+    quote: "if that one person leaves, nobody else knows how the ETL works"
+  - id: sprint-velocity-decline
+    type: risk
+    title: "Declining sprint velocity suggests team capacity issues"
+    description: "Average sprint velocity has fallen 20% over the past six sprints; the root cause is not yet identified but may indicate unsustainable workload or growing technical debt."
+    quote: "velocity is down 20% over six sprints, something is wrong but we don't know what"
+  - id: unclear-product-roadmap
+    type: risk
+    title: "Unclear product roadmap creates planning uncertainty for engineering"
+    description: "Frequent changes to the product roadmap make it difficult for engineering to plan capacity and avoid wasted implementation work."
+    quote: "the roadmap changes every two weeks, we can't plan anything properly"
+
+expected_relevant_ids:
+  - vendor-lock-in-risk
+  - proprietary-service-discontinuation
+  - regulatory-data-residency

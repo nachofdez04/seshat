@@ -1,0 +1,48 @@
+corpus_id: decision-k8s-retrieves-container-strategy
+description: >
+  Same-type (decision→decision): decision to adopt Kubernetes should surface
+  two related prior KB decisions about container orchestration and deployment
+  strategy, while ignoring unrelated infrastructure decisions.
+
+query_node:
+  id: adopt-kubernetes
+  type: decision
+  title: "Adopt Kubernetes for container orchestration"
+  description: "The team decided to use Kubernetes as the container orchestration platform for all production workloads, replacing the current manually-managed VM fleet."
+  quote: "we're going with Kubernetes, it's the right choice for our scale"
+
+candidate_nodes:
+  - id: container-strategy
+    type: decision
+    title: "Standardise on containerised deployments with an orchestration layer"
+    description: "All services must be packaged as containers and managed by a container orchestration platform to enable consistent deployments and auto-scaling."
+    quote: "everything runs in containers from here on, and an orchestrator manages it all"
+  - id: deprecate-vm-fleet
+    type: decision
+    title: "Deprecate manually-managed VM fleet by end of year"
+    description: "All manually-provisioned virtual machines will be decommissioned in favour of container-based workloads, with a hard deadline at year-end."
+    quote: "the VM fleet goes away by December, no exceptions"
+  - id: use-postgresql
+    type: decision
+    title: "Use PostgreSQL as the primary relational database"
+    description: "PostgreSQL is selected as the sole relational persistence layer for all services, replacing the mix of MySQL and Oracle instances."
+    quote: "we're standardising on PostgreSQL, no more mixed database landscape"
+  - id: adopt-react-frontend
+    type: decision
+    title: "Adopt React for the customer-facing frontend"
+    description: "The frontend team will use React as the component framework for all new customer-facing pages."
+    quote: "frontend goes React, we need a modern component model"
+  - id: keep-monorepo
+    type: decision
+    title: "Keep a monorepo structure for all service code"
+    description: "All microservice source code will remain in a single Git monorepo to simplify cross-service changes and dependency management."
+    quote: "we keep the monorepo, splitting repos would cause more pain than it solves"
+  - id: api-gateway-pattern
+    type: decision
+    title: "Introduce an API gateway for all external traffic"
+    description: "All inbound external requests must route through a centralised API gateway responsible for auth, rate-limiting, and routing."
+    quote: "everything from outside goes through the gateway first"
+
+expected_relevant_ids:
+  - container-strategy
+  - deprecate-vm-fleet

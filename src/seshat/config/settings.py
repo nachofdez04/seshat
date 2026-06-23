@@ -1,6 +1,8 @@
 import math
+from pathlib import Path
+from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from seshat.models.enums import (
@@ -144,9 +146,6 @@ class ExtractionConfig(BaseConfig):
     resolution_timeout_seconds: float | None = Field(
         default=None, gt=0, description="Optional wall-clock timeout for a full resolution run; None means no limit."
     )
-    result_cache_enabled: bool = Field(
-        default=False, description="When True, extraction results are cached to avoid redundant LLM calls."
-    )
     grouped_identification_types: set[ConceptType] = Field(
         default_factory=lambda: {ConceptType.DECISION},
         description="Concept types for which identified items are passed through the grouping step.",
@@ -190,6 +189,10 @@ class VectorIndexConfig(BaseConfig):
 class RAGConfig(BaseConfig):
     enabled: bool = True
     top_k: int = Field(default=5, gt=0)
+    # TODO: calibrate against labeled retrieval corpus; 0.5 is a placeholder for text-embedding-3-small cosine scores
+    min_score: float = Field(
+        default=0.5, ge=0, le=1, description="Minimum similarity score [0, 1] to retain a retrieved result."
+    )
     max_context_tokens: int = Field(
         default=4000, gt=0, description="Maximum tokens the retrieved context may occupy in the prompt."
     )
@@ -244,6 +247,112 @@ class TranscriptionConfig(BaseConfig):
 class ObservabilityConfig(BaseConfig):
     mlflow_tracking_uri: str = "http://mlflow:5000"
     mlflow_experiment_name: str = "seshat"
+
+
+class EvalConfig(BaseConfig):
+    corpus_base_dir: Path = Field(
+        description=("Root directory for eval corpora. Expected subdirs: identification/, resolution/, retrieval/.")
+    )
+    gate_path: Path = Field(description="Full path (including filename) for the GateResult JSON output.")
+    observability: ObservabilityConfig = Field(
+        default_factory=lambda: ObservabilityConfig(mlflow_experiment_name="seshat-eval")
+    )
+    run_identification: bool = Field(
+        default=True,
+        description=(
+            "Run the identification eval pass, i.e., "
+            "check if the pipeline extracted the right nodes from the transcript."
+        ),
+    )
+    run_resolution: bool = Field(
+        default=True,
+        description=(
+            "Run the resolution eval pass, i.e., "
+            "check if the pipeline inferred the correct relationships between nodes."
+        ),
+    )
+    run_retrieval: bool = Field(
+        default=True,
+        description=(
+            "Run the retrieval eval pass, i.e., "
+            "check if vector search surfaces the right nodes (similar and related neighbors)."
+        ),
+    )
+    nli_scorer_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable NLI-based faithfulness scoring, i.e., check if the extracted information is faithful to the source."
+        ),
+    )
+    # 0.0 disables score filtering so all candidates rank — calibrate before tightening.
+    retrieval_score_threshold: float = Field(
+        default=0.0,
+        ge=0,
+        le=1,
+        description="Minimum similarity score [0, 1] forwarded to the vector store during retrieval eval.",
+    )
+
+    _identification_subdir: ClassVar[str] = "identification"
+    _resolution_subdir: ClassVar[str] = "resolution"
+    _retrieval_subdir: ClassVar[str] = "retrieval"
+    # a hidden folder in the project root for caching intermediate results during eval runs; not intended for manual use
+    _cache_dir: ClassVar[Path] = Path(__file__).resolve().parent.parent.parent.parent / ".seshat" / "eval_cache"
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def identification_corpus_dir(self) -> Path:
+        return self.corpus_base_dir / self._identification_subdir
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def resolution_corpus_dir(self) -> Path:
+        return self.corpus_base_dir / self._resolution_subdir
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def retrieval_corpus_dir(self) -> Path:
+        return self.corpus_base_dir / self._retrieval_subdir
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def identification_cache_dir(self) -> Path:
+        return self._cache_dir / self._identification_subdir
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def resolution_cache_dir(self) -> Path:
+        return self._cache_dir / self._resolution_subdir
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def retrieval_cache_dir(self) -> Path:
+        return self._cache_dir / self._retrieval_subdir
+
+    @field_validator("gate_path")
+    @classmethod
+    def _validate_gate_path(cls, v: Path) -> Path:
+        if v.suffix != ".json":
+            raise ValueError(f"gate_path must be a .json file, got: {v}")
+        v.parent.mkdir(parents=True, exist_ok=True)
+        return v
+
+    @model_validator(mode="after")
+    def _validate_corpus_dirs(self) -> "EvalConfig":
+        checks = [
+            (self.run_identification, self.identification_corpus_dir),
+            (self.run_resolution, self.resolution_corpus_dir),
+            (self.run_retrieval, self.retrieval_corpus_dir),
+        ]
+        for enabled, path in checks:
+            if enabled and not path.is_dir():
+                raise ValueError(f"corpus dir does not exist: {path}")
+        return self
+
+    @model_validator(mode="after")
+    def _create_cache_dirs(self) -> "EvalConfig":
+        for path in (self.identification_cache_dir, self.resolution_cache_dir, self.retrieval_cache_dir):
+            path.mkdir(parents=True, exist_ok=True)
+        return self
 
 
 class SecretsConfig(BaseConfig):

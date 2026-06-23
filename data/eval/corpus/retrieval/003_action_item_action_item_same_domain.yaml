@@ -1,0 +1,51 @@
+corpus_id: action-item-ci-pipeline-retrieves-related-tasks
+description: >
+  Same-type (action_item→action_item): a new action item to fix the CI
+  pipeline should surface existing KB action items about build tooling
+  test automation, dependency stability, and coverage gating, but not
+  unrelated administrative tasks.
+
+query_node:
+  id: fix-ci-flakiness
+  type: action_item
+  title: "Fix flaky tests causing intermittent CI failures"
+  description: "Several integration tests fail non-deterministically in CI, blocking PR merges. The team needs to investigate root causes and stabilise the test suite."
+  quote: "those flaky tests are blocking everyone, someone has to own fixing them"
+
+candidate_nodes:
+  - id: upgrade-ci-runner
+    type: action_item
+    title: "Upgrade CI runner images to latest LTS"
+    description: "The current CI runner base images are two major versions behind; upgrading is required to support newer build tooling and reduce environment drift."
+    quote: "we need to bump the runner images, they're way out of date"
+  - id: add-test-parallelism
+    type: action_item
+    title: "Enable parallel test execution in CI"
+    description: "Split the test suite across multiple runners to reduce overall CI run time from 40 minutes to under 15 minutes."
+    quote: "split the tests, 40 minutes per PR is killing velocity"
+  - id: update-runbook
+    type: action_item
+    title: "Update the on-call runbook with new escalation contacts"
+    description: "The on-call runbook still lists people who have left the team; it needs to be updated with current escalation contacts before the next release."
+    quote: "the runbook has old names, update it before we go live"
+  - id: schedule-offsite
+    type: action_item
+    title: "Schedule the Q3 team offsite"
+    description: "Book venue and travel for the Q3 team offsite, targeting the second week of August."
+    quote: "someone book the offsite for August, second week works for most people"
+  - id: pin-dependency-versions
+    type: action_item
+    title: "Pin all CI dependency versions in lock files"
+    description: "Unpinned dependency installs in CI cause non-reproducible builds; all packages must be locked to exact versions."
+    quote: "pin everything, floating versions are causing builds to break randomly"
+  - id: configure-test-coverage-gate
+    type: action_item
+    title: "Configure minimum test coverage gate in CI"
+    description: "Add a coverage threshold check to CI that fails the build if unit test coverage drops below 80%."
+    quote: "add a coverage gate so nobody merges untested code"
+
+expected_relevant_ids:
+  - upgrade-ci-runner
+  - add-test-parallelism
+  - pin-dependency-versions
+  - configure-test-coverage-gate

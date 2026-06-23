@@ -1,0 +1,23 @@
+corpus_id: 011_decision_risk_mitigates
+description: >
+  Cross-type decision→risk baseline: a decision directly addresses and mitigates a
+  stated risk. Single obvious mitigates relationship — no distractors.
+
+source_nodes:
+  - id: decision_waf
+    type: decision
+    title: Deploy a Web Application Firewall in front of the public API
+    description: The team decided to place a WAF in front of the public API to block common attack vectors identified in the security review.
+    quote: "We'll deploy a WAF in front of the public API — that covers the injection and DDoS vectors from the security review."
+
+kb_nodes:
+  - id: risk_injection
+    type: risk
+    title: Public API is exposed to injection and DDoS attacks without perimeter protection
+    description: The security review found no WAF or rate-limiting in front of the public API, leaving it vulnerable to injection attacks and volumetric DDoS.
+    quote: "The security review flagged that our public API has no WAF or rate limiting — we're exposed to injection and DDoS."
+
+expected_relations:
+  - source: decision_waf
+    target: risk_injection
+    rel_type: mitigates

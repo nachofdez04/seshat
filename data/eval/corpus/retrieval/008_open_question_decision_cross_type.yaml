@@ -1,0 +1,48 @@
+corpus_id: open-question-caching-retrieves-related-decisions
+description: >
+  Cross-type (open_question→decision): an open question about the caching
+  strategy should surface existing KB decisions about cache invalidation
+  policy and cache-aside usage, while ignoring decisions from unrelated areas.
+
+query_node:
+  id: which-caching-layer
+  type: open_question
+  title: "Should we use Redis or Memcached as the caching layer?"
+  description: "The team has not agreed on which in-memory caching technology to adopt. Redis offers richer data structures and persistence; Memcached is simpler and marginally faster for plain key-value workloads."
+  quote: "do we go Redis or Memcached? No-one has actually decided"
+
+candidate_nodes:
+  - id: cache-invalidation-policy
+    type: decision
+    title: "Use time-based TTL cache invalidation, not event-driven invalidation"
+    description: "Cache entries will expire after a fixed TTL determined per data type; event-driven invalidation is deferred because it requires an event bus not yet in the architecture."
+    quote: "we do TTL-based cache expiry, event-driven is too complex for now"
+  - id: cache-aside-pattern
+    type: decision
+    title: "Adopt cache-aside pattern as the standard caching integration model"
+    description: "All services must read from cache first and fall through to the database on a miss, then populate the cache. Write-through and read-through patterns are not permitted."
+    quote: "cache-aside only, services own their cache population logic"
+  - id: use-postgresql
+    type: decision
+    title: "Use PostgreSQL as the primary relational database"
+    description: "PostgreSQL is selected as the sole relational persistence layer for all services."
+    quote: "we're standardising on PostgreSQL, no more mixed database landscape"
+  - id: adopt-react-frontend
+    type: decision
+    title: "Adopt React for the customer-facing frontend"
+    description: "The frontend team will use React as the component framework for all new customer-facing pages."
+    quote: "frontend goes React, we need a modern component model"
+  - id: keep-monorepo
+    type: decision
+    title: "Keep a monorepo structure for all service code"
+    description: "All microservice source code will remain in a single Git monorepo to simplify cross-service changes and dependency management."
+    quote: "we keep the monorepo, splitting repos would cause more pain than it solves"
+  - id: api-versioning-strategy
+    type: decision
+    title: "Use URI path versioning for all public API endpoints"
+    description: "Public APIs will include the major version in the URI path (e.g., /v1/search) to allow breaking changes without disrupting existing integrations."
+    quote: "put the version in the path, header versioning causes too many client bugs"
+
+expected_relevant_ids:
+  - cache-invalidation-policy
+  - cache-aside-pattern

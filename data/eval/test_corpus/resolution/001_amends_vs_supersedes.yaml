@@ -1,0 +1,21 @@
+corpus_id: amends-vs-supersedes
+description: "New decision scopes an exception to a prior standard — AMENDS not SUPERSEDES"
+
+source_nodes:
+  - id: clickhouse-analytics
+    type: decision
+    title: "Use ClickHouse for the analytics pipeline"
+    description: "ClickHouse will be used for the analytics pipeline due to 40x better aggregation performance."
+    quote: "let's use ClickHouse for the analytics pipeline. PostgreSQL stays for everything else."
+
+kb_nodes:
+  - id: postgres-all
+    type: decision
+    title: "Use PostgreSQL for all persistence"
+    description: "The team standardised on PostgreSQL as the sole persistence layer."
+    quote: "we agreed to use PostgreSQL for all persistence"
+
+expected_relations:
+  - source: clickhouse-analytics
+    target: postgres-all
+    rel_type: amends

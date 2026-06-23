@@ -65,7 +65,7 @@ async def blob_store(localstack_s3_url):
 @pytest.fixture
 def extraction_config():
     llm_cfg = cheap_identification_config()
-    return ExtractionConfig(identification=llm_cfg, result_cache_enabled=False)
+    return ExtractionConfig(identification=llm_cfg)
 
 
 def _build_orchestrator(kb_store, vector_store, blob_store, extraction_config, *, verification_agent=None):
@@ -91,9 +91,7 @@ def orchestrator(kb_store, vector_store, blob_store, extraction_config):
 def orchestrator_with_verification(kb_store, vector_store, blob_store):
     llm_cfg = cheap_identification_config()
     verification_llm_cfg = cheap_verification_config()
-    _extraction_config = ExtractionConfig(
-        identification=llm_cfg, verification=verification_llm_cfg, result_cache_enabled=False
-    )
+    _extraction_config = ExtractionConfig(identification=llm_cfg, verification=verification_llm_cfg)
     verifier = VerificationAgent(llm=make_cheap_llm(), config=verification_llm_cfg)
     return _build_orchestrator(kb_store, vector_store, blob_store, _extraction_config, verification_agent=verifier)
 

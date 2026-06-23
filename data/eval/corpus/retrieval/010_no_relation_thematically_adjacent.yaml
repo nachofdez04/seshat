@@ -1,0 +1,47 @@
+corpus_id: decision-logging-format-no-relation-to-observability-risks
+description: >
+  Discriminating (no-relation): a decision about structured log format is thematically
+  adjacent to observability risks in the KB, but there is no direct semantic link.
+  The scorer treats empty expected_relevant_ids as a negative case: recall@5 = 1.0 if
+  nothing is retrieved, 0.0 if any candidate is returned.
+
+query_node:
+  id: adopt-json-logging
+  type: decision
+  title: "Adopt structured JSON logging across all services"
+  description: "All services must emit logs as structured JSON objects with standard fields (timestamp, level, service, trace_id). Free-form text logs are prohibited."
+  quote: "everyone switches to structured JSON logs, no more freeform text"
+
+candidate_nodes:
+  - id: missing-tracing
+    type: risk
+    title: "Lack of distributed tracing makes cross-service debugging slow"
+    description: "Without distributed tracing instrumentation, diagnosing latency issues that cross multiple services requires manually correlating logs by hand."
+    quote: "we have no tracing, debugging cross-service latency is a nightmare"
+  - id: no-alerting
+    type: risk
+    title: "No automated alerting on error rate spikes"
+    description: "The team currently relies on manual checks of dashboards to detect elevated error rates; there is no automated alert that fires when thresholds are exceeded."
+    quote: "nobody gets paged when errors spike, we rely on someone noticing"
+  - id: alert-fatigue
+    type: risk
+    title: "Alert fatigue from too many low-severity pages"
+    description: "Engineers are receiving a high volume of low-severity pages that do not require action, leading to alert fatigue and slower response to genuine incidents."
+    quote: "everyone ignores pages now because there are too many false alarms"
+  - id: log-retention-cost
+    type: risk
+    title: "Log storage costs growing faster than budget allows"
+    description: "Log volume growth is outpacing the approved storage budget; without retention policies, costs will exceed the annual allocation."
+    quote: "logs are eating the budget, we need retention policies"
+  - id: dashboard-staleness
+    type: risk
+    title: "Operational dashboards show stale metrics after scale-out"
+    description: "After horizontal scaling events, some dashboard panels continue to show pre-scale metrics for up to 10 minutes due to a caching issue in the metrics aggregator."
+    quote: "dashboards lie after we scale out, the numbers don't update for ages"
+  - id: no-slo-defined
+    type: risk
+    title: "No SLOs defined for the public API"
+    description: "Without agreed service-level objectives for availability and latency, there is no objective basis for measuring whether the service is meeting user expectations."
+    quote: "we don't have SLOs, so we don't know if we're actually meeting customer expectations"
+
+expected_relevant_ids: []

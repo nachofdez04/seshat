@@ -1,0 +1,44 @@
+corpus_id: open-question-auth-strategy-retrieves-related-questions
+description: >
+  Same-type (open_question→open_question): an open question about which
+  authentication protocol to adopt should surface existing KB questions
+  about token lifecycle and authorization scope model, while ignoring
+  unrelated open questions.
+
+query_node:
+  id: which-auth-protocol
+  type: open_question
+  title: "Which authentication protocol should we adopt for the new API?"
+  description: "The team is undecided between OAuth 2.0 with PKCE and a custom JWT-based scheme for the new public API. A decision is needed before the security review."
+  quote: "do we go OAuth PKCE or roll our own JWT flow? We need to pick before the security review"
+
+candidate_nodes:
+  - id: token-expiry-policy
+    type: open_question
+    title: "What should the token expiry and refresh policy be?"
+    description: "There is no agreed policy on how long access tokens remain valid or how refresh tokens are rotated, which will depend on the chosen auth protocol."
+    quote: "how long do tokens live and how do we refresh them? Nobody has decided"
+  - id: scope-model
+    type: open_question
+    title: "How granular should the permission scope model be?"
+    description: "It is unclear whether the API should use coarse resource-level scopes or fine-grained action-level scopes, which has implications for the token design."
+    quote: "do we do read/write scopes or something more granular per endpoint?"
+  - id: office-location
+    type: open_question
+    title: "Should the team move to a larger office in Q4?"
+    description: "The current office is at capacity; the question of whether to lease a larger space in Q4 has not been resolved."
+    quote: "do we need a bigger office by Q4? We're running out of desks"
+  - id: hiring-plan
+    type: open_question
+    title: "How many engineers should we hire in the next six months?"
+    description: "The hiring plan for the next two quarters has not been agreed; it depends on budget approval and roadmap priorities."
+    quote: "how many people do we hire in H2? Budget isn't confirmed yet"
+  - id: multi-tenancy-model
+    type: open_question
+    title: "Should the platform be multi-tenant from day one?"
+    description: "It is unclear whether to build multi-tenancy into the architecture from the start or retrofit it once the first enterprise customer is onboarded."
+    quote: "do we design multi-tenancy in from the start or add it later?"
+
+expected_relevant_ids:
+  - token-expiry-policy
+  - scope-model

@@ -1,0 +1,48 @@
+corpus_id: risk-no-feature-flags-retrieves-related-decisions
+description: >
+  Cross-type (risk→decision): a risk about deploying to production without
+  feature flags should surface existing KB decisions about deployment
+  strategy and release management, while ignoring unrelated decisions.
+
+query_node:
+  id: no-feature-flag-risk
+  type: risk
+  title: "No feature-flag system means all changes go live to all users immediately"
+  description: "Without a feature-flagging layer, every deployment immediately exposes all changes to 100% of production users, making targeted rollouts and fast rollbacks impossible."
+  quote: "we have no feature flags, everything hits all users the moment we deploy"
+
+candidate_nodes:
+  - id: canary-release-decision
+    type: decision
+    title: "Adopt canary releases for all production deployments"
+    description: "New versions will be rolled out to 5% of traffic first, with automated promotion to 100% only if error rates remain below threshold for 30 minutes."
+    quote: "we do canary deployments, 5% first, then auto-promote if healthy"
+  - id: feature-flag-platform-decision
+    type: decision
+    title: "Adopt LaunchDarkly as the feature-flag management platform"
+    description: "LaunchDarkly is selected as the company-wide feature-flag service; all new features requiring controlled rollout must use it."
+    quote: "we're using LaunchDarkly for feature flags across the board"
+  - id: use-postgresql
+    type: decision
+    title: "Use PostgreSQL as the primary relational database"
+    description: "PostgreSQL is selected as the sole relational persistence layer for all services."
+    quote: "we're standardising on PostgreSQL"
+  - id: adopt-react-frontend
+    type: decision
+    title: "Adopt React for the customer-facing frontend"
+    description: "The frontend team will use React as the component framework for all new customer-facing pages."
+    quote: "frontend goes React"
+  - id: keep-monorepo
+    type: decision
+    title: "Keep a monorepo structure for all service code"
+    description: "All microservice source code will remain in a single Git monorepo."
+    quote: "we keep the monorepo"
+  - id: api-versioning-strategy
+    type: decision
+    title: "Use URI path versioning for all public API endpoints"
+    description: "Public APIs will include the major version in the URI path."
+    quote: "put the version in the path"
+
+expected_relevant_ids:
+  - canary-release-decision
+  - feature-flag-platform-decision

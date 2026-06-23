@@ -1,0 +1,27 @@
+corpus_id: 005_risk_risk_no_relation
+description: >
+  Same-type risk↔risk discriminating: two risks from the same project that are
+  thematically adjacent (both concern the release) but have no amends relationship.
+  Neither refines nor scopes the other — they are independent concerns.
+
+source_nodes:
+  - id: risk_rollback
+    type: risk
+    title: Rollback procedure has not been tested in production
+    description: The rollback script exists but has only been tested in staging. A failed production deployment with an untested rollback could extend downtime significantly.
+    quote: "We've never actually run the rollback in prod. If the deploy goes wrong, we're guessing."
+
+  - id: risk_dependency
+    type: risk
+    title: Third-party payment SDK upgrade may break existing checkout flow
+    description: The payment SDK is being upgraded as part of the release. The vendor changelog notes breaking changes in the webhook signature format that could silently break the checkout flow.
+    quote: "The payment SDK changelog mentions breaking changes in webhook signatures — we need to verify our checkout flow still works."
+
+kb_nodes:
+  - id: risk_downtime
+    type: risk
+    title: Database migration may cause unplanned downtime during release window
+    description: The schema migration runs synchronously during deployment and locks several high-traffic tables. Estimated lock duration exceeds the agreed maintenance window.
+    quote: "The migration locks the orders table for up to three minutes — that's longer than our maintenance window allows."
+
+expected_relations: []

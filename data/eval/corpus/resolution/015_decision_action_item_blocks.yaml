@@ -1,0 +1,23 @@
+corpus_id: 015_decision_action_item_blocks
+description: >
+  Cross-type decision→action_item baseline: a decision must be ratified before an
+  action item depending on it can proceed. Single obvious blocks relationship.
+
+source_nodes:
+  - id: decision_framework
+    type: decision
+    title: Adopt Terraform as the standard IaC framework
+    description: The platform team decided to standardise on Terraform for all infrastructure-as-code going forward, replacing the ad-hoc CloudFormation scripts in use today.
+    quote: "We're standardising on Terraform for IaC — CloudFormation scripts will be migrated over time."
+
+kb_nodes:
+  - id: action_migrate_infra
+    type: action_item
+    title: Migrate existing CloudFormation stacks to Terraform
+    description: The team needs to convert the existing CloudFormation stacks to Terraform. This work cannot begin until the Terraform adoption decision is ratified and the module standards are defined.
+    quote: "Once we've agreed on Terraform, start migrating the CloudFormation stacks over."
+
+expected_relations:
+  - source: decision_framework
+    target: action_migrate_infra
+    rel_type: blocks

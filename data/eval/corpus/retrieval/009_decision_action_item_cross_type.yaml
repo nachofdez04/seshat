@@ -1,0 +1,50 @@
+corpus_id: decision-deprecate-v1-api-retrieves-migration-tasks
+description: >
+  Cross-type (decision→action_item): a decision to deprecate the v1 API
+  should surface action items about notifying customers and removing the
+  deprecated endpoints, plus migration-guide work, while ignoring unrelated
+  tasks.
+
+query_node:
+  id: deprecate-v1-api
+  type: decision
+  title: "Deprecate the v1 API and remove it in six months"
+  description: "The v1 REST API will be officially deprecated immediately, with a six-month sunset window. All clients must migrate to v2 before the removal date."
+  quote: "v1 is deprecated as of today, we remove it in six months"
+
+candidate_nodes:
+  - id: notify-v1-customers
+    type: action_item
+    title: "Send deprecation notice to all registered v1 API consumers"
+    description: "Draft and send an email to every account using v1 endpoints explaining the timeline, migration guide link, and support contacts."
+    quote: "someone draft the deprecation email and send it to all v1 customers this week"
+  - id: add-deprecation-headers
+    type: action_item
+    title: "Add Deprecation and Sunset HTTP headers to all v1 responses"
+    description: "Update the v1 API gateway configuration to inject Deprecation and Sunset headers on every response so clients can programmatically detect the sunset date."
+    quote: "add the Deprecation and Sunset headers to v1 responses so clients get a machine-readable warning"
+  - id: create-migration-guide
+    type: action_item
+    title: "Write a v1-to-v2 migration guide in the developer docs"
+    description: "Produce a step-by-step migration guide covering all breaking changes between v1 and v2, including changed endpoint paths, renamed fields, and new auth requirements."
+    quote: "we need a migration guide in the docs before the notice goes out"
+  - id: schedule-offsite
+    type: action_item
+    title: "Schedule the Q3 team offsite"
+    description: "Book venue and travel for the Q3 team offsite, targeting the second week of August."
+    quote: "someone book the offsite for August, second week works for most people"
+  - id: update-runbook
+    type: action_item
+    title: "Update the on-call runbook with new escalation contacts"
+    description: "The on-call runbook still lists people who have left the team; it needs to be updated with current escalation contacts before the next release."
+    quote: "the runbook has old names, update it before we go live"
+  - id: organise-team-lunch
+    type: action_item
+    title: "Organise a team lunch to welcome new joiners"
+    description: "Book a restaurant for a welcome lunch for the three new engineers joining next month."
+    quote: "let's do a lunch for the new people, somewhere near the office"
+
+expected_relevant_ids:
+  - notify-v1-customers
+  - add-deprecation-headers
+  - create-migration-guide

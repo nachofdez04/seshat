@@ -1,0 +1,34 @@
+corpus_id: 009_action_item_action_item_blocks_depends_on
+description: >
+  Same-type action_item↔action_item: multiple relationships in one corpus.
+  One source action item blocks the KB target action item, and another source
+  action item depends_on that same KB target. The evaluated assertions are the
+  two exact source→target relation triples and no extra source→target links.
+
+source_nodes:
+  - id: action_schema
+    type: action_item
+    title: Finalise and merge the database schema migration
+    description: Omar must merge the schema migration PR before any data backfill can run. Nothing downstream can proceed until this is done.
+    quote: "Omar, get the schema migration merged first — everything else is blocked on that."
+
+  - id: action_dashboard
+    type: action_item
+    title: Update the reporting dashboard to use the new columns
+    description: The reporting dashboard needs updating to query the new schema columns. This work depends on the backfill being complete so the columns contain live data.
+    quote: "After the backfill, update the reporting dashboard to pull from the new columns."
+
+kb_nodes:
+  - id: action_backfill
+    type: action_item
+    title: Run the data backfill script on production
+    description: The backfill script populates the new columns introduced by the schema migration. It cannot run before the migration is merged, and the reporting dashboard depends on it being complete.
+    quote: "Once the migration is in, run the backfill script on prod."
+
+expected_relations:
+  - source: action_schema
+    target: action_backfill
+    rel_type: blocks
+  - source: action_dashboard
+    target: action_backfill
+    rel_type: depends_on

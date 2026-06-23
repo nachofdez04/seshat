@@ -1,0 +1,23 @@
+corpus_id: 021_risk_action_item_blocks
+description: >
+  Cross-type risk→action_item baseline: a risk must be mitigated before an action
+  item can safely start. Single obvious blocks relationship.
+
+source_nodes:
+  - id: risk_creds
+    type: risk
+    title: Production database credentials are stored in plaintext in the CI environment
+    description: An audit found that the production database credentials are currently stored as plaintext CI environment variables. Running any production migration using the current CI pipeline would expose these credentials in build logs.
+    quote: "The prod DB credentials are plaintext in CI env vars — running migrations through CI right now would leak them in the build logs."
+
+kb_nodes:
+  - id: action_migration
+    type: action_item
+    title: Run the Q3 schema migration on the production database via the CI pipeline
+    description: The Q3 schema migration needs to be executed on the production database using the CI pipeline. This action cannot safely proceed while credentials are stored in plaintext.
+    quote: "We need to run the Q3 schema migration on prod via CI before the release."
+
+expected_relations:
+  - source: risk_creds
+    target: action_migration
+    rel_type: blocks

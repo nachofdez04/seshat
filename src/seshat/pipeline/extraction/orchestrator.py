@@ -10,7 +10,6 @@ from seshat.agents.verification import VerificationRetryExhaustedError
 from seshat.models.api import NodeFilter
 from seshat.models.enums import ConceptType, NodeStatus
 from seshat.models.nodes import (
-    FailedResolutionSource,
     IdentificationResult,
     KBNode,
     KBRelationship,
@@ -65,7 +64,13 @@ class ExtractionOrchestrator:
             return await asyncio.wait_for(coro, self._config.identification_timeout_seconds)
         return await coro
 
-    async def _run_identification(self, transcript: str, blob_key: str, job_id: str) -> IdentificationResult:
+    async def _run_identification(
+        self,
+        transcript: str,
+        blob_key: str,
+        job_id: str,
+        hints: dict[ConceptType, str] | None = None,
+    ) -> IdentificationResult:
         # TODO: implement token budget enforcement (max_total_input_tokens / max_total_output_tokens).
         # Approach: LangChain callback handler or explicit tracker injection — warn at cap, abort at
         # n*cap. Start with LLM calls only; embeddings and transcription can be added later
@@ -73,7 +78,9 @@ class ExtractionOrchestrator:
         t0 = time.perf_counter()
         logger.info("Starting identification run for blob_key=%s", blob_key)
 
-        pending, failed_concept_types = await self._identification_pass(transcript, blob_key, job_id)
+        if hints is None:
+            hints = await self._fetch_kb_hints()
+        pending, failed_concept_types = await self._identification_pass(transcript, blob_key, job_id, hints)
         nodes = await self._score_and_finalize(pending, transcript)
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
@@ -98,15 +105,6 @@ class ExtractionOrchestrator:
 
     async def run_resolution(self, doc: TranscriptDocument, job_id: str) -> ResolutionResult:
         transcript = await self._fetch_transcript(doc.blob_key)
-        coro = self._run_resolution(transcript, doc.blob_key, job_id)
-        if self._config.resolution_timeout_seconds is not None:
-            return await asyncio.wait_for(coro, self._config.resolution_timeout_seconds)
-        return await coro
-
-    async def _run_resolution(self, transcript: str, blob_key: str, job_id: str) -> ResolutionResult:
-        t0 = time.perf_counter()
-        logger.info("Starting resolution run for blob_key=%s", blob_key)
-
         approved = await self._query(NodeFilter(job_id=job_id, status=NodeStatus.APPROVED))
         logger.info("Resolution run: %d approved nodes retrieved", len(approved))
         # TODO: resolution should run exactly once, after the job is fully settled:
@@ -116,8 +114,39 @@ class ExtractionOrchestrator:
         # Running resolution on partial approval and re-running on each subsequent reviewer action causes
         # the full O(4N) LLM fan-out to repeat for already-resolved nodes on every approval event.
 
-        relationships, failed_sources = await self._resolution_pass(approved, job_id, transcript)
+        rag_sem = asyncio.Semaphore(self._retriever.max_concurrent_retrievals)
 
+        async def _retrieve(node: KBNode) -> list[KBNode]:
+            async with rag_sem:
+                return await self._retriever.retrieve(
+                    node, transcript, node_filter=NodeFilter(node_type=None), exclude_job_id=job_id
+                )
+
+        retrieval_results = await asyncio.gather(*[_retrieve(node) for node in approved])
+        per_source_targets: dict[UUID, list[KBNode]] = {
+            node.id: targets for node, targets in zip(approved, retrieval_results, strict=True)
+        }
+
+        coro = self._run_resolution(approved, per_source_targets, job_id)
+        if self._config.resolution_timeout_seconds is not None:
+            return await asyncio.wait_for(coro, self._config.resolution_timeout_seconds)
+        return await coro
+
+    async def _run_resolution(
+        self,
+        source_nodes: list[KBNode],
+        per_source_targets: dict[UUID, list[KBNode]],
+        job_id: str,
+    ) -> ResolutionResult:
+        t0 = time.perf_counter()
+        logger.info("Starting resolution run for job_id=%s", job_id)
+
+        resolution_sem = asyncio.Semaphore(self._config.resolution.max_global_calls)
+        all_rels, failed_sources = await self._resolution_registry.resolve_all(
+            source_nodes, per_source_targets, resolution_sem
+        )
+
+        relationships = [_build_relationship(rel, job_id) for rel in all_rels]
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
         logger.info(
             "Resolution run complete: %d relationships, %d failed sources (elapsed: %dms)",
@@ -158,14 +187,23 @@ class ExtractionOrchestrator:
             offset += page_size
         return results
 
+    async def _fetch_kb_hints(self) -> dict[ConceptType, str]:
+        async def _hint_for(concept_type: ConceptType) -> tuple[ConceptType, str]:
+            recent = await self._query(NodeFilter(node_type=concept_type, limit=self._config.max_hint_nodes))
+            recent.sort(key=lambda n: n.metadata.meeting_date or date.min, reverse=True)
+            return concept_type, _assemble_kb_hint(recent, self._config.max_hint_tokens)
+
+        pairs = await asyncio.gather(*[_hint_for(ct) for ct in self.concept_types])
+        return dict(pairs)
+
     async def _identification_pass(
-        self, transcript: str, blob_key: str, job_id: str
+        self, transcript: str, blob_key: str, job_id: str, hints: dict[ConceptType, str]
     ) -> tuple[list[_PendingNode], list[ConceptType]]:
         """Fan-out identification across all concept types, then deduplicate within the meeting."""
         t0 = time.perf_counter()
         logger.info("Identifying %d concept types concurrently", len(self.concept_types))
         tasks = [
-            self._identify_concept_type(transcript, blob_key, concept_type, job_id)
+            self._identify_concept_type(transcript, blob_key, concept_type, job_id, hints.get(concept_type, ""))
             for concept_type in self.concept_types
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -198,12 +236,9 @@ class ExtractionOrchestrator:
         transcript_file: str,
         concept_type: ConceptType,
         job_id: str,
+        kb_hint: str = "",
     ) -> list[_PendingNode]:
         t0 = time.perf_counter()
-        recent = await self._query(NodeFilter(node_type=concept_type, limit=self._config.max_hint_nodes))
-        recent.sort(key=lambda n: n.metadata.meeting_date or date.min, reverse=True)
-        kb_hint = _assemble_kb_hint(recent, self._config.max_hint_tokens)
-
         agent = self._identification_registry.get(concept_type)
         raw = await agent.identify(transcript, kb_hint, transcript_file)
 
@@ -267,42 +302,6 @@ class ExtractionOrchestrator:
             extra={"elapsed_ms": elapsed_ms},
         )
         return nodes
-
-    async def _resolution_pass(
-        self, nodes: list[KBNode], job_id: str, transcript: str
-    ) -> tuple[list[KBRelationship], list[FailedResolutionSource]]:
-        """RAG retrieval + relationship resolution."""
-        t0 = time.perf_counter()
-        rag_sem = asyncio.Semaphore(self._retriever.max_concurrent_retrievals)
-
-        async def _retrieve(node: KBNode) -> list[KBNode]:
-            async with rag_sem:
-                return await self._retriever.retrieve(
-                    node, transcript, node_filter=NodeFilter(node_type=None), exclude_job_id=job_id
-                )
-
-        retrieval_results = await asyncio.gather(*[_retrieve(node) for node in nodes])
-        per_source_targets: dict[UUID, list[KBNode]] = {
-            node.id: targets for node, targets in zip(nodes, retrieval_results, strict=True)
-        }
-
-        total_targets = sum(len(r) for r in retrieval_results)
-        logger.debug("RAG retrieval done: %d targets across %d nodes", total_targets, len(nodes))
-
-        resolution_sem = asyncio.Semaphore(self._config.resolution.max_global_calls)
-        all_rels, failed_sources = await self._resolution_registry.resolve_all(
-            nodes, per_source_targets, resolution_sem
-        )
-
-        relationships = [_build_relationship(rel, job_id) for rel in all_rels]
-        elapsed_ms = round((time.perf_counter() - t0) * 1000)
-        logger.info(
-            "Resolution pass done: %d relationships resolved (elapsed: %dms)",
-            len(relationships),
-            elapsed_ms,
-            extra={"elapsed_ms": elapsed_ms},
-        )
-        return relationships, failed_sources
 
 
 def _build_relationship(rel: ResolvedRelationship, job_id: str) -> KBRelationship:

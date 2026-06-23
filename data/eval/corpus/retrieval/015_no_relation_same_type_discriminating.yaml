@@ -1,0 +1,48 @@
+corpus_id: action-item-hire-designer-no-relation-to-engineering-tasks
+description: >
+  Discriminating (no-relation, same type): a hiring action item for a designer is
+  thematically adjacent to other action items in the KB (all from the same Q3 planning
+  meeting), but none of the engineering tasks have a direct semantic link. The scorer
+  treats empty expected_relevant_ids as a negative case: recall@5 = 1.0 if nothing is
+  retrieved, 0.0 if any candidate is returned.
+
+query_node:
+  id: hire-ux-designer
+  type: action_item
+  title: "Hire a senior UX designer before end of Q3"
+  description: "The product team lacks dedicated design resource; a senior UX designer must be recruited and onboarded by end of Q3 to support the new customer-facing feature set."
+  quote: "we need a senior UX designer on board by end of Q3, start the process this week"
+
+candidate_nodes:
+  - id: refactor-auth-module
+    type: action_item
+    title: "Refactor the auth module to remove the legacy LDAP dependency"
+    description: "The authentication module still has a hard dependency on the legacy LDAP server; refactoring it to use the new centralised auth service is required before the Q4 security audit."
+    quote: "get rid of the LDAP dependency in auth before the security audit"
+  - id: migrate-db-to-rds
+    type: action_item
+    title: "Migrate the staging database to RDS Aurora"
+    description: "The staging PostgreSQL instance runs on a manually-managed EC2 VM; migrating it to RDS Aurora aligns it with the production setup and reduces ops overhead."
+    quote: "staging database needs to move to RDS Aurora, it's the only one still on EC2"
+  - id: write-adr-for-event-bus
+    type: action_item
+    title: "Write an ADR for the event bus technology choice"
+    description: "The decision to use Kafka over RabbitMQ was made verbally in a previous sprint; it needs to be captured as an Architecture Decision Record."
+    quote: "write up the Kafka decision as an ADR, we can't leave it undocumented"
+  - id: set-up-dependabot
+    type: action_item
+    title: "Configure Dependabot for automated dependency update PRs"
+    description: "Enable Dependabot on all repositories to receive automated pull requests for outdated dependencies, capped at five open PRs at a time."
+    quote: "set up Dependabot, we need automated dependency updates"
+  - id: rotate-api-keys
+    type: action_item
+    title: "Rotate all production API keys before the security audit"
+    description: "All production API keys that have not been rotated in the past 90 days must be regenerated and redistributed to service owners before the upcoming security audit."
+    quote: "rotate every API key older than 90 days before the audit"
+  - id: archive-old-repos
+    type: action_item
+    title: "Archive deprecated GitHub repositories"
+    description: "Fifteen repositories that have had no commits in over a year and belong to discontinued projects should be archived to reduce noise in the organisation's GitHub namespace."
+    quote: "archive those dead repos, the GitHub org is a mess"
+
+expected_relevant_ids: []

@@ -1,0 +1,32 @@
+corpus_id: 003_decision_decision_conflicts_with
+description: >
+  Same-type decision↔decision discriminating: one decision directly contradicts another
+  made in the same meeting. An unrelated source-side decision is included as a distractor
+  and must not be linked to the KB target decision.
+  Also exercises mutual exclusion: the agent must not emit both supersedes and amends
+  for the conflicting pair.
+
+source_nodes:
+  - id: decision_centralise
+    type: decision
+    title: Centralise all logging through the platform logging service
+    description: The infrastructure team decided all services must route logs through the central platform logging service, prohibiting direct writes to CloudWatch.
+    quote: "All services must route logs through the platform logging service — no direct CloudWatch writes."
+
+  - id: decision_unrelated
+    type: decision
+    title: Adopt conventional commits for all repositories
+    description: The team agreed to enforce conventional commit format across all repositories starting next sprint.
+    quote: "From next sprint, all commits must follow the conventional commit format."
+
+kb_nodes:
+  - id: decision_direct
+    type: decision
+    title: Services may write logs directly to CloudWatch
+    description: An earlier decision permitted services to write logs directly to CloudWatch without routing through any intermediary.
+    quote: "Services can write logs directly to CloudWatch — keep it simple."
+
+expected_relations:
+  - source: decision_centralise
+    target: decision_direct
+    rel_type: conflicts_with

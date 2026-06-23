@@ -1,0 +1,49 @@
+corpus_id: action-item-migrate-auth-retrieves-related-risks
+description: >
+  Cross-type (action_item→risk): an action item to migrate to a new auth
+  service should surface existing KB risks about the migration window and
+  session continuity, while ignoring risks from unrelated domains.
+
+query_node:
+  id: migrate-to-auth-service
+  type: action_item
+  title: "Migrate all services to the centralised auth service by end of sprint"
+  description: "Each service team must update their auth middleware to call the new centralised auth service instead of the legacy per-service token validator."
+  quote: "every service team needs to switch to the new auth service before the sprint ends"
+
+candidate_nodes:
+  - id: migration-downtime-risk
+    type: risk
+    title: "Auth service migration may cause user session invalidation"
+    description: "Cutting over to the new token format mid-session will invalidate all active sessions, forcing users to re-authenticate and potentially causing a noticeable outage window."
+    quote: "if we cut over while sessions are live, everyone gets logged out at once"
+  - id: partial-migration-risk
+    type: risk
+    title: "Partial migration leaves services in an inconsistent auth state"
+    description: "If not all services complete the migration in the same sprint, mixed token formats will coexist, making cross-service calls fail unpredictably."
+    quote: "if half the services migrate and half don't, cross-service calls will break"
+  - id: rollback-complexity
+    type: risk
+    title: "No rollback path if the new auth service has critical bugs post-migration"
+    description: "The legacy per-service validators have already been scheduled for decommission, meaning a rollback after migration requires re-deploying deprecated code."
+    quote: "once we're over there's no easy way back if something breaks"
+  - id: cloud-cost-risk
+    type: risk
+    title: "Cloud spending may exceed approved budget"
+    description: "Current growth in egress and compute consumption puts the annual cloud budget at risk of overrun by Q3."
+    quote: "at this rate we'll blow the cloud budget before autumn"
+  - id: office-lease-risk
+    type: risk
+    title: "Office lease expires before a new location is secured"
+    description: "The current office lease ends in eight months and a replacement site has not been identified, risking operational disruption."
+    quote: "our lease is up in eight months and we haven't found a new place"
+  - id: hiring-freeze-risk
+    type: risk
+    title: "Hiring freeze may delay key engineering positions"
+    description: "An anticipated company-wide hiring freeze could prevent filling two senior engineering roles needed for the Q3 roadmap."
+    quote: "if the freeze hits we can't fill those two roles in time"
+
+expected_relevant_ids:
+  - migration-downtime-risk
+  - partial-migration-risk
+  - rollback-complexity

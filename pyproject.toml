@@ -22,7 +22,7 @@ dependencies = [
     "langchain-anthropic>=1.4.3",
     "langchain-aws>=1.4.2",
     "langchain-openai>=1.2",
-    # Observability / eval
+    # Observability
     "mlflow[langchain]>=3.12.0",
     # Web & CLI
     "bcrypt>=5.0",
@@ -37,6 +37,7 @@ dev = [
     { include-group = "lint" },
     { include-group = "test" },
     { include-group = "complexity" },
+    "types-pyyaml>=6.0.12.20260518",
 ]
 lint = [
     "boto3-stubs[secretsmanager]>=1.43",  # keep in sync with boto3
@@ -54,6 +55,9 @@ test = [
 ]
 complexity = [
     "radon>=6.0",
+]
+eval = [
+    "rapidfuzz>=3.14.5",
 ]
 
 [build-system]

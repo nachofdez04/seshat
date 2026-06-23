@@ -1,0 +1,18 @@
+description: >
+  Empty extraction: the transcript contains no decisions, risks, open questions, or
+  action items. All agents must return empty lists. Tests that agents do not hallucinate
+  items when there is nothing to extract.
+
+transcript: |
+  Quick check-in — how is the sprint going?
+  Pretty good. Finished the API endpoint work yesterday, now doing code review.
+  Same here, finishing up tests today.
+  Sounds like we're on track. Nothing blocking anyone?
+  Nope, all good.
+  Great, let's keep it up. See everyone at standup tomorrow.
+
+expected:
+  decision: []
+  risk: []
+  open_question: []
+  action_item: []

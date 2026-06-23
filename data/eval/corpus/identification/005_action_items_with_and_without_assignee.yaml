@@ -1,0 +1,45 @@
+description: >
+  Action item extraction: one item has a named assignee and a due date; one has a
+  role-identified owner and an implied timing constraint; one has no identifiable owner
+  or deadline. The primary assertion is that all three action items are detected without
+  inventing decisions, risks, or open questions. The null assignee/due values document the
+  intended field behavior for scorer support, but the core corpus assertion is node
+  extraction.
+
+transcript: |
+  We need to update the API documentation before the partner onboarding call.
+  Tariq, can you update the auth section by Wednesday?
+  Yes, I'll get it done.
+  We also need someone to run the load tests before the Thursday deploy — the platform team
+  should handle that, since they own the test harness.
+  And we should probably review the alert thresholds at some point.
+
+expected:
+  action_item:
+    - quote: "We need to update the API documentation before the partner onboarding call.\n\
+        Tariq, can you update the auth section by Wednesday?\n\
+        Yes, I'll get it done."
+      title: Update API documentation auth section
+      description: Tariq will update the auth section of the API documentation by Wednesday ahead of the partner onboarding call.
+      task: Update the auth section of the API documentation.
+      assignee: Tariq
+      due: by Wednesday
+
+    - quote: "We also need someone to run the load tests before the Thursday deploy — the platform team\n\
+        should handle that, since they own the test harness."
+      title: Run load tests before Thursday deploy
+      description: The platform team will run load tests before the Thursday deploy.
+      task: Run load tests before the Thursday deploy.
+      assignee: the platform team
+      due: before the Thursday deploy
+
+    - quote: "And we should probably review the alert thresholds at some point."
+      title: Review alert thresholds
+      description: The team noted a need to review alert thresholds but without a named owner or deadline.
+      task: Review the alert thresholds.
+      assignee: null
+      due: null
+
+  decision: []
+  risk: []
+  open_question: []

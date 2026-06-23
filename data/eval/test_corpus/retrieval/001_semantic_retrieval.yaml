@@ -1,0 +1,24 @@
+corpus_id: deadline-surfaces-risk
+description: "Action item about deadline should surface the related risk in top-5"
+
+query_node:
+  id: delay-deadline
+  type: action_item
+  title: "Delay Q3 deadline by two weeks"
+  description: "The team agreed to push the Q3 deadline by two weeks due to scope creep."
+  quote: "let's push the deadline two weeks, we can't make it otherwise"
+
+candidate_nodes:
+  - id: scope-creep-risk
+    type: risk
+    title: "Scope creep threatens Q3 delivery"
+    description: "Uncontrolled scope additions are putting the Q3 delivery date at risk."
+    quote: "we're adding too many things, Q3 is in danger"
+  - id: unrelated-decision
+    type: decision
+    title: "Use PostgreSQL for persistence"
+    description: "PostgreSQL chosen as the sole persistence layer for all services."
+    quote: "we'll use PostgreSQL for everything"
+
+expected_relevant_ids:
+  - scope-creep-risk

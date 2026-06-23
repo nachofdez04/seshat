@@ -6,7 +6,11 @@ from uuid import uuid4
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
-from seshat.config.settings import IdentificationLLMConfig, ResolutionLLMConfig, VerificationLLMConfig
+from seshat.config.settings import (
+    IdentificationLLMConfig,
+    ResolutionLLMConfig,
+    VerificationLLMConfig,
+)
 from seshat.models.enums import LLMProvider, RelationshipType
 from seshat.models.nodes import KBNode, KBRelationship
 from tests.integration.conftest import _BEDROCK_PROFILE, _anthropic_reachable, _azure_available, _bedrock_available

@@ -1,0 +1,28 @@
+description: >
+  Decision edge case: a proposal that is still under discussion must not be extracted
+  as a Decision. Only the final settled outcome qualifies. The opening question, the
+  preference ("I'd lean towards Kafka"), and the exploratory mention ("We could also
+  consider RabbitMQ") are all mid-discussion noise — none should appear as a Decision.
+
+transcript: |
+  Should we use Kafka or RabbitMQ for the event bus?
+  I'd lean towards Kafka — better throughput and native log compaction.
+  We could also consider RabbitMQ if we want simpler ops.
+  We don't have the ops capacity for Kafka right now. Let's go with RabbitMQ for this release
+  and revisit when we have a platform team.
+  Agreed.
+
+expected:
+  decision:
+    - quote: "We don't have the ops capacity for Kafka right now. Let's go with RabbitMQ for this release\n\
+        and revisit when we have a platform team.\n\
+        Agreed."
+      title: Use RabbitMQ for the event bus in this release
+      description: The team chose RabbitMQ over Kafka for the event bus due to current ops constraints, with intent to revisit.
+      decision: Use RabbitMQ for the event bus for this release.
+      rationale: The team lacks ops capacity for Kafka right now.
+      alternatives_considered: ["Kafka"]
+
+  risk: []
+  open_question: []
+  action_item: []

@@ -1,0 +1,51 @@
+corpus_id: decision-remove-rate-limit-retrieves-ddos-risk
+description: >
+  Cross-type (decision→risk): a decision to remove rate limiting from a
+  public API should surface existing KB risks about DDoS exposure, API abuse,
+  cloud-cost spikes, and compliance exposure, while ignoring unrelated risks
+  from other domains.
+
+query_node:
+  id: remove-rate-limiting
+  type: decision
+  title: "Remove rate limiting from the public search API"
+  description: "The product team decided to remove all rate-limiting caps from the public search API to reduce friction for high-volume integrators."
+  quote: "remove the rate limits from search, our enterprise customers keep hitting them"
+
+candidate_nodes:
+  - id: ddos-exposure
+    type: risk
+    title: "Unprotected public endpoints expose the service to DDoS attacks"
+    description: "Without rate limiting or traffic throttling, a single abusive caller can saturate backend resources and degrade service for all users."
+    quote: "without rate limits a bad actor can just hammer us until we fall over"
+  - id: api-abuse
+    type: risk
+    title: "Uncapped API access enables bulk data scraping"
+    description: "Removing caps allows automated clients to extract the full dataset with no friction, undermining data licensing agreements and competitive positioning."
+    quote: "without limits anyone can just scrape everything we have"
+  - id: cloud-cost-spike
+    type: risk
+    title: "Unexpected traffic surge may cause cloud cost overrun"
+    description: "A sudden increase in API call volume, whether legitimate or abusive, could drive compute and egress costs far beyond the approved quarterly budget."
+    quote: "one viral integration and our cloud bill explodes"
+  - id: hiring-freeze
+    type: risk
+    title: "Hiring freeze may delay key engineering positions"
+    description: "An anticipated company-wide hiring freeze could prevent filling two senior engineering roles needed for the Q3 roadmap."
+    quote: "if the freeze hits we can't fill those two roles in time"
+  - id: gdpr-compliance
+    type: risk
+    title: "Uncontrolled data access may breach GDPR obligations"
+    description: "Allowing unrestricted bulk access to data containing EU resident information may violate GDPR data minimisation and purpose-limitation principles."
+    quote: "if EU data is in there with no controls, we might have a GDPR problem"
+  - id: office-lease-expiry
+    type: risk
+    title: "Office lease expires before a new location is secured"
+    description: "The current office lease ends in eight months and a replacement site has not been identified, risking operational disruption."
+    quote: "our lease is up in eight months and we haven't found a new place"
+
+expected_relevant_ids:
+  - ddos-exposure
+  - api-abuse
+  - cloud-cost-spike
+  - gdpr-compliance

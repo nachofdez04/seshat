@@ -1,0 +1,50 @@
+corpus_id: risk-data-breach-retrieves-security-risks
+description: >
+  Same-type (risk→risk): a new data-breach risk identified in a meeting
+  should surface existing KB risks about PII exposure, weak authentication,
+  and stale dependency security exposure, while not surfacing unrelated
+  operational or business risks.
+
+query_node:
+  id: customer-data-breach
+  type: risk
+  title: "Customer data breach via insecure API endpoint"
+  description: "An unauthenticated API endpoint exposes customer PII to the public internet, creating a high-probability data breach risk."
+  quote: "anyone can call that endpoint without a token, all customer data is just out there"
+
+candidate_nodes:
+  - id: pii-leakage
+    type: risk
+    title: "PII leakage through unencrypted storage"
+    description: "Customer personally identifiable information is stored without encryption at rest, increasing the impact of any storage-layer breach."
+    quote: "the PII fields aren't encrypted, a storage compromise means a full exposure"
+  - id: weak-auth
+    type: risk
+    title: "Weak authentication tokens allow session hijacking"
+    description: "Short-lived tokens without rotation increase the risk of session hijacking by a compromised client."
+    quote: "tokens don't rotate, a stolen one is valid far too long"
+  - id: vendor-lock-in
+    type: risk
+    title: "Deep vendor lock-in with cloud provider"
+    description: "Heavy use of proprietary managed services creates dependency on a single cloud vendor, raising migration costs and continuity risk."
+    quote: "we're so deep into their managed services, moving would take years"
+  - id: single-point-failure
+    type: risk
+    title: "Single point of failure in the message broker"
+    description: "The message broker has no failover replica, meaning a node failure halts all asynchronous processing."
+    quote: "if the broker goes down, the whole async pipeline stops"
+  - id: budget-overrun
+    type: risk
+    title: "Cloud spending may exceed approved budget"
+    description: "Current growth in egress and compute consumption puts the annual cloud budget at risk of overrun by Q3."
+    quote: "at this rate we'll blow the cloud budget before autumn"
+  - id: stale-dependencies
+    type: risk
+    title: "Unpatched third-party dependencies with known CVEs"
+    description: "Several direct dependencies have disclosed critical CVEs and have not been updated in over six months, creating an exploitable attack surface."
+    quote: "we haven't updated those packages in six months, there are open CVEs"
+
+expected_relevant_ids:
+  - pii-leakage
+  - weak-auth
+  - stale-dependencies

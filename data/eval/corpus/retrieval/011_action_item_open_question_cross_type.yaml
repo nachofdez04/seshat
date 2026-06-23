@@ -1,0 +1,50 @@
+corpus_id: action-item-slo-targets-retrieves-open-questions
+description: >
+  Cross-type (action_item→open_question): an action item to define SLO
+  targets should surface open questions about service availability
+  requirements, error budget policy, and latency percentile targets, while
+  ignoring unrelated questions.
+
+query_node:
+  id: define-slo-targets
+  type: action_item
+  title: "Define and document SLO targets for the public API"
+  description: "The engineering lead must produce and sign off a set of SLO targets covering availability, latency (p50/p99), and error rate for the public API before the next board review."
+  quote: "we need SLO targets written up and signed off before the board review"
+
+candidate_nodes:
+  - id: required-availability
+    type: open_question
+    title: "What availability level is required for the public API?"
+    description: "No agreement exists on whether the public API should target 99.9% or 99.95% monthly availability, which drives infrastructure redundancy decisions."
+    quote: "do we need three nines or three-and-a-half? Nobody has committed to a number"
+  - id: error-budget-policy
+    type: open_question
+    title: "What should the error-budget burn policy be when we exceed threshold?"
+    description: "There is no defined policy for what actions to take when the monthly error budget is more than 50% consumed before the month ends."
+    quote: "if we burn half the error budget in week two, what do we actually do? No-one knows"
+  - id: latency-slo-percentile
+    type: open_question
+    title: "Should the latency SLO be measured at p99 or p95?"
+    description: "The team is divided on whether to set the latency target at the 99th or 95th percentile; the choice significantly affects the infrastructure cost estimate."
+    quote: "p99 or p95 for the latency SLO? Different teams want different things"
+  - id: office-move-timing
+    type: open_question
+    title: "When should the team move to the new office?"
+    description: "The new office space is ready but the move date has not been set; it depends on completing current-office lease arrangements."
+    quote: "the new office is ready, when do we actually move?"
+  - id: vendor-selection-crm
+    type: open_question
+    title: "Which CRM vendor should we adopt for the sales team?"
+    description: "The sales team has requested a new CRM but no evaluation has been done; the question of which vendor to use remains open."
+    quote: "sales wants a CRM, which one are we going with?"
+  - id: team-naming
+    type: open_question
+    title: "What should the new platform team be called?"
+    description: "A new cross-functional team is forming to own platform infrastructure, but the team name has not been agreed."
+    quote: "the platform team needs a name, what are we calling it?"
+
+expected_relevant_ids:
+  - required-availability
+  - error-budget-policy
+  - latency-slo-percentile
