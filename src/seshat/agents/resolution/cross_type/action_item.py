@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from seshat.agents.resolution.base import BaseCrossTypeResolutionAgent, _CrossTypeEntry, _ResultBase
 from seshat.models.enums import ConceptType, RelationshipType
-
-if TYPE_CHECKING:
-    from langchain_core.language_models import BaseChatModel
-
-    from seshat.config.settings import ResolutionLLMConfig
 
 
 class _CrossTypeActionItemEntry(_CrossTypeEntry):
@@ -66,10 +61,6 @@ _PROMPTS: dict[ConceptType, str] = {
 
 class ActionItemCrossTypeResolutionAgent(BaseCrossTypeResolutionAgent[_CrossTypeActionItemEntry]):
     """Resolves ActionItem → Risk (mitigates)."""
-
-    def __init__(self, llm: BaseChatModel, config: ResolutionLLMConfig, target_type: ConceptType):
-        super().__init__(llm=llm, config=config)
-        self._target_type = target_type
 
     @property
     def _result_model(self) -> type[_CrossTypeActionItemResult]:

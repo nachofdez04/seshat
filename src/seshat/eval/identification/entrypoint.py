@@ -18,12 +18,19 @@ logger = get_logger(__name__)
 async def run(eval_config: EvalConfig, seshat_config: SeshatConfig, tag_filter: CorpusTagFilter | None = None) -> None:
     async with build_orchestrator(seshat_config) as orchestrator:
         llm_cfg = seshat_config.extraction.identification
+        self_review_cfg = seshat_config.extraction.identification_self_review
         logger.info(
-            "LLM provider=%r model=%r temperature=%s", llm_cfg.provider.value, llm_cfg.model, llm_cfg.temperature
+            "LLM provider=%r model=%r temperature=%s self_review=%s",
+            llm_cfg.provider.value,
+            llm_cfg.model,
+            llm_cfg.temperature,
+            self_review_cfg.enabled,
         )
-
         model_id = log_eval_model(
-            "seshat-identification-agent", inference_component=orchestrator._identification_registry, llm_config=llm_cfg
+            "seshat-identification-agent",
+            inference_component=orchestrator._identification_registry,
+            llm_config=llm_cfg,
+            self_review_config=self_review_cfg,
         )
 
         runner = IdentificationEvalRunner(orchestrator=orchestrator, config=eval_config)

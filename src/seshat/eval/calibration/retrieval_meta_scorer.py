@@ -62,7 +62,7 @@ class RetrievalMetaScorer:
         best_idx = int(np.argmax([p.macro_f2 for p in points]))
         return RetrievalSweepResult(points=points, suggested_threshold=points[best_idx].threshold)
 
-    @track_eval_usage(label="retrieval")
+    @track_eval_usage("retrieval")
     async def _build_cache(self) -> _Cache:
         """Load scored results from the shared retrieval file cache; run vector store on miss."""
         from seshat.eval.retrieval.runner import RetrievalEvalRunner

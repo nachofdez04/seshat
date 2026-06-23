@@ -14,6 +14,7 @@ from seshat.eval.identification.scorers import scorer
 from seshat.eval.mlflow_logging import configure_trace_processors, log_eval_run_metadata
 from seshat.models.enums import ConceptType
 from seshat.models.nodes import IdentificationResult
+from seshat.observability.latency_tracker import track_eval_latency
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.log import set_task_num
 
@@ -37,7 +38,8 @@ class IdentificationEvalRunner:
 
     async def run(self, tag_filter: CorpusTagFilter | None = None, model_id: str | None = None) -> GateResult:
         examples = load_corpus(self._config.identification_corpus_dir, tag_filter=tag_filter)
-        result_cache, touched = await self._run_all_predictions(examples)
+        agent_hash = self._orchestrator._identification_registry.fingerprint()
+        result_cache, touched = await self._run_all_predictions(examples, agent_hash=agent_hash)
 
         expected_by_id = {ex.corpus_id: ex.expected_nodes for ex in examples}
 
@@ -78,18 +80,19 @@ class IdentificationEvalRunner:
             self._config.identification_cache_dir,
             corpus_ids=[ex.corpus_id for ex in examples],
             touched=touched,
+            agent_hash=agent_hash,
         )
         return gate
 
-    @track_eval_usage(label="identification")
+    @track_eval_usage("identification")
+    @track_eval_latency("identification")
     async def _run_all_predictions(
-        self, examples: list[IdentificationCorpusExample]
+        self, examples: list[IdentificationCorpusExample], agent_hash: str
     ) -> tuple[dict[str, IdentificationResult], set[Path]]:
         # Pre-populate before mlflow.genai.evaluate (sync). Calling the orchestrator
         # inside _predict would cross event-loop boundaries — LangChain clients are
         # bound to the loop that created them and fail silently from a new thread.
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
-        agent_hash = self._orchestrator._identification_registry.fingerprint()
 
         async def _run_one(task_idx: int, ex: IdentificationCorpusExample) -> tuple[str, IdentificationResult, Path]:
             set_task_num(task_idx)

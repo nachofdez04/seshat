@@ -62,15 +62,22 @@ async def read_or_run(
     return result, cache_fp
 
 
-def sweep_stale_entries(cache_dir: Path, corpus_ids: list[str], touched: set[Path]) -> None:
+def sweep_stale_entries(
+    cache_dir: Path,
+    corpus_ids: list[str],
+    touched: set[Path],
+    agent_hash: str | None = None,
+) -> None:
     """Delete cache files for the given corpus IDs that were not touched in this run.
 
     Files whose corpus_id is not in `corpus_ids` (out-of-scope due to tag filtering) are
     left untouched. Only entries that were in scope but not hit (stale prompt or input hash)
-    are removed.
+    are removed. agent_hash scopes the sweep to the current agent only, so parallel cache
+    entries for a different agent variant (e.g. shallow vs reflective) are preserved.
     """
+    pattern_suffix = f"{agent_hash}_*.json" if agent_hash else "*.json"
     for corpus_id in corpus_ids:
-        for f in cache_dir.glob(f"{corpus_id}_*.json"):
+        for f in cache_dir.glob(f"{corpus_id}_{pattern_suffix}"):
             if f not in touched:
                 logger.debug("Removing stale cache file %s", f)
                 f.unlink(missing_ok=True)

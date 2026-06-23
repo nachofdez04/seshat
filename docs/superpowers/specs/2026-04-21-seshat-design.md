@@ -502,7 +502,7 @@ Agent      (+Risk      Agent        Agent         registry]
 
 **Ordering invariant:** all agent calls in the fan-out phase must complete and their outputs merged before the RAG + Resolution pass begins. All `KBRelationship` objects — without exception — are created in Pass 2.
 
-- **Pass 1 — Fan-out:** agents run concurrently, one per `ConceptType`. Each agent returns a list of `AnchoredConcept[M]` (individual items with `QuoteAnchor` grounding) or `ConceptGroup[M]` (for types with `grouped_extraction=True`, e.g. DECISION). These are transient models — not `KBNode`. A `PendingNodeBuilder` converts agent output into `_PendingNode` objects, which carry heuristic scores, verification scores, and status bookkeeping. The Action Item agent schema includes an additional field `assignee: str | None` — a named extraction output that Pass 2 resolves.
+- **Pass 1 — Fan-out:** agents run concurrently, one per `ConceptType`. Each agent returns a list of `AnchoredConcept[M]` (individual items with `QuoteAnchor` grounding) or `ConceptGroup[M]` (for types with `grouped_extraction=True`, e.g. DECISION). These are transient models — not `KBNode`. A `PendingNodeBuilder` converts agent output into `_PendingNode` objects, which carry heuristic scores, verification scores, and status bookkeeping. The Action Item agent schema includes an additional field `assignee: str | None` — a named extraction output that Pass 2 resolves. When `identification_self_review.enabled` is `True`, each agent is wrapped in `ReflectiveIdentificationAgent` — see §4 Reflective Agents.
 - **Intermediate — Scoring and status assignment:** `_PendingNode` objects are scored (heuristics + optional verification → `ConfidenceBreakdown`), status-assigned (APPROVED / PENDING_REVIEW), then built into `KBNode` via `_PendingNode.build()`. Within-meeting deduplication runs on `_PendingNode` before build.
 - **Pass 2 — RAG + Resolution:** runs only after the complete merged Pass 1 node list is in memory. Constructs all relationships. The `assignee` field from the Action Item agent is resolved against `TranscriptMetadata.participants` (exact match first, then case-insensitive prefix) and stored in `KBNode.metadata.concept_fields`; it does not become a `KBRelationship`.
 
@@ -515,6 +515,23 @@ Cross-chunk assignment (e.g. "as we agreed earlier, you handle this") is handled
 ### Agent Registry
 
 Each `ConceptType` maps to a registered agent class with its own system prompt. Adding a new concept type = register a new agent + add the type to `ExtractionConfig.concept_types`. The orchestrator discovers agents from the registry at runtime.
+
+### Reflective Agents
+
+Both the identification and same-type resolution families support an optional **reflective mode** that wraps each shallow agent with a second LLM pass. Enabled via `ReflectiveLLMConfig` fields on `ExtractionConfig`:
+
+- `identification_self_review.enabled` — wraps all identification agents in `ReflectiveIdentificationAgent`.
+- `resolution_self_review.enabled` — wraps all same-type resolution agents in `ReflectiveResolutionAgent`.
+
+Both flags default to `False`. When disabled, shallow agents are instantiated unchanged.
+
+**`ReflectiveIdentificationAgent`** adds an **extract → validate → filter** pass. After extraction, a single validation call checks each item for logical compliance (does it satisfy the extraction rules?) and semantic compliance (does the description match the quote?). Items that fail are discarded. On any validation failure (retries exhausted, count mismatch), all extracted nodes are returned as-is.
+
+**`ReflectiveResolutionAgent`** adds a **competing-hypothesis tiebreaker** for ambiguous same-type entries. The inner agent signals uncertainty via an optional `alt_rel_type` field — populated only when two relationship types are genuinely competing for a pair. Only contested entries are sent to a tiebreaker call that adjudicates between the two candidates; uncontested entries bypass it entirely. On any tiebreaker failure, the original `rel_type` is kept. Cross-type agents are not wrapped — no quality gap observed in eval.
+
+Both agents use the **subclass-and-delegate** (proxy) pattern: they inherit from the same base as the shallow agents, hold an `inner` instance, and delegate all abstract properties to it. The orchestrator and registries require no changes to support either mode.
+
+Full design details: [docs/superpowers/specs/2026-06-17-reflective-agents.md](2026-06-17-reflective-agents.md).
 
 ### Prompt Caching
 
@@ -780,7 +797,7 @@ Resolution is two parallel LLM calls routed through the registry — both run co
   - **`AMENDS`**: the new node narrows, extends, conditionally qualifies, or corrects a detail of the prior decision while leaving it broadly active. The prior node's `NodeState` transitions to `AMENDED`.
   - **`CONFLICTS_WITH`**: both decisions are currently active but mutually incompatible. Neither node's state changes — see Node Lifecycle Invariant (Section 4).
   - **No relationship**: the new node covers the same topic but is independently valid (e.g. a separate decision about a different component). No state change.
-  - **Tiebreaker (AMENDS vs SUPERSEDES):** when the relationship is ambiguous between the two, prefer `AMENDS` — it is the less destructive classification. The eval corpus must include a labelled borderline example to validate the agent applies this tiebreaker correctly.
+  - **Ambiguity signal (`alt_rel_type`):** when the agent is genuinely uncertain between two specific relationship types (never for null assignments, never for clear-cut cases), it sets `alt_rel_type` to the runner-up. When `resolution_self_review.enabled` is `True`, entries with `alt_rel_type` set are sent to a tiebreaker call — see §4 Reflective Agents. Uncontested entries bypass the tiebreaker entirely.
 
   The eval corpus must include at least 2 labelled examples per relationship type (SUPERSEDES, AMENDS, CONFLICTS, no-relationship) to validate that the agent applies these criteria correctly.
 - **Call 2 — cross-type resolution:** across all new nodes, resolves `MITIGATES`, `BLOCKS`, `DEPENDS_ON`, and `RESOLVES`. The relationship schema constrains which pairings are evaluated — no N×N comparison across all types:

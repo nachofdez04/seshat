@@ -7,12 +7,13 @@ import mlflow
 import mlflow.genai
 import pandas as pd
 
-from seshat.agents.verification import VerificationResult
+from seshat.agents.grounding import GroundingResult
 from seshat.eval.cache import build_cache_fp, read_or_run, sweep_stale_entries
 from seshat.eval.gate import upsert_gate
+from seshat.eval.grounding.corpus_loader import load_corpus
+from seshat.eval.grounding.scorers import scorer
 from seshat.eval.mlflow_logging import configure_trace_processors, log_eval_run_metadata, make_input_redactor
-from seshat.eval.verification.corpus_loader import load_corpus
-from seshat.eval.verification.scorers import scorer
+from seshat.observability.latency_tracker import track_eval_latency
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.log import set_task_num
 
@@ -21,22 +22,22 @@ if TYPE_CHECKING:
 
     from mlflow.genai.evaluation.entities import EvaluationResult
 
-    from seshat.agents.verification import VerificationAgent
+    from seshat.agents.grounding import GroundingAgent
     from seshat.config.eval_settings import EvalConfig
     from seshat.eval.corpus_tags import CorpusTagFilter
+    from seshat.eval.grounding.corpus_loader import GroundingCorpusExample
     from seshat.eval.models import GateResult
-    from seshat.eval.verification.corpus_loader import VerificationCorpusExample
 
 
-class VerificationEvalRunner:
-    def __init__(self, agent: VerificationAgent, config: EvalConfig) -> None:
+class GroundingEvalRunner:
+    def __init__(self, agent: GroundingAgent, config: EvalConfig) -> None:
         self._agent = agent
         self._config = config
 
     async def run(self, tag_filter: CorpusTagFilter | None = None, model_id: str | None = None) -> GateResult:
-        examples = load_corpus(self._config.verification_corpus_dir, tag_filter=tag_filter)
+        examples = load_corpus(self._config.grounding_corpus_dir, tag_filter=tag_filter)
         if not examples:
-            return upsert_gate(self._config.gate_path, run_id="verification-no-corpus")
+            return upsert_gate(self._config.gate_path, run_id="grounding-no-corpus")
 
         result_cache, touched = await self._run_all_predictions(examples)
 
@@ -62,49 +63,50 @@ class VerificationEvalRunner:
         eval_result = mlflow.genai.evaluate(data=df, predict_fn=_predict, scorers=[scorer], model_id=model_id)
 
         run_id = eval_result.run_id
-        verification_metrics = _aggregate_metrics(eval_result)
+        grounding_metrics = _aggregate_metrics(eval_result)
 
         gate = upsert_gate(
             self._config.gate_path,
             run_id=run_id,
-            verification_metrics=verification_metrics,
+            grounding_metrics=grounding_metrics,
         )
         log_eval_run_metadata(
             run_id=run_id,
-            harness="verification",
+            harness="grounding",
             gate_passed=gate.passed,
-            corpus_dir=self._config.verification_corpus_dir,
+            corpus_dir=self._config.grounding_corpus_dir,
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(examples, result_cache),
             tag_filter=tag_filter,
         )
 
         sweep_stale_entries(
-            self._config.verification_cache_dir,
+            self._config.grounding_cache_dir,
             corpus_ids=[ex.corpus_id for ex in examples],
             touched=touched,
         )
         return gate
 
-    @track_eval_usage(label="verification")
+    @track_eval_usage("grounding")
+    @track_eval_latency("grounding")
     async def _run_all_predictions(
-        self, examples: list[VerificationCorpusExample]
-    ) -> tuple[dict[tuple[str, int], VerificationResult], set[Path]]:
+        self, examples: list[GroundingCorpusExample]
+    ) -> tuple[dict[tuple[str, int], GroundingResult], set[Path]]:
         # Pre-populate before mlflow.genai.evaluate (sync) to avoid event-loop boundary issues.
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
         agent_hash = self._agent.fingerprint()
 
         async def _run_one(
-            task_idx: int, ex: VerificationCorpusExample, node_idx: int
-        ) -> tuple[tuple[str, int], VerificationResult, Path]:
+            task_idx: int, ex: GroundingCorpusExample, node_idx: int
+        ) -> tuple[tuple[str, int], GroundingResult, Path]:
             set_task_num(task_idx)
-            cache_fp = build_cache_fp(self._config.verification_cache_dir, ex, agent_hash=agent_hash, index=node_idx)
+            cache_fp = build_cache_fp(self._config.grounding_cache_dir, ex, agent_hash=agent_hash, index=node_idx)
             node = ex.nodes[node_idx]
 
             async with sem:
                 result, used = await read_or_run(
                     cache_fp,
-                    VerificationResult,
+                    GroundingResult,
                     self._agent.verify(
                         title=node.title,
                         description=node.description,
@@ -122,7 +124,7 @@ class VerificationEvalRunner:
         return results, touched
 
 
-def _build_dataframe(examples: list[VerificationCorpusExample]) -> pd.DataFrame:
+def _build_dataframe(examples: list[GroundingCorpusExample]) -> pd.DataFrame:
     rows = []
     for ex in examples:
         for i, node in enumerate(ex.nodes):
@@ -147,7 +149,7 @@ def _aggregate_metrics(eval_result: EvaluationResult) -> dict[str, float]:
     assert eval_result.result_df is not None
     for _, row in eval_result.result_df.iterrows():
         for k in counts:
-            v = row.get(f"verification.{k}/value")
+            v = row.get(f"grounding.{k}/value")
             if v is not None and not pd.isna(v):
                 counts[k] += int(v)
 
@@ -158,8 +160,8 @@ def _aggregate_metrics(eval_result: EvaluationResult) -> dict[str, float]:
 
 
 def _build_breakdown(
-    examples: list[VerificationCorpusExample],
-    result_cache: dict[tuple[str, int], VerificationResult],
+    examples: list[GroundingCorpusExample],
+    result_cache: dict[tuple[str, int], GroundingResult],
 ) -> dict:
     breakdown: dict = {}
     for ex in examples:

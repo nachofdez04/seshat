@@ -181,30 +181,30 @@ class TestPendingNodeAssignStatus:
         node.assign_status(config)
         assert node.status == NodeStatus.PENDING_REVIEW
 
-    def _pending_with_verification(self, heuristics: float, verification_passed: bool | None) -> _PendingNode:
+    def _pending_with_grounding(self, heuristics: float, grounding_passed: bool | None) -> _PendingNode:
         node = _make_pending("Use PostgreSQL")
-        node.breakdown = ConfidenceBreakdown(heuristics=heuristics, verification_passed=verification_passed)
+        node.breakdown = ConfidenceBreakdown(heuristics=heuristics, grounding_passed=grounding_passed)
         return node
 
-    def test_manual_mode_verification_failed_above_threshold_sets_pending_review(self):
-        node = self._pending_with_verification(0.8, False)
+    def test_manual_mode_grounding_failed_above_threshold_sets_pending_review(self):
+        node = self._pending_with_grounding(0.8, False)
         node.assign_status(_make_config(auto_mode=False, confidence_threshold=0.5))
         assert node.status == NodeStatus.PENDING_REVIEW
-        assert node.pending_reason == "verification failed"
+        assert node.pending_reason == "grounding failed"
         assert node.approval_method is None
 
-    def test_manual_mode_verification_passed_above_threshold_approves(self):
-        node = self._pending_with_verification(0.8, True)
+    def test_manual_mode_grounding_passed_above_threshold_approves(self):
+        node = self._pending_with_grounding(0.8, True)
         node.assign_status(_make_config(auto_mode=False, confidence_threshold=0.5))
         assert node.status == NodeStatus.APPROVED
 
-    def test_manual_mode_verification_none_above_threshold_approves(self):
-        node = self._pending_with_verification(0.8, None)
+    def test_manual_mode_grounding_none_above_threshold_approves(self):
+        node = self._pending_with_grounding(0.8, None)
         node.assign_status(_make_config(auto_mode=False, confidence_threshold=0.5))
         assert node.status == NodeStatus.APPROVED
 
-    def test_auto_mode_verification_failed_above_threshold_rejects(self):
-        node = self._pending_with_verification(0.8, False)
+    def test_auto_mode_grounding_failed_above_threshold_rejects(self):
+        node = self._pending_with_grounding(0.8, False)
         node.assign_status(_make_config(auto_mode=True, confidence_threshold=0.5))
         assert node.status == NodeStatus.REJECTED
 

@@ -39,7 +39,7 @@ class _PendingNode:
     concept_fields: dict[str, Any]
     job_id: str
     heuristics: float
-    verification: bool | None = None
+    grounding: bool | None = None
     breakdown: ConfidenceBreakdown | None = None
     status: NodeStatus = NodeStatus.PENDING_REVIEW
     approval_method: ApprovalMethod | None = None
@@ -74,12 +74,12 @@ class _PendingNode:
             threshold = config.per_type_thresholds[self.concept_type]
 
         # TODO: set approved_by to job submitter once user_id is threaded through ExtractionConfig
-        passes_verification = self.breakdown.verification_passed is None or self.breakdown.verification_passed
+        passes_grounding = self.breakdown.grounding_passed is None or self.breakdown.grounding_passed
         passes_threshold = self.breakdown.heuristics >= threshold
 
         if config.auto_mode:
             # No human in the loop — nodes either pass the gate or are rejected entirely.
-            if passes_verification and passes_threshold:
+            if passes_grounding and passes_threshold:
                 self.status = NodeStatus.APPROVED
                 self.approval_method = ApprovalMethod.AUTO
                 self.approved_at = datetime.now(UTC)
@@ -87,8 +87,8 @@ class _PendingNode:
                 self.status = NodeStatus.REJECTED
         else:
             # Human in the loop — nodes that pass both gates are auto-approved; anything else goes to PENDING_REVIEW.
-            # Verification failures must not be silently auto-approved even in manual mode.
-            if passes_verification and passes_threshold:
+            # Grounding failures must not be silently auto-approved even in manual mode.
+            if passes_grounding and passes_threshold:
                 self.status = NodeStatus.APPROVED
                 self.approval_method = ApprovalMethod.THRESHOLD
                 self.approved_at = datetime.now(UTC)
@@ -97,7 +97,7 @@ class _PendingNode:
                 self.pending_reason = f"heuristics {self.breakdown.heuristics:.2f} < threshold {threshold:.2f}"
             else:
                 self.status = NodeStatus.PENDING_REVIEW
-                self.pending_reason = "verification failed"
+                self.pending_reason = "grounding failed"
 
 
 class PendingNodeBuilder:

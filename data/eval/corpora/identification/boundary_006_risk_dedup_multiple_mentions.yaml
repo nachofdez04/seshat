@@ -1,8 +1,8 @@
 description: >
   Risk deduplication and Open Question: the same indexing-lag failure mode is mentioned
   twice — the Risk agent should emit one Risk using the most complete supporting exchange.
-  The group also explicitly states the capacity numbers are unknown and no next step is
-  assigned, leaving an unresolved factual need — a genuine Open Question.
+  The group states the capacity numbers are unknown and that a decision depends on them,
+  leaving the indexing strategy unresolved — a genuine Open Question alongside the Risk.
 
 tags:
   tier: boundary
@@ -18,14 +18,16 @@ transcript: |
   Back to the indexing concern: the importer can enqueue a million record updates in one burst.
   If indexing lags behind that burst, customers may see stale search results for several hours
   after migration, and support will not be able to tell whether records are missing or just delayed.
-  That's a real launch risk. We do not have those capacity numbers yet.
+  That's a real launch risk. We do not have those capacity numbers yet, and we need them to make an
+  informed decision.
 
 expected:
   risk:
     - quote: "Back to the indexing concern: the importer can enqueue a million record updates in one burst.\n\
         If indexing lags behind that burst, customers may see stale search results for several hours\n\
         after migration, and support will not be able to tell whether records are missing or just delayed.\n\
-        That's a real launch risk. We do not have those capacity numbers yet."
+        That's a real launch risk. We do not have those capacity numbers yet, and we need them to make an\n\
+        informed decision."
       title: Indexing lag may show stale search results after tenant import
       description: If indexing falls behind the tenant import burst, customers may see stale search results for several hours and support may not know whether records are missing or delayed.
       type: future
@@ -35,11 +37,12 @@ expected:
     - quote: "Back to the indexing concern: the importer can enqueue a million record updates in one burst.\n\
         If indexing lags behind that burst, customers may see stale search results for several hours\n\
         after migration, and support will not be able to tell whether records are missing or just delayed.\n\
-        That's a real launch risk. We do not have those capacity numbers yet."
-      title: What indexing capacity is needed to handle large tenant import bursts?
-      description: The group does not have the capacity numbers needed to assess whether indexing can absorb large tenant import bursts without unacceptable search lag.
-      question: What indexing capacity is needed to absorb large tenant import bursts without causing unacceptable search result lag?
-      context: The group explicitly stated the capacity numbers are not yet available and no next step was assigned in the transcript.
+        That's a real launch risk. We do not have those capacity numbers yet, and we need them to make an\n\
+        informed decision."
+      title: Should indexing capacity be scaled up before launch to handle tenant import bursts?
+      description: The group acknowledged the indexing lag risk but established no mitigation path, owner, or decision — leaving the question of how to handle indexing capacity before launch unresolved.
+      question: Should indexing capacity be scaled up before launch, or should the team accept the risk of stale search results during tenant import bursts?
+      context: The group acknowledged the failure mode and the missing capacity numbers, but no mitigation path, owner, or decision was established in the transcript.
 
   decision: []
   action_item: []

@@ -6,22 +6,23 @@ import pytest
 from seshat.agents.resolution.base import ResolvedRelationship
 from seshat.agents.resolution.cross_type.registry import CrossTypeResolutionRegistry
 from seshat.agents.resolution.registry import ResolutionRegistry
+from seshat.agents.resolution.same_type.reflective import ReflectiveResolutionAgent
 from seshat.agents.resolution.same_type.registry import SameTypeResolutionRegistry
-from seshat.config.settings import ResolutionLLMConfig
+from seshat.config.settings import ExtractionConfig
 from seshat.models.enums import ConceptType, RelationshipType
 from tests.helpers import make_node
 
 
 def _make_same_type_registry() -> SameTypeResolutionRegistry:
-    return SameTypeResolutionRegistry(llm=MagicMock(), config=ResolutionLLMConfig())
+    return SameTypeResolutionRegistry(llm=MagicMock(), config=ExtractionConfig())
 
 
 def _make_cross_type_registry() -> CrossTypeResolutionRegistry:
-    return CrossTypeResolutionRegistry(llm=MagicMock(), config=ResolutionLLMConfig())
+    return CrossTypeResolutionRegistry(llm=MagicMock(), config=ExtractionConfig())
 
 
 def _make_resolution_registry() -> ResolutionRegistry:
-    return ResolutionRegistry(llm=MagicMock(), config=ResolutionLLMConfig())
+    return ResolutionRegistry(llm=MagicMock(), config=ExtractionConfig())
 
 
 class TestSameTypeResolutionRegistry:
@@ -212,3 +213,23 @@ class TestGlobalSemaphoreForwarding:
         decision_to_risk = registry._agents_mapping[(ConceptType.DECISION, ConceptType.RISK)]
         call_kwargs = decision_to_risk.resolve.call_args
         assert call_kwargs.args[2] is sem or call_kwargs.kwargs.get("global_sem") is sem
+
+
+class TestReflectiveWrappingInRegistry:
+    def test_same_type_registry_wraps_agents_when_review_llm_provided(self):
+        review_llm = MagicMock()
+        config = ExtractionConfig(resolution_self_review={"enabled": True})
+        registry = SameTypeResolutionRegistry(llm=MagicMock(), config=config, review_llm=review_llm)
+        for agent in registry._agents.values():
+            assert isinstance(agent, ReflectiveResolutionAgent)
+
+    def test_same_type_registry_does_not_wrap_when_no_review_llm(self):
+        registry = SameTypeResolutionRegistry(llm=MagicMock(), config=ExtractionConfig(), review_llm=None)
+        for agent in registry._agents.values():
+            assert not isinstance(agent, ReflectiveResolutionAgent)
+
+    def test_cross_type_registry_never_wraps_agents(self):
+        config = ExtractionConfig(resolution_self_review={"enabled": True})
+        registry = CrossTypeResolutionRegistry(llm=MagicMock(), config=config)
+        for agent in registry._agents_mapping.values():
+            assert not isinstance(agent, ReflectiveResolutionAgent)

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from seshat.agents.resolution.same_type.action_item import ActionItemResolutionAgent
 from seshat.agents.resolution.same_type.decision import DecisionResolutionAgent
 from seshat.agents.resolution.same_type.open_question import OpenQuestionResolutionAgent
+from seshat.agents.resolution.same_type.reflective import ReflectiveResolutionAgent
 from seshat.agents.resolution.same_type.risk import RiskResolutionAgent
 from seshat.models.enums import ConceptType
 from seshat.utils.log import get_logger
@@ -18,21 +19,24 @@ if TYPE_CHECKING:
 
     from langchain_core.language_models import BaseChatModel
 
-    from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, ResolvedRelationship
-    from seshat.config.settings import ResolutionLLMConfig
+    from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, ResolvedRelationship, _BaseResolutionAgent
+    from seshat.config.settings import ExtractionConfig
     from seshat.models.nodes import FailedResolutionSource, KBNode
 
 
 class SameTypeResolutionRegistry:
-    def __init__(self, llm: BaseChatModel, config: ResolutionLLMConfig) -> None:
-        self._agents: dict[ConceptType, BaseSameTypeResolutionAgent] = {
-            ConceptType.DECISION: DecisionResolutionAgent(llm, config),
-            ConceptType.RISK: RiskResolutionAgent(llm, config),
-            ConceptType.ACTION_ITEM: ActionItemResolutionAgent(llm, config),
-            ConceptType.OPEN_QUESTION: OpenQuestionResolutionAgent(llm, config),
+    def __init__(self, llm: BaseChatModel, config: ExtractionConfig, review_llm: BaseChatModel | None = None) -> None:
+        self._agents: dict[ConceptType, _BaseResolutionAgent] = {
+            concept_type: _make_agent(agent_cls, llm, config, review_llm)
+            for concept_type, agent_cls in (
+                (ConceptType.ACTION_ITEM, ActionItemResolutionAgent),
+                (ConceptType.DECISION, DecisionResolutionAgent),
+                (ConceptType.OPEN_QUESTION, OpenQuestionResolutionAgent),
+                (ConceptType.RISK, RiskResolutionAgent),
+            )
         }
 
-    def get(self, concept_type: ConceptType) -> BaseSameTypeResolutionAgent:
+    def get(self, concept_type: ConceptType) -> _BaseResolutionAgent:
         agent = self._agents.get(concept_type)
         if agent is None:
             raise KeyError(f"No resolution agent registered for {concept_type}")
@@ -86,6 +90,20 @@ class SameTypeResolutionRegistry:
             if ct not in self._agents:
                 continue
             yield ct, sources, _scope_targets(sources, per_source_targets, ct)
+
+
+def _make_agent(
+    agent_cls: type[BaseSameTypeResolutionAgent],
+    llm: BaseChatModel,
+    config: ExtractionConfig,
+    review_llm: BaseChatModel | None,
+) -> _BaseResolutionAgent:
+    inner = agent_cls(llm=llm, config=config.resolution)
+    if not config.resolution_self_review.enabled:
+        return inner
+
+    logger.debug("Using Reflective%s", agent_cls.__name__)
+    return ReflectiveResolutionAgent(inner=inner, review_llm=review_llm or llm)
 
 
 def _scope_targets(

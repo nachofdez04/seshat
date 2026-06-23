@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from seshat.agents.grounding import GroundingAgent
 from seshat.agents.identification.grouping import GroupingAgent
 from seshat.agents.identification.registry import IdentificationAgentRegistry
 from seshat.agents.resolution.registry import ResolutionRegistry
-from seshat.agents.verification import VerificationAgent
 from seshat.config.eval_settings import EvalConfig
 from seshat.config.settings import ExtractionConfig, ObservabilityConfig
+from seshat.eval.grounding.runner import GroundingEvalRunner
 from seshat.eval.grouping.runner import GroupingEvalRunner
 from seshat.eval.identification.runner import IdentificationEvalRunner
 from seshat.eval.resolution.runner import ResolutionEvalRunner
-from seshat.eval.verification.runner import VerificationEvalRunner
 from seshat.pipeline.extraction.orchestrator import ExtractionOrchestrator
 from tests.integration.helpers import (
+    cheap_grounding_config,
     cheap_identification_config,
     cheap_resolution_config,
-    cheap_verification_config,
     make_cheap_llm,
 )
 
@@ -74,10 +74,10 @@ def make_resolution_runner(config: EvalConfig) -> ResolutionEvalRunner:
     return ResolutionEvalRunner(orchestrator=_make_eval_orchestrator(extraction_config), config=config)
 
 
-def make_verification_runner(config: EvalConfig) -> VerificationEvalRunner:
-    verification_config = cheap_verification_config()
-    agent = VerificationAgent(llm=make_cheap_llm(), config=verification_config)
-    return VerificationEvalRunner(agent=agent, config=config)
+def make_grounding_runner(config: EvalConfig) -> GroundingEvalRunner:
+    grounding_config = cheap_grounding_config()
+    agent = GroundingAgent(llm=make_cheap_llm(), config=grounding_config)
+    return GroundingEvalRunner(agent=agent, config=config)
 
 
 def make_grouping_runner(config: EvalConfig) -> GroupingEvalRunner:

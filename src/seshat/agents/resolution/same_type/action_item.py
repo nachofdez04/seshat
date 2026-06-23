@@ -3,18 +3,18 @@ from typing import Literal
 from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _ResultBase, _SameTypeEntry
 from seshat.models.enums import RelationshipType
 
+_ACTION_ITEM_RELATION_TYPES = Literal[
+    RelationshipType.SUPERSEDES,
+    RelationshipType.AMENDS,
+    RelationshipType.CONFLICTS_WITH,
+    RelationshipType.BLOCKS,
+    RelationshipType.DEPENDS_ON,
+]
+
 
 class _ActionItemEntry(_SameTypeEntry):
-    rel_type: (  # type: ignore[override]
-        Literal[
-            RelationshipType.SUPERSEDES,
-            RelationshipType.AMENDS,
-            RelationshipType.CONFLICTS_WITH,
-            RelationshipType.BLOCKS,
-            RelationshipType.DEPENDS_ON,
-        ]
-        | None
-    )
+    rel_type: _ACTION_ITEM_RELATION_TYPES | None  # type: ignore[override]
+    alt_rel_type: _ACTION_ITEM_RELATION_TYPES | None = None  # type: ignore[override]
 
 
 class _ActionItemResult(_ResultBase[_ActionItemEntry]): ...
@@ -94,6 +94,12 @@ Once the same concern domain guard passes, select the first label that applies:
 - conflicts_with vs depends_on:
   - "Alice will own the on-call rotation redesign" → conflicts_with "Bob will own the on-call rotation redesign" — same task, contradictory ownership — both active, cannot both be true.
   - "Publish the API documentation" → depends_on "Finalise the API contract" — sequential — documentation cannot be published until the contract is settled.
+
+## Ambiguity signal
+If, after applying the selection rules above, you are genuinely uncertain between two specific
+relationship types (not between a type and null), set alt_rel_type to the runner-up.
+alt_rel_type must be one of the same valid types as rel_type, and must differ from rel_type.
+Leave alt_rel_type null for clear-cut cases, null assignments, and when uncertain between a type and null.
 """
 
 

@@ -3,9 +3,12 @@ from typing import Literal
 from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _ResultBase, _SameTypeEntry
 from seshat.models.enums import RelationshipType
 
+_RISK_RELATION_TYPES = Literal[RelationshipType.AMENDS]
+
 
 class _RiskEntry(_SameTypeEntry):
-    rel_type: Literal[RelationshipType.AMENDS] | None  # type: ignore[override]
+    rel_type: _RISK_RELATION_TYPES | None  # type: ignore[override]
+    alt_rel_type: _RISK_RELATION_TYPES | None = None  # type: ignore[override]
 
 
 class _RiskResult(_ResultBase[_RiskEntry]): ...
@@ -53,6 +56,12 @@ Once the same concern domain guard passes, select the first label that applies:
 - amends vs null:
   - "Pipeline may fail for messages above 512 KB" → amends "Pipeline may fail for large messages" — same failure mode, source adds a threshold.
   - "Pipeline may fail for messages above 512 KB" → null "Pipeline may exhaust memory on very large file uploads" — different failure modes: message routing vs memory.
+
+## Ambiguity signal
+If, after applying the selection rules above, you are genuinely uncertain between two specific
+relationship types (not between a type and null), set alt_rel_type to the runner-up.
+alt_rel_type must be one of the same valid types as rel_type, and must differ from rel_type.
+Leave alt_rel_type null for clear-cut cases, null assignments, and when uncertain between a type and null.
 """
 
 

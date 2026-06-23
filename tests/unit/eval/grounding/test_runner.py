@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from seshat.agents.verification import VerificationResult
-from seshat.eval.verification.corpus_loader import VerificationCorpusExample, VerificationCorpusNode
-from seshat.eval.verification.runner import _aggregate_metrics, _build_breakdown, _build_dataframe
+from seshat.agents.grounding import GroundingResult
+from seshat.eval.grounding.corpus_loader import GroundingCorpusExample, GroundingCorpusNode
+from seshat.eval.grounding.runner import _aggregate_metrics, _build_breakdown, _build_dataframe
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -17,8 +17,8 @@ def _make_node(
     description: str = "Node description.",
     quote: str = "source quote",
     expected_supported: bool = True,
-) -> VerificationCorpusNode:
-    return VerificationCorpusNode(
+) -> GroundingCorpusNode:
+    return GroundingCorpusNode(
         title=title,
         description=description,
         quote=quote,
@@ -28,10 +28,10 @@ def _make_node(
 
 def _make_example(
     corpus_id: str = "ex_001",
-    nodes: list[VerificationCorpusNode] | None = None,
+    nodes: list[GroundingCorpusNode] | None = None,
     tags: dict | None = None,
-) -> VerificationCorpusExample:
-    return VerificationCorpusExample(
+) -> GroundingCorpusExample:
+    return GroundingCorpusExample(
         corpus_id=corpus_id,
         description="A test example.",
         transcript=None,
@@ -120,10 +120,10 @@ def test_build_dataframe_empty_input():
 
 
 def _rows_with_counts(**kwargs) -> pd.DataFrame:
-    """Build a single-row result_df with verification.{k}/value columns."""
+    """Build a single-row result_df with grounding.{k}/value columns."""
     row = {}
     for k, v in kwargs.items():
-        row[f"verification.{k}/value"] = float(v)
+        row[f"grounding.{k}/value"] = float(v)
     return pd.DataFrame([row])
 
 
@@ -155,16 +155,16 @@ def test_aggregate_metrics_sums_across_rows():
     df = pd.DataFrame(
         [
             {
-                "verification.tp/value": 1.0,
-                "verification.fp/value": 1.0,
-                "verification.fn/value": 0.0,
-                "verification.tn/value": 0.0,
+                "grounding.tp/value": 1.0,
+                "grounding.fp/value": 1.0,
+                "grounding.fn/value": 0.0,
+                "grounding.tn/value": 0.0,
             },
             {
-                "verification.tp/value": 1.0,
-                "verification.fp/value": 0.0,
-                "verification.fn/value": 0.0,
-                "verification.tn/value": 1.0,
+                "grounding.tp/value": 1.0,
+                "grounding.fp/value": 0.0,
+                "grounding.fn/value": 0.0,
+                "grounding.tn/value": 1.0,
             },
         ]
     )
@@ -204,14 +204,14 @@ def test_aggregate_metrics_returns_precision_and_recall_keys():
 
 def test_build_breakdown_keys_match_corpus_ids():
     ex = _make_example("example_42")
-    result_cache = {("example_42", 0): VerificationResult(supported=True, rationale="Looks good.")}
+    result_cache = {("example_42", 0): GroundingResult(supported=True, rationale="Looks good.")}
     breakdown = _build_breakdown([ex], result_cache)
     assert "example_42" in breakdown
 
 
 def test_build_breakdown_includes_tags():
     ex = _make_example("ex1", tags={"source": "slack"})
-    result_cache = {("ex1", 0): VerificationResult(supported=True)}
+    result_cache = {("ex1", 0): GroundingResult(supported=True)}
     breakdown = _build_breakdown([ex], result_cache)
     assert breakdown["ex1"]["tags"] == {"source": "slack"}
 
@@ -219,7 +219,7 @@ def test_build_breakdown_includes_tags():
 def test_build_breakdown_node_fields_from_cache():
     node = _make_node(title="Deploy Redis", expected_supported=True)
     ex = _make_example("ex1", nodes=[node])
-    result_cache = {("ex1", 0): VerificationResult(supported=False, rationale="Not grounded.")}
+    result_cache = {("ex1", 0): GroundingResult(supported=False, rationale="Not grounded.")}
     breakdown = _build_breakdown([ex], result_cache)
     node_out = breakdown["ex1"]["nodes"][0]
     assert node_out["title"] == "Deploy Redis"
@@ -241,7 +241,7 @@ def test_build_breakdown_missing_cache_entry_yields_none_values():
 def test_build_breakdown_one_entry_per_node():
     nodes = [_make_node(f"Node {i}") for i in range(3)]
     ex = _make_example("ex1", nodes=nodes)
-    cache = {("ex1", i): VerificationResult(supported=True) for i in range(3)}
+    cache = {("ex1", i): GroundingResult(supported=True) for i in range(3)}
     breakdown = _build_breakdown([ex], cache)
     assert len(breakdown["ex1"]["nodes"]) == 3
 
@@ -250,9 +250,9 @@ def test_build_breakdown_multiple_examples():
     ex1 = _make_example("alpha", nodes=[_make_node("A")])
     ex2 = _make_example("beta", nodes=[_make_node("B"), _make_node("C")])
     cache = {
-        ("alpha", 0): VerificationResult(supported=True),
-        ("beta", 0): VerificationResult(supported=False),
-        ("beta", 1): VerificationResult(supported=True),
+        ("alpha", 0): GroundingResult(supported=True),
+        ("beta", 0): GroundingResult(supported=False),
+        ("beta", 1): GroundingResult(supported=True),
     }
     breakdown = _build_breakdown([ex1, ex2], cache)
     assert set(breakdown.keys()) == {"alpha", "beta"}

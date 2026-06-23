@@ -18,7 +18,7 @@ transcript: |
   Right — we can't pick the storage architecture until we know.
   Has anyone contacted them?
   Not formally. We should get a written ruling before we go too far down any path.
-  Agreed. Lena, can you open a request with legal and get us a written position by end of
+  Agreed. Lena, can you open a request with legal and try to get us a written position by end of
   next week?
   Yes, I'll draft the request today and follow up if I don't hear back by Thursday.
 
@@ -33,7 +33,7 @@ expected:
       context: Legal has not yet provided a ruling; the team is blocked from choosing a storage architecture until it does.
 
   action_item:
-    - quote: "Agreed. Lena, can you open a request with legal and get us a written position by end of\n\
+    - quote: "Agreed. Lena, can you open a request with legal and try toget us a written position by end of\n\
         next week?\n\
         Yes, I'll draft the request today and follow up if I don't hear back by Thursday."
       title: Obtain legal ruling on telemetry data residency

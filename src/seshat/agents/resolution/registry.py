@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
     from seshat.agents.resolution.base import ResolvedRelationship
-    from seshat.config.settings import ResolutionLLMConfig
+    from seshat.config.settings import ExtractionConfig
     from seshat.models.nodes import FailedResolutionSource, KBNode
 
 logger = get_logger(__name__)
@@ -34,24 +34,30 @@ _INVALID_ON_SUPERSEDED = {
 
 
 class ResolutionRegistry:
-    def __init__(self, llm: BaseChatModel, config: ResolutionLLMConfig) -> None:
-        self._same_type = SameTypeResolutionRegistry(llm, config)
+    def __init__(self, llm: BaseChatModel, config: ExtractionConfig, review_llm: BaseChatModel | None = None) -> None:
+        self._same_type = SameTypeResolutionRegistry(llm, config, review_llm=review_llm)
         self._cross_type = CrossTypeResolutionRegistry(llm, config)
 
     def fingerprint(self) -> str:
-        """8-char hex digest of all same-type and cross-type agent prompts."""
-        prompts = [agent._system_prompt for agent in self._same_type._agents.values()]
-        prompts += [agent._system_prompt for agent in self._cross_type._agents_mapping.values()]
-        return fingerprint("".join(prompts))
+        """8-char hex digest of all same-type and cross-type agent prompts.
+
+        Uses agent.fingerprint() so the validate prompt is included when agents are
+        wrapped in ReflectiveResolutionAgent, giving shallow and reflective runs distinct cache keys.
+        """
+        combined = "".join(agent.fingerprint() for agent in self._same_type._agents.values())
+        combined += "".join(agent.fingerprint() for agent in self._cross_type._agents_mapping.values())
+        return fingerprint(combined)
 
     def prompt_texts(self) -> dict[str, str]:
-        texts = {
-            f"same_type-{concept_type}": agent._system_prompt for concept_type, agent in self._same_type._agents.items()
-        }
+        texts = {}
+        for concept_type, agent in self._same_type._agents.items():
+            for prompt_key, prompt_text in agent.prompt_texts().items():
+                texts[f"same_type-{concept_type}-{prompt_key}"] = prompt_text
         texts.update(
             {
-                f"cross_type-{src}-to-{tgt}": agent._system_prompt
+                f"cross_type-{src}-to-{tgt}-{prompt_key}": prompt_text
                 for (src, tgt), agent in self._cross_type._agents_mapping.items()
+                for prompt_key, prompt_text in agent.prompt_texts().items()
             }
         )
         return texts
@@ -66,10 +72,10 @@ class ResolutionRegistry:
         # sorted for deterministic hash — set iteration order is not guaranteed
         for ct in sorted(source_types & target_types, key=lambda c: c.value):
             if ct in self._same_type._agents:
-                prompts.append(self._same_type._agents[ct]._system_prompt)
+                prompts.append(self._same_type._agents[ct].fingerprint())
         for (src, tgt), agent in self._cross_type._agents_mapping.items():
             if src in source_types and tgt in target_types:
-                prompts.append(agent._system_prompt)
+                prompts.append(agent.fingerprint())
         return fingerprint("".join(prompts))
 
     async def resolve_all(

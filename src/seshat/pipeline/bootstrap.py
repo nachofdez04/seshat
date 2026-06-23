@@ -3,14 +3,14 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+from seshat.agents.grounding import GroundingAgent
 from seshat.agents.identification.registry import IdentificationAgentRegistry
 from seshat.agents.resolution.registry import ResolutionRegistry
-from seshat.agents.verification import VerificationAgent
 from seshat.blob_store.factory import get_blob_store
 from seshat.knowledge_store.factory import get_kb_store
 from seshat.pipeline.extraction.node_retriever import NodeRetriever
 from seshat.pipeline.extraction.orchestrator import ExtractionOrchestrator
-from seshat.pipeline.llm_factory import get_identification_llm, get_resolution_llm, get_verification_llm
+from seshat.pipeline.llm_factory import _build_llm, get_grounding_llm, get_identification_llm, get_resolution_llm
 from seshat.vector_store.factory import get_vector_store
 
 if TYPE_CHECKING:
@@ -46,14 +46,29 @@ def _build_orchestrator(
 ) -> ExtractionOrchestrator:
     identification_llm = get_identification_llm(config)
     resolution_llm = get_resolution_llm(config)
-    identification_registry = IdentificationAgentRegistry(llm=identification_llm, config=config.extraction)
-    resolution_registry = ResolutionRegistry(llm=resolution_llm, config=config.extraction.resolution)
+
+    review_llm = None
+    identification_self_review_cfg = config.extraction.identification_self_review
+    if identification_self_review_cfg.enabled and identification_self_review_cfg.llm is not None:
+        review_llm = _build_llm(identification_self_review_cfg.llm, config)
+
+    resolution_review_llm = None
+    resolution_self_review_cfg = config.extraction.resolution_self_review
+    if resolution_self_review_cfg.enabled and resolution_self_review_cfg.llm is not None:
+        resolution_review_llm = _build_llm(resolution_self_review_cfg.llm, config)
+
+    identification_registry = IdentificationAgentRegistry(
+        llm=identification_llm, config=config.extraction, review_llm=review_llm
+    )
+    resolution_registry = ResolutionRegistry(
+        llm=resolution_llm, config=config.extraction, review_llm=resolution_review_llm
+    )
     node_retriever = NodeRetriever(rag_config=config.rag, kb_store=kb_store, vector_store=vector_store)
 
-    verification_agent = None
-    if config.extraction.verification is not None:
-        verification_llm = get_verification_llm(config)
-        verification_agent = VerificationAgent(llm=verification_llm, config=config.extraction.verification)
+    grounding_agent = None
+    if config.extraction.grounding is not None:
+        grounding_llm = get_grounding_llm(config)
+        grounding_agent = GroundingAgent(llm=grounding_llm, config=config.extraction.grounding)
 
     return ExtractionOrchestrator(
         config=config.extraction,
@@ -62,5 +77,5 @@ def _build_orchestrator(
         node_retriever=node_retriever,
         kb_store=kb_store,
         blob_store=blob_store,
-        verification_agent=verification_agent,
+        grounding_agent=grounding_agent,
     )

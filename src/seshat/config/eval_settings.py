@@ -50,11 +50,11 @@ class EvalConfig(BaseSettings):
             "check if vector search surfaces the right nodes (similar and related neighbors)."
         ),
     )
-    run_verification: bool = Field(
+    run_grounding: bool = Field(
         default=True,
         description=(
-            "Run the verification eval pass, i.e., "
-            "check if the verification agent correctly identifies grounded vs. hallucinated descriptions."
+            "Run the grounding eval pass, i.e., "
+            "check if the grounding agent correctly identifies grounded vs. hallucinated descriptions."
         ),
     )
     run_grouping: bool = Field(
@@ -81,7 +81,7 @@ class EvalConfig(BaseSettings):
     _identification_subdir: ClassVar[str] = "identification"
     _resolution_subdir: ClassVar[str] = "resolution"
     _retrieval_subdir: ClassVar[str] = "retrieval"
-    _verification_subdir: ClassVar[str] = "verification"
+    _grounding_subdir: ClassVar[str] = "grounding"
     _grouping_subdir: ClassVar[str] = "grouping"
     # a hidden folder in the project root for caching intermediate results during eval runs; not intended for manual use
     _cache_dir: ClassVar[Path] = _ROOT_DIR / ".seshat" / "eval_cache"
@@ -103,8 +103,8 @@ class EvalConfig(BaseSettings):
 
     @computed_field  # type: ignore[misc]
     @property
-    def verification_corpus_dir(self) -> Path:
-        return self.corpus_base_dir / self._verification_subdir
+    def grounding_corpus_dir(self) -> Path:
+        return self.corpus_base_dir / self._grounding_subdir
 
     @computed_field  # type: ignore[misc]
     @property
@@ -123,8 +123,8 @@ class EvalConfig(BaseSettings):
 
     @computed_field  # type: ignore[misc]
     @property
-    def verification_cache_dir(self) -> Path:
-        return self._cache_dir / self._verification_subdir
+    def grounding_cache_dir(self) -> Path:
+        return self._cache_dir / self._grounding_subdir
 
     @computed_field  # type: ignore[misc]
     @property
@@ -150,7 +150,7 @@ class EvalConfig(BaseSettings):
             (self.run_identification, self.identification_corpus_dir),
             (self.run_resolution, self.resolution_corpus_dir),
             (self.run_retrieval, self.retrieval_corpus_dir),
-            (self.run_verification, self.verification_corpus_dir),
+            (self.run_grounding, self.grounding_corpus_dir),
             (self.run_grouping, self.grouping_corpus_dir),
         ]
         for enabled, path in checks:
@@ -164,7 +164,7 @@ class EvalConfig(BaseSettings):
             self.identification_cache_dir,
             self.resolution_cache_dir,
             self.retrieval_cache_dir,
-            self.verification_cache_dir,
+            self.grounding_cache_dir,
             self.grouping_cache_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)

@@ -3,9 +3,14 @@ from typing import Literal
 from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _ResultBase, _SameTypeEntry
 from seshat.models.enums import RelationshipType
 
+_DECISION_RELATION_TYPES = Literal[
+    RelationshipType.SUPERSEDES, RelationshipType.AMENDS, RelationshipType.CONFLICTS_WITH
+]
+
 
 class _DecisionEntry(_SameTypeEntry):
-    rel_type: Literal[RelationshipType.SUPERSEDES, RelationshipType.AMENDS, RelationshipType.CONFLICTS_WITH] | None  # type: ignore[override]
+    rel_type: _DECISION_RELATION_TYPES | None  # type: ignore[override]
+    alt_rel_type: _DECISION_RELATION_TYPES | None = None  # type: ignore[override]
 
 
 class _DecisionResult(_ResultBase[_DecisionEntry]): ...
@@ -66,6 +71,12 @@ Once the same concern domain guard passes, select the first label that applies:
 - conflicts_with vs supersedes:
   - "All services retry at most 3 times" → conflicts_with "All services retry at most 10 times" — both active blanket policies, contradictory values; neither is inactive.
   - "All services retry at most 3 times" → supersedes "Services may retry indefinitely" — source permanently closes the old open-ended approach.
+
+## Ambiguity signal
+If, after applying the selection rules above, you are genuinely uncertain between two specific
+relationship types (not between a type and null), set alt_rel_type to the runner-up.
+alt_rel_type must be one of the same valid types as rel_type, and must differ from rel_type.
+Leave alt_rel_type null for clear-cut cases, null assignments, and when uncertain between a type and null.
 """
 
 

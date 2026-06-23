@@ -1,11 +1,11 @@
 import pytest
 from langchain_core.language_models import BaseChatModel
 
-from seshat.config.settings import ExtractionConfig, ResolutionLLMConfig, VerificationLLMConfig
+from seshat.config.settings import ExtractionConfig, GroundingLLMConfig, ResolutionLLMConfig
 from tests.integration.helpers import (
+    cheap_grounding_config,
     cheap_identification_config,
     cheap_resolution_config,
-    cheap_verification_config,
     make_cheap_llm,
 )
 
@@ -26,5 +26,5 @@ def resolution_config() -> ResolutionLLMConfig:
 
 
 @pytest.fixture
-def verification_config() -> VerificationLLMConfig:
-    return cheap_verification_config()
+def grounding_config() -> GroundingLLMConfig:
+    return cheap_grounding_config()

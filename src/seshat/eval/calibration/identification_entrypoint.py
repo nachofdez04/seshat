@@ -24,7 +24,7 @@ async def run(
     *,
     mode: CalibrationMode = "sweep_threshold",
     p_target: float = 0.95,
-    ignore_verification: bool = False,
+    ignore_grounding: bool = False,
 ) -> None:
     async with build_orchestrator(seshat_config) as orchestrator:
         llm_cfg = seshat_config.extraction.identification
@@ -38,16 +38,16 @@ async def run(
 
         match mode:
             case "sweep_threshold":
-                await _run_sweep(scorer, p_target=p_target, ignore_verification=ignore_verification)
+                await _run_sweep(scorer, p_target=p_target, ignore_grounding=ignore_grounding)
             case "precision_coverage_curve":
-                await _run_pc_curve(scorer, ignore_verification=ignore_verification)
+                await _run_pc_curve(scorer, ignore_grounding=ignore_grounding)
 
 
 async def _run_sweep(
-    scorer: IdentificationMetaScorer, *, p_target: float = 0.95, ignore_verification: bool = False
+    scorer: IdentificationMetaScorer, *, p_target: float = 0.95, ignore_grounding: bool = False
 ) -> None:
-    logger.info("Sweeping thresholds (p_target=%.3f, ignore_verification=%s)...", p_target, ignore_verification)
-    result = await scorer.sweep_threshold(p_target=p_target, ignore_verification=ignore_verification)
+    logger.info("Sweeping thresholds (p_target=%.3f, ignore_grounding=%s)...", p_target, ignore_grounding)
+    result = await scorer.sweep_threshold(p_target=p_target, ignore_grounding=ignore_grounding)
 
     suggested = result.suggested_threshold
     pt = next(p for p in result.points if p.threshold == suggested)
@@ -61,10 +61,10 @@ async def _run_sweep(
     mlflow.log_metric("coverage_at_suggested", pt.coverage)
 
 
-async def _run_pc_curve(scorer: IdentificationMetaScorer, *, ignore_verification: bool = False) -> None:
+async def _run_pc_curve(scorer: IdentificationMetaScorer, *, ignore_grounding: bool = False) -> None:
     # the PC curve is an exploratory tool; excluding it from MLflow is intentional to reduce noise
     logger.info("Building precision-coverage curve...")
-    points = await scorer.precision_coverage_curve(ignore_verification=ignore_verification)
+    points = await scorer.precision_coverage_curve(ignore_grounding=ignore_grounding)
 
     print(f"\n{'threshold':>10}  {'precision':>10}  {'coverage':>10}")  # noqa: T201
     print("-" * 36)  # noqa: T201

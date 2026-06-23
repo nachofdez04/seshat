@@ -5,7 +5,7 @@ import time
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
-from seshat.agents.verification import VerificationRetryExhaustedError
+from seshat.agents.grounding import GroundingRetryExhaustedError
 from seshat.models.api import NodeFilter
 from seshat.models.enums import ConceptType, NodeStatus
 from seshat.models.nodes import (
@@ -15,6 +15,7 @@ from seshat.models.nodes import (
     KBRelationship,
     ResolutionResult,
 )
+from seshat.observability.latency_tracker import track_latency_profile
 from seshat.observability.usage_tracker import UsageTracker, track_token_budget
 from seshat.pipeline.extraction.heuristics_scorer import HeuristicsScorer
 from seshat.pipeline.extraction.pending_node import PendingNodeBuilder, _deduplicate, _PendingNode, _quote_text
@@ -24,10 +25,10 @@ from seshat.utils.tokens import count_tokens
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from seshat.agents.grounding import GroundingAgent
     from seshat.agents.identification.registry import IdentificationAgentRegistry
     from seshat.agents.resolution.base import ResolvedRelationship
     from seshat.agents.resolution.registry import ResolutionRegistry
-    from seshat.agents.verification import VerificationAgent
     from seshat.blob_store.s3_store import S3BlobStore
     from seshat.config.settings import ExtractionConfig
     from seshat.knowledge_store.pg_store import PostgresKBStore
@@ -46,7 +47,7 @@ class ExtractionOrchestrator:
         node_retriever: NodeRetriever,
         kb_store: PostgresKBStore,
         blob_store: S3BlobStore,
-        verification_agent: VerificationAgent | None = None,
+        grounding_agent: GroundingAgent | None = None,
     ) -> None:
         self._config = config
         self._identification_registry = identification_registry
@@ -54,7 +55,7 @@ class ExtractionOrchestrator:
         self._retriever = node_retriever
         self._kb = kb_store
         self._blob = blob_store
-        self._verifier = verification_agent
+        self._grounder = grounding_agent
         self._heuristics_scorer = HeuristicsScorer()
         self._job_tracker = UsageTracker.uncapped()
 
@@ -68,6 +69,7 @@ class ExtractionOrchestrator:
         label="identification",
         accumulate_to_fn=lambda self: self._job_tracker,
     )
+    @track_latency_profile("identification")
     async def run_identification(self, doc: TranscriptDocument, job_id: str) -> IdentificationResult:
         transcript = (await self._blob.get(doc.blob_key)).decode()
         coro = self._run_identification(transcript, doc.blob_key, job_id)
@@ -118,6 +120,7 @@ class ExtractionOrchestrator:
         label="resolution",
         accumulate_to_fn=lambda self: self._job_tracker,
     )
+    @track_latency_profile("resolution")
     async def run_resolution(self, doc: TranscriptDocument, job_id: str) -> ResolutionResult:
         approved = await self._kb.paginated_query(NodeFilter(job_id=job_id, status=NodeStatus.APPROVED))
         logger.info("Resolution run: %d approved nodes retrieved", len(approved))
@@ -244,7 +247,7 @@ class ExtractionOrchestrator:
         pending = builder.build_all(raw)
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
         logger.info(
-            "Identified %d concepts for %s (elapsed: %dms)",
+            "Identified %d %r node(s) (elapsed: %dms)",
             len(pending),
             concept_type.value,
             elapsed_ms,
@@ -253,24 +256,22 @@ class ExtractionOrchestrator:
         return pending
 
     async def _score_and_finalize(self, pending: list[_PendingNode], transcript: str) -> list[KBNode]:
-        """Score pending nodes (heuristics + optional verification gate), assign status, build KBNodes."""
-        verification_enabled = self._verifier is not None
+        """Score pending nodes (heuristics + optional grounding gate), assign status, build KBNodes."""
+        grounding_enabled = self._grounder is not None
 
-        if self._config.verification is not None and not verification_enabled:
-            logger.warning(
-                "verification is configured but no verification_agent was provided — running heuristics-only"
-            )
+        if self._config.grounding is not None and not grounding_enabled:
+            logger.warning("grounding is configured but no grounding_agent was provided — running heuristics-only")
 
         t0 = time.perf_counter()
-        logger.debug("Scoring %d nodes (verifier %s)", len(pending), "enabled" if verification_enabled else "disabled")
-        if verification_enabled:
-            await self._run_verification(pending, transcript)
+        logger.debug("Scoring %d nodes (grounder %s)", len(pending), "enabled" if grounding_enabled else "disabled")
+        if grounding_enabled:
+            await self._run_grounding(pending, transcript)
 
         for pnode in pending:
             pnode.breakdown = ConfidenceBreakdown(
                 heuristics=pnode.heuristics,
-                verification_passed=pnode.verification,
-                verification_enabled=verification_enabled,
+                grounding_passed=pnode.grounding,
+                grounding_enabled=grounding_enabled,
             )
             pnode.assign_status(self._config)
 
@@ -284,26 +285,24 @@ class ExtractionOrchestrator:
         )
         return nodes
 
-    async def _run_verification(self, pending: list[_PendingNode], transcript: str) -> None:
-        assert self._config.verification is not None
-        sem = asyncio.Semaphore(self._config.verification.max_concurrent_calls)
+    async def _run_grounding(self, pending: list[_PendingNode], transcript: str) -> None:
+        assert self._config.grounding is not None
+        sem = asyncio.Semaphore(self._config.grounding.max_concurrent_calls)
 
-        async def _verify(pnode: _PendingNode) -> None:
-            assert self._verifier is not None
+        async def _ground(pnode: _PendingNode) -> None:
+            assert self._grounder is not None
             async with sem:
                 quote_text = _quote_text(pnode.quote_anchors, transcript)
                 try:
-                    verification_result = await self._verifier.verify(
+                    grounding_result = await self._grounder.verify(
                         pnode.title, pnode.description, quote_text, transcript=transcript
                     )
-                except VerificationRetryExhaustedError:
-                    logger.warning(
-                        "Verification exhausted retries for %r — skipping (verification_passed=None)", pnode.title
-                    )
+                except GroundingRetryExhaustedError:
+                    logger.warning("Grounding exhausted retries for %r — skipping (grounding_passed=None)", pnode.title)
                 else:
-                    pnode.verification = verification_result.supported
+                    pnode.grounding = grounding_result.supported
 
-        await asyncio.gather(*[_verify(pnode) for pnode in pending])
+        await asyncio.gather(*[_ground(pnode) for pnode in pending])
 
 
 def _build_relationship(rel: ResolvedRelationship, job_id: str) -> KBRelationship:

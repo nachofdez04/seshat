@@ -13,19 +13,19 @@ from seshat.utils.log import get_logger
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
-    from seshat.config.settings import VerificationLLMConfig
+    from seshat.config.settings import GroundingLLMConfig
 
 
 logger = get_logger(__name__)
 
 
-class VerificationRetryExhaustedError(RetryExhaustedError):
+class GroundingRetryExhaustedError(RetryExhaustedError):
     pass
 
 
 def _system_prompt(source: Literal["quote", "transcript"]) -> str:
     return f"""\
-You are a verification agent. Determine whether a KB node's description is grounded in the meeting {source}.
+You are a grounding agent. Determine whether a KB node's description is grounded in the meeting {source}.
 
 Rules:
 - Return supported=false if:
@@ -60,13 +60,13 @@ def _build_messages(node_content: str, quote: str, transcript: str | None) -> li
     ]
 
 
-class VerificationResult(BaseModel):
+class GroundingResult(BaseModel):
     supported: bool = Field(description="True if the description is grounded in the transcript.")
     rationale: str | None = Field(default=None, description="One sentence explaining the verdict, or null.")
 
 
-class VerificationAgent(_BaseAgent):
-    def __init__(self, llm: BaseChatModel, config: VerificationLLMConfig) -> None:
+class GroundingAgent(_BaseAgent):
+    def __init__(self, llm: BaseChatModel, config: GroundingLLMConfig) -> None:
         super().__init__(llm=llm, config=config)
         self._use_full_transcript = config.use_full_transcript
 
@@ -75,11 +75,9 @@ class VerificationAgent(_BaseAgent):
         source: Literal["quote", "transcript"] = "transcript" if self._use_full_transcript else "quote"
         return _system_prompt(source)
 
-    async def verify(
-        self, title: str, description: str, quote: str, transcript: str | None = None
-    ) -> VerificationResult:
+    async def verify(self, title: str, description: str, quote: str, transcript: str | None = None) -> GroundingResult:
         if not quote:
-            return VerificationResult(supported=False, rationale="No source quote available.")
+            return GroundingResult(supported=False, rationale="No source quote available.")
 
         if not self._use_full_transcript and transcript is not None:
             logger.warning("use_full_transcript=False: ignoring transcript, using quote only.")
@@ -91,11 +89,11 @@ class VerificationAgent(_BaseAgent):
         t0 = time.perf_counter()
         result = await self._retryable_structured_ainvoke(
             messages=messages,
-            response_model=VerificationResult,
-            raise_on_exhaustion=VerificationRetryExhaustedError(
-                f"VerificationAgent exhausted {self._max_retries} retries for {title!r}"
+            response_model=GroundingResult,
+            raise_on_exhaustion=GroundingRetryExhaustedError(
+                f"GroundingAgent exhausted {self._max_retries} retries for {title!r}"
             ),
-            on_error_log_prefix=f"VerificationAgent({title!r})",
+            on_error_log_prefix=f"GroundingAgent({title!r})",
         )
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000)

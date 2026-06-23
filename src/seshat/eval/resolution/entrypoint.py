@@ -18,12 +18,20 @@ logger = get_logger(__name__)
 async def run(eval_config: EvalConfig, seshat_config: SeshatConfig, tag_filter: CorpusTagFilter | None = None) -> None:
     async with build_orchestrator(seshat_config) as orchestrator:
         llm_cfg = seshat_config.extraction.resolution
+        resolution_self_review_cfg = seshat_config.extraction.resolution_self_review
         logger.info(
-            "LLM provider=%r model=%r temperature=%s", llm_cfg.provider.value, llm_cfg.model, llm_cfg.temperature
+            "LLM provider=%r model=%r temperature=%s resolution_self_review=%s",
+            llm_cfg.provider.value,
+            llm_cfg.model,
+            llm_cfg.temperature,
+            resolution_self_review_cfg.enabled,
         )
 
         model_id = log_eval_model(
-            "seshat-resolution-agent", inference_component=orchestrator._resolution_registry, llm_config=llm_cfg
+            "seshat-resolution-agent",
+            inference_component=orchestrator._resolution_registry,
+            llm_config=llm_cfg,
+            self_review_config=resolution_self_review_cfg,
         )
 
         runner = ResolutionEvalRunner(orchestrator=orchestrator, config=eval_config)

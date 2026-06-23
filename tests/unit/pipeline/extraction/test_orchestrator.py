@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from seshat.agents.grounding import GroundingRetryExhaustedError
 from seshat.agents.identification.base import IdentificationRetryExhaustedError
-from seshat.agents.verification import VerificationRetryExhaustedError
-from seshat.config.settings import ExtractionConfig, VerificationLLMConfig
+from seshat.config.settings import ExtractionConfig, GroundingLLMConfig
 from seshat.models.enums import ApprovalMethod, ConceptType, NodeStatus
 from seshat.pipeline.extraction.orchestrator import ExtractionOrchestrator, _assemble_kb_hint
 from tests.helpers import make_anchored_concept, make_doc, make_node
@@ -21,7 +21,7 @@ def _make_orchestrator(
     extraction_results: list | None = None,
     all_rels: list | None = None,
     targets: list | None = None,
-    verifier=None,
+    grounder=None,
     auto_mode: bool = False,
     confidence_threshold: float = 0.5,
     extraction_registry=None,
@@ -34,7 +34,7 @@ def _make_orchestrator(
         concept_types=concept_types or [ConceptType.DECISION],
         auto_mode=auto_mode,
         confidence_threshold=confidence_threshold,
-        verification=VerificationLLMConfig() if verifier is not None else None,
+        grounding=GroundingLLMConfig() if grounder is not None else None,
         identification_timeout_seconds=identification_timeout_seconds,
         resolution_timeout_seconds=resolution_timeout_seconds,
     )
@@ -65,7 +65,7 @@ def _make_orchestrator(
         node_retriever=node_retriever,
         kb_store=kb_store,
         blob_store=blob_store,
-        verification_agent=verifier,
+        grounding_agent=grounder,
     )
 
 
@@ -79,7 +79,7 @@ class TestExtractionOrchestrator:
         assert len(result.nodes) == 1
         assert result.nodes[0].title == "Use PostgreSQL"
         assert result.nodes[0].metadata.job_id == "job-1"
-        assert result.nodes[0].metadata.confidence_breakdown.verification_enabled is False
+        assert result.nodes[0].metadata.confidence_breakdown.grounding_enabled is False
 
     async def test_empty_extraction_returns_empty_result(self):
         orchestrator = _make_orchestrator(extraction_results=[])
@@ -196,60 +196,60 @@ class TestExtractionOrchestrator:
         assert len(result.relationships) == 1
         assert result.relationships[0].rel_type == RelationshipType.SUPERSEDES
 
-    async def test_verification_called_when_verifier_present(self):
-        from seshat.agents.verification import VerificationResult
+    async def test_grounding_called_when_grounder_present(self):
+        from seshat.agents.grounding import GroundingResult
 
         concept = _make_concept("Use PostgreSQL")
 
-        verifier = MagicMock()
-        verifier.verify = AsyncMock(return_value=VerificationResult(supported=True))
+        grounder = MagicMock()
+        grounder.verify = AsyncMock(return_value=GroundingResult(supported=True))
 
-        orchestrator = _make_orchestrator(extraction_results=[concept], verifier=verifier)
+        orchestrator = _make_orchestrator(extraction_results=[concept], grounder=grounder)
 
         result = await orchestrator.run_identification(make_doc(), job_id="job-1")
 
-        verifier.verify.assert_called_once()
+        grounder.verify.assert_called_once()
         assert len(result.nodes) == 1
-        assert result.nodes[0].metadata.confidence_breakdown.verification_enabled is True
+        assert result.nodes[0].metadata.confidence_breakdown.grounding_enabled is True
 
-    async def test_verification_exhausted_retries_leaves_node_with_heuristics_only(self):
+    async def test_grounding_exhausted_retries_leaves_node_with_heuristics_only(self):
         concept = _make_concept("Use PostgreSQL", quote="use PostgreSQL")
 
-        verifier = MagicMock()
-        verifier.verify = AsyncMock(side_effect=VerificationRetryExhaustedError("exhausted"))
+        grounder = MagicMock()
+        grounder.verify = AsyncMock(side_effect=GroundingRetryExhaustedError("exhausted"))
 
         orchestrator = _make_orchestrator(
             extraction_results=[concept],
-            verifier=verifier,
+            grounder=grounder,
         )
 
         result = await orchestrator.run_identification(make_doc(), job_id="job-1")
 
         assert len(result.nodes) == 1
-        assert result.nodes[0].metadata.confidence_breakdown.verification_passed is None
-        assert result.nodes[0].metadata.confidence_breakdown.verification_enabled is True
+        assert result.nodes[0].metadata.confidence_breakdown.grounding_passed is None
+        assert result.nodes[0].metadata.confidence_breakdown.grounding_enabled is True
 
-    async def test_verification_supported_node_approved_unsupported_rejected_in_auto_mode(self):
-        from seshat.agents.verification import VerificationResult
+    async def test_grounding_supported_node_approved_unsupported_rejected_in_auto_mode(self):
+        from seshat.agents.grounding import GroundingResult
 
         concept = _make_concept("Use PostgreSQL", quote="use PostgreSQL")
 
-        supported_verifier = MagicMock()
-        supported_verifier.verify = AsyncMock(return_value=VerificationResult(supported=True))
+        supported_grounder = MagicMock()
+        supported_grounder.verify = AsyncMock(return_value=GroundingResult(supported=True))
 
-        unsupported_verifier = MagicMock()
-        unsupported_verifier.verify = AsyncMock(return_value=VerificationResult(supported=False))
+        unsupported_grounder = MagicMock()
+        unsupported_grounder.verify = AsyncMock(return_value=GroundingResult(supported=False))
 
         result_supported = await _make_orchestrator(
             extraction_results=[concept],
-            verifier=supported_verifier,
+            grounder=supported_grounder,
             auto_mode=True,
             confidence_threshold=0.0,
         ).run_identification(make_doc(), job_id="job-1")
 
         result_unsupported = await _make_orchestrator(
             extraction_results=[concept],
-            verifier=unsupported_verifier,
+            grounder=unsupported_grounder,
             auto_mode=True,
             confidence_threshold=0.0,
         ).run_identification(make_doc(), job_id="job-1")

@@ -14,6 +14,7 @@ from seshat.eval.resolution.corpus_loader import build_kb_nodes, load_corpus
 from seshat.eval.resolution.scorers import scorer
 from seshat.models.enums import ConceptType
 from seshat.models.nodes import ResolutionResult
+from seshat.observability.latency_tracker import track_eval_latency
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.log import set_task_num
 
@@ -48,7 +49,7 @@ class ResolutionEvalRunner:
             self._kb_nodes[ex.corpus_id] = kb_nodes
             self._slug_maps[ex.corpus_id] = slug_map
 
-        result_cache, touched = await self._run_all_predictions(examples)
+        result_cache, touched, agent_hashes = await self._run_all_predictions(examples)
 
         expected_relations_by_id = {ex.corpus_id: ex.expected_relations for ex in examples}
 
@@ -96,20 +97,24 @@ class ResolutionEvalRunner:
             tag_filter=tag_filter,
         )
 
-        sweep_stale_entries(
-            self._config.resolution_cache_dir,
-            corpus_ids=[ex.corpus_id for ex in examples],
-            touched=touched,
-        )
+        corpus_ids = [ex.corpus_id for ex in examples]
+        for h in agent_hashes:
+            sweep_stale_entries(
+                self._config.resolution_cache_dir,
+                corpus_ids=corpus_ids,
+                touched=touched,
+                agent_hash=h,
+            )
         return gate
 
-    @track_eval_usage(label="resolution")
+    @track_eval_usage("resolution")
+    @track_eval_latency("resolution")
     async def _run_all_predictions(
         self, examples: list[ResolutionCorpusExample]
-    ) -> tuple[dict[str, ResolutionResult], set[Path]]:
+    ) -> tuple[dict[str, ResolutionResult], set[Path], set[str]]:
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
 
-        async def _run_one(task_idx: int, ex: ResolutionCorpusExample) -> tuple[str, ResolutionResult, Path]:
+        async def _run_one(task_idx: int, ex: ResolutionCorpusExample) -> tuple[str, ResolutionResult, Path, str]:
             set_task_num(task_idx)
             kb_nodes = self._kb_nodes[ex.corpus_id]
             source_nodes = [kb_nodes[n.id] for n in ex.source_nodes]
@@ -127,12 +132,13 @@ class ResolutionEvalRunner:
                     ResolutionResult,
                     self._orchestrator._run_resolution(source_nodes, per_source_targets, job_id=ex.corpus_id),
                 )
-            return ex.corpus_id, result, used
+            return ex.corpus_id, result, used, agent_hash
 
-        triples = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
-        results = {corpus_id: result for corpus_id, result, _ in triples}
-        touched = {used for _, _, used in triples}
-        return results, touched
+        quads = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
+        results = {corpus_id: result for corpus_id, result, _, _ in quads}
+        touched = {used for _, _, used, _ in quads}
+        agent_hashes = {h for _, _, _, h in quads}
+        return results, touched, agent_hashes
 
 
 def _slim_node(n: ResolutionCorpusNode) -> dict:

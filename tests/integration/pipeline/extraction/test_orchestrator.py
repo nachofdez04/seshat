@@ -2,9 +2,9 @@ from uuid import uuid4
 
 import pytest
 
+from seshat.agents.grounding import GroundingAgent
 from seshat.agents.identification.registry import IdentificationAgentRegistry
 from seshat.agents.resolution.registry import ResolutionRegistry
-from seshat.agents.verification import VerificationAgent
 from seshat.config.settings import ExtractionConfig, RAGConfig
 from seshat.models.enums import ConceptType, NodeStatus
 from seshat.pipeline.extraction.node_retriever import NodeRetriever
@@ -16,8 +16,8 @@ from tests.integration.conftest import (
     SKIP_IF_NO_POSTGRES,
 )
 from tests.integration.helpers import (
+    cheap_grounding_config,
     cheap_identification_config,
-    cheap_verification_config,
     make_cheap_llm,
     seed_node,
     upload_transcript,
@@ -52,7 +52,7 @@ def extraction_config():
     return ExtractionConfig(identification=llm_cfg)
 
 
-def _build_orchestrator(kb_store, vector_store, blob_store, extraction_config, *, verification_agent=None):
+def _build_orchestrator(kb_store, vector_store, blob_store, extraction_config, *, grounding_agent=None):
     llm = make_cheap_llm()
     rag = NodeRetriever(RAGConfig(), kb_store, vector_store)
     return ExtractionOrchestrator(
@@ -62,7 +62,7 @@ def _build_orchestrator(kb_store, vector_store, blob_store, extraction_config, *
         node_retriever=rag,
         kb_store=kb_store,
         blob_store=blob_store,
-        verification_agent=verification_agent,
+        grounding_agent=grounding_agent,
     )
 
 
@@ -72,12 +72,12 @@ def orchestrator(kb_store, vector_store, blob_store, extraction_config):
 
 
 @pytest.fixture
-def orchestrator_with_verification(kb_store, vector_store, blob_store):
+def orchestrator_with_grounding(kb_store, vector_store, blob_store):
     llm_cfg = cheap_identification_config()
-    verification_llm_cfg = cheap_verification_config()
-    _extraction_config = ExtractionConfig(identification=llm_cfg, verification=verification_llm_cfg)
-    verifier = VerificationAgent(llm=make_cheap_llm(), config=verification_llm_cfg)
-    return _build_orchestrator(kb_store, vector_store, blob_store, _extraction_config, verification_agent=verifier)
+    grounding_llm_cfg = cheap_grounding_config()
+    _extraction_config = ExtractionConfig(identification=llm_cfg, grounding=grounding_llm_cfg)
+    grounder = GroundingAgent(llm=make_cheap_llm(), config=grounding_llm_cfg)
+    return _build_orchestrator(kb_store, vector_store, blob_store, _extraction_config, grounding_agent=grounder)
 
 
 class TestExtractionOrchestrator:
@@ -103,18 +103,18 @@ class TestExtractionOrchestrator:
         assert result.job_id == job_id
         assert result.nodes == []
 
-    async def test_verification_enabled_populates_verification_score(self, orchestrator_with_verification, blob_store):
+    async def test_grounding_enabled_populates_grounding_score(self, orchestrator_with_grounding, blob_store):
         blob_key = await upload_transcript(blob_store, _TRANSCRIPT)
         job_id = str(uuid4())
 
-        result = await orchestrator_with_verification.run_identification(make_doc(blob_key), job_id)
+        result = await orchestrator_with_grounding.run_identification(make_doc(blob_key), job_id)
 
         assert len(result.nodes) >= 1
         for node in result.nodes:
             breakdown = node.metadata.confidence_breakdown
             assert breakdown is not None
-            assert breakdown.verification_enabled is True
-            assert breakdown.verification_passed is not None
+            assert breakdown.grounding_enabled is True
+            assert breakdown.grounding_passed is not None
 
     async def test_run_resolution_returns_relationships(self, orchestrator, kb_store, vector_store, blob_store):
         blob_key = await upload_transcript(blob_store, _TRANSCRIPT)

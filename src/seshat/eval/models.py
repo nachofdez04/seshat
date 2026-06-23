@@ -103,7 +103,7 @@ class GateResult(BaseModel):
     # keys: "recall_at_5", "precision_at_5"
     retrieval_metrics: dict[str, MetricEntry] | None = None
     # keys: "precision", "recall"
-    verification_metrics: dict[str, MetricEntry] | None = None
+    grounding_metrics: dict[str, MetricEntry] | None = None
     # keys: "group_hit_rate" (gated), "exact_match" (logged, not gated)
     grouping_metrics: dict[str, MetricEntry] | None = None
     validation_hash: str = ""
@@ -115,7 +115,7 @@ class GateResult(BaseModel):
             self.identification_metrics,
             self.resolution_metrics,
             self.retrieval_metrics,
-            self.verification_metrics,
+            self.grounding_metrics,
             self.grouping_metrics,
         ]
         if all(metric is None for metric in all_metrics):

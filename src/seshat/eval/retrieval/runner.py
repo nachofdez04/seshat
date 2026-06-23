@@ -94,7 +94,7 @@ class RetrievalEvalRunner:
         )
         return gate
 
-    @track_eval_usage(label="retrieval")
+    @track_eval_usage("retrieval")
     async def _run_all_predictions(
         self,
         examples: list[RetrievalCorpusExample],

@@ -1,14 +1,14 @@
 import pytest
 
-from seshat.agents.verification import VerificationAgent
+from seshat.agents.grounding import GroundingAgent
 from tests.integration.conftest import SKIP_IF_NO_LLM_API
 
 pytestmark = [pytest.mark.integration, pytest.mark.agents, pytest.mark.llm, SKIP_IF_NO_LLM_API]
 
 
-class TestVerificationAgent:
-    async def test_verify_returns_supported_true_for_matching_quote(self, cheap_llm, verification_config):
-        agent = VerificationAgent(llm=cheap_llm, config=verification_config)
+class TestGroundingAgent:
+    async def test_verify_returns_supported_true_for_matching_quote(self, cheap_llm, grounding_config):
+        agent = GroundingAgent(llm=cheap_llm, config=grounding_config)
 
         result = await agent.verify(
             title="Use PostgreSQL",
@@ -18,10 +18,10 @@ class TestVerificationAgent:
 
         assert result.supported is True
 
-    async def test_verify_returns_supported_true_for_implicit_consensus(self, cheap_llm, verification_config):
+    async def test_verify_returns_supported_true_for_implicit_consensus(self, cheap_llm, grounding_config):
         # Per agent rules, paraphrasing or inferring from context is supported=True even without an explicit "decided".
         # This exercises a different judgment boundary from the explicit-agreement test above.
-        agent = VerificationAgent(llm=cheap_llm, config=verification_config)
+        agent = GroundingAgent(llm=cheap_llm, config=grounding_config)
 
         result = await agent.verify(
             title="Use PostgreSQL for the user database",
@@ -31,8 +31,8 @@ class TestVerificationAgent:
 
         assert result.supported is True
 
-    async def test_verify_returns_supported_false_for_contradicting_quote(self, cheap_llm, verification_config):
-        agent = VerificationAgent(llm=cheap_llm, config=verification_config)
+    async def test_verify_returns_supported_false_for_contradicting_quote(self, cheap_llm, grounding_config):
+        agent = GroundingAgent(llm=cheap_llm, config=grounding_config)
 
         result = await agent.verify(
             title="Use PostgreSQL",

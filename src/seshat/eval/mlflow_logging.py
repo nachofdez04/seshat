@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from mlflow.entities.span import LiveSpan
     from mlflow.tracking.fluent import ActiveModel
 
-    from seshat.config.settings import VectorIndexConfig, _LLMConfig
+    from seshat.config.settings import ReflectiveLLMConfig, VectorIndexConfig, _LLMConfig
 
 
 class Fingerprintable(Protocol):
@@ -26,13 +26,19 @@ class Fingerprintable(Protocol):
     def prompt_texts(self) -> dict[str, str]: ...
 
 
-def log_eval_model(model_name: str, inference_component: Fingerprintable, llm_config: _LLMConfig) -> str:
+def log_eval_model(
+    model_name: str,
+    inference_component: Fingerprintable,
+    llm_config: _LLMConfig,
+    self_review_config: ReflectiveLLMConfig | None = None,
+) -> str:
     """Create (or reuse) a versioned MLflow LoggedModel for an LLM-backed agent and return its model_id.
 
     The model name embeds a fingerprint of its params so each unique config gets its own
     LoggedModel. Re-runs with the same config reuse the existing model without re-logging;
     a changed prompt or LLM config creates a new model automatically.
     The returned model_id can be passed directly to mlflow.genai.evaluate().
+    If self_review_config is provided, agent.mode and self_review.enabled tags are set on the active run.
     """
     params = {
         "llm.provider": str(llm_config.provider),
@@ -47,6 +53,14 @@ def log_eval_model(model_name: str, inference_component: Fingerprintable, llm_co
             prompt_name = f"{model_name}-{prompt_key}"
             prompt_version = mlflow.genai.register_prompt(name=prompt_name, template=prompt_text)
             mlflow.genai.load_prompt(prompt_version.uri, link_to_model=True)
+
+    if self_review_config is not None:
+        mlflow.set_tags(
+            {
+                "self_review.enabled": str(self_review_config.enabled).lower(),
+                "agent.mode": "reflective" if self_review_config.enabled else "shallow",
+            }
+        )
 
     return model_info.model_id
 

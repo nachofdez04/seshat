@@ -238,9 +238,13 @@ Adding a concept type: implement an agent class (inheriting `_BaseIdentification
 
 For each chunk and each registered concept type, constructs a prompt using a standardised layout: `## Definition` (concept boundary), `## Task` (extraction instruction with hard stops), `### Field identification rules` (one bullet per output field), `## Over-extraction guards` (logical binary tests + typed counter-examples), `## Boundary examples` (positive and negative per pair), and `## Positive criteria`. Agents produce `KBNode` candidates with `relationships: []` and an optional `assignee` for action items. Non-conforming responses are rejected and optionally retried.
 
+When `resolution_self_review.enabled` is `True`, each identification agent is wrapped in `ReflectiveIdentificationAgent`, which adds an **extract → validate → filter** pass: after extraction, a single validation call checks each item for logical compliance (does it satisfy the extraction rules?) and semantic compliance (does the description match the quote?). Items that fail are discarded. The validator is conservative by design — it rejects only clear rule violations, not borderline quality. On any validation failure (retries exhausted, count mismatch), all extracted nodes are returned as-is.
+
 **Pass 2 — RAG + Resolution**
 
 After collecting all Pass 1 nodes: embeds new nodes, queries `PGVectorStore`, and uses retrieval results plus transcript context to attach `KBRelationship` entries for cross-meeting links and resolve `ASSIGNED_TO` by matching `assignee` strings against participants. Nodes in transient states (`WRITING`) are excluded from retrieval context.
+
+When `resolution_self_review.enabled` is `True`, same-type resolution agents are wrapped in `ReflectiveResolutionAgent`, which adds a **competing-hypothesis tiebreaker** for ambiguous cases. The inner agent signals uncertainty via an optional `alt_rel_type` field — populated only when two relationship types are genuinely competing for a pair. Only contested entries are sent to a tiebreaker call; unambiguous entries bypass it entirely. This design recovers the recall penalty of a blanket validate-and-filter approach while keeping token overhead near the shallow baseline. Cross-type resolution agents are not wrapped — eval results show no quality gap there.
 
 **Prompt caching**
 

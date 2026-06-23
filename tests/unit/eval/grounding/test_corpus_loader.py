@@ -1,13 +1,13 @@
 import pytest
 
 from seshat.config.eval_settings import EvalConfig
-from seshat.eval.verification.corpus_loader import load_corpus
+from seshat.eval.grounding.corpus_loader import load_corpus
 from tests.unit.eval.conftest import TagFilterContractTests
 
 
 @pytest.fixture(scope="class")
 def examples(eval_test_corpus: EvalConfig):
-    return load_corpus(eval_test_corpus.verification_corpus_dir)
+    return load_corpus(eval_test_corpus.grounding_corpus_dir)
 
 
 class TestCorpusLoader:
@@ -32,11 +32,11 @@ class TestCorpusLoader:
 
 class TestProductionCorpus(TagFilterContractTests):
     load_corpus = staticmethod(load_corpus)
-    corpus_dir_attr = "verification_corpus_dir"
+    corpus_dir_attr = "grounding_corpus_dir"
     tag_key = "tier"
 
     def test_all_files_load_and_have_valid_content(self, eval_corpus: EvalConfig):
-        examples = load_corpus(eval_corpus.verification_corpus_dir)
+        examples = load_corpus(eval_corpus.grounding_corpus_dir)
         assert len(examples) > 0
 
         for ex in examples:

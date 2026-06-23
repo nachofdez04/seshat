@@ -43,46 +43,46 @@ class IdentificationMetaScorer:
         self._step = step
 
     async def sweep_threshold(
-        self, p_target: float = _DEFAULT_P_TARGET, ignore_verification: bool = False
+        self, p_target: float = _DEFAULT_P_TARGET, ignore_grounding: bool = False
     ) -> IdentificationSweepResult:
         """Load corpus results (file cache or pipeline), then sweep heuristics thresholds [0, 1].
 
         Auto-approval gate:
-        - Verification enabled: node is approved iff verification == 1 AND heuristics >= threshold.
-        - Verification disabled: node is approved iff heuristics >= threshold.
+        - Grounding enabled: node is approved iff grounding == 1 AND heuristics >= threshold.
+        - Grounding disabled: node is approved iff heuristics >= threshold.
 
         suggested_threshold = argmax coverage subject to precision_approved >= p_target.
         p_target is a business policy (minimum acceptable precision on auto-approved nodes).
         Ties resolve to the lower threshold.
         Falls back to argmax precision when no threshold meets p_target.
 
-        Pass ignore_verification=True to calibrate as if verification were disabled — useful for
-        comparing thresholds and avoiding verification costs during development.
+        Pass ignore_grounding=True to calibrate as if grounding were disabled — useful for
+        comparing thresholds and avoiding grounding costs during development.
         """
         cache = await self._build_cache()
-        return self._compute_sweep(cache, p_target=p_target, ignore_verification=ignore_verification)
+        return self._compute_sweep(cache, p_target=p_target, ignore_grounding=ignore_grounding)
 
-    async def precision_coverage_curve(self, ignore_verification: bool = False) -> list[IdentificationSweepPoint]:
+    async def precision_coverage_curve(self, ignore_grounding: bool = False) -> list[IdentificationSweepPoint]:
         """Return the full precision-vs-coverage curve across thresholds [0, 1].
 
         Use this to inspect the precision/coverage tradeoff and choose an appropriate
         p_target before calling sweep_threshold(p_target=...).
 
-        Pass ignore_verification=True to see the heuristics-only curve even when verification
+        Pass ignore_grounding=True to see the heuristics-only curve even when grounding
         scores are present in the cache.
         """
         cache = await self._build_cache()
-        return self._build_curve(cache, ignore_verification=ignore_verification)
+        return self._build_curve(cache, ignore_grounding=ignore_grounding)
 
-    def _build_curve(self, cache: _Cache, ignore_verification: bool = False) -> list[IdentificationSweepPoint]:
+    def _build_curve(self, cache: _Cache, ignore_grounding: bool = False) -> list[IdentificationSweepPoint]:
         n_points = round(1 / self._step) + 1
         thresholds = np.linspace(0.0, 1.0, n_points).tolist()
-        return [_compute_pc_point(cache, t, ignore_verification=ignore_verification) for t in thresholds]
+        return [_compute_pc_point(cache, t, ignore_grounding=ignore_grounding) for t in thresholds]
 
     def _compute_sweep(
-        self, cache: _Cache, p_target: float = _DEFAULT_P_TARGET, ignore_verification: bool = False
+        self, cache: _Cache, p_target: float = _DEFAULT_P_TARGET, ignore_grounding: bool = False
     ) -> IdentificationSweepResult:
-        points = self._build_curve(cache, ignore_verification=ignore_verification)
+        points = self._build_curve(cache, ignore_grounding=ignore_grounding)
 
         # argmax coverage subject to precision_approved >= p_target; ties → lower threshold
         eligible = [p for p in points if p.precision_approved >= p_target]
@@ -94,7 +94,7 @@ class IdentificationMetaScorer:
 
         return IdentificationSweepResult(points=points, suggested_threshold=best.threshold)
 
-    @track_eval_usage(label="identification")
+    @track_eval_usage("identification")
     async def _build_cache(self) -> _Cache:
         """Run identification pipeline once per corpus example; use file cache when available."""
         examples = load_corpus(self._config.identification_corpus_dir)
@@ -123,7 +123,7 @@ class IdentificationMetaScorer:
         return cache
 
 
-def _compute_pc_point(cache: _Cache, threshold: float, ignore_verification: bool = False) -> IdentificationSweepPoint:
+def _compute_pc_point(cache: _Cache, threshold: float, ignore_grounding: bool = False) -> IdentificationSweepPoint:
     """Compute precision-of-approved and coverage at one threshold, globally and per type.
 
     "Gold" = the expected_nodes from the corpus fixture (ground-truth annotations).
@@ -135,7 +135,7 @@ def _compute_pc_point(cache: _Cache, threshold: float, ignore_verification: bool
     per_type_gold: defaultdict[ConceptType, int] = defaultdict(int)
 
     for _, (result, ex) in cache.items():
-        accepted = _filter_by_threshold(result, threshold, ignore_verification=ignore_verification)
+        accepted = _filter_by_threshold(result, threshold, ignore_grounding=ignore_grounding)
 
         # gold count per type (denominator for coverage / recall)
         for node in ex.expected_nodes:
@@ -176,11 +176,11 @@ def _compute_pc_point(cache: _Cache, threshold: float, ignore_verification: bool
     )
 
 
-def _filter_by_threshold(result: IdentificationResult, threshold: float, ignore_verification: bool = False) -> list:
+def _filter_by_threshold(result: IdentificationResult, threshold: float, ignore_grounding: bool = False) -> list:
     """Return nodes that pass the auto-approval gate at the given heuristics threshold.
 
-    When verification scores are present (and ignore_verification is False), a node must pass both:
-      verification == 1 AND heuristics >= threshold.
+    When grounding scores are present (and ignore_grounding is False), a node must pass both:
+      grounding == 1 AND heuristics >= threshold.
     Otherwise a node passes on heuristics alone:
       heuristics >= threshold.
     """
@@ -190,7 +190,7 @@ def _filter_by_threshold(result: IdentificationResult, threshold: float, ignore_
         if breakdown is None:
             continue
 
-        if not ignore_verification and breakdown.verification_passed is False:
+        if not ignore_grounding and breakdown.grounding_passed is False:
             continue
 
         if breakdown.heuristics >= threshold:

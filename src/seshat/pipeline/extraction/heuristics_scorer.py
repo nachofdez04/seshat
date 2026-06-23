@@ -28,7 +28,7 @@ class HeuristicsScorer:
     # fmt: on
 
     # Weights and saturation constants below are hand-tuned starting points with no empirical basis.
-    # Before enabling verification (which carries a 0.70 weight), these should be calibrated against
+    # Before enabling grounding (which carries a 0.70 weight), these should be calibrated against
     # a labeled corpus using held-out precision/recall metrics per concept type.
     _W_QUOTE: float = 0.3
     _W_TITLE: float = 0.3

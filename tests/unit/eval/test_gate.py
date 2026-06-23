@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from seshat.eval.gate import (
+    grounding_entries,
     grouping_entries,
     identification_entries,
     read_gate,
     resolution_entries,
     retrieval_entries,
     upsert_gate,
-    verification_entries,
     write_gate,
 )
 from seshat.eval.models import GateResult
@@ -166,22 +166,16 @@ class TestGateResultPassed:
         )
         assert gate_result.passed is True
 
-    def test_verification_below_precision_fails(self):
-        gate_result = GateResult(
-            run_id="r", verification_metrics=verification_entries({"precision": 0.50, "recall": 0.85})
-        )
+    def test_grounding_below_precision_fails(self):
+        gate_result = GateResult(run_id="r", grounding_metrics=grounding_entries({"precision": 0.50, "recall": 0.85}))
         assert gate_result.passed is False
 
-    def test_verification_below_recall_fails(self):
-        gate_result = GateResult(
-            run_id="r", verification_metrics=verification_entries({"precision": 0.90, "recall": 0.70})
-        )
+    def test_grounding_below_recall_fails(self):
+        gate_result = GateResult(run_id="r", grounding_metrics=grounding_entries({"precision": 0.90, "recall": 0.70}))
         assert gate_result.passed is False
 
-    def test_verification_meets_targets_passes(self):
-        gate_result = GateResult(
-            run_id="r", verification_metrics=verification_entries({"precision": 0.90, "recall": 0.85})
-        )
+    def test_grounding_meets_targets_passes(self):
+        gate_result = GateResult(run_id="r", grounding_metrics=grounding_entries({"precision": 0.90, "recall": 0.85}))
         assert gate_result.passed is True
 
     def test_grouping_below_group_hit_rate_fails(self):

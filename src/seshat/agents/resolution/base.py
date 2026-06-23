@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from seshat.agents.base import RetryExhaustedError, _BaseAgent
 from seshat.models.enums import RelationshipType
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
     from seshat.config.settings import ResolutionLLMConfig
+    from seshat.models.enums import ConceptType
     from seshat.models.nodes import KBNode
 
 logger = get_logger(__name__)
@@ -54,7 +55,27 @@ class _EntryBase(BaseModel):
         return None if v == "null" else v
 
 
-class _SameTypeEntry(_EntryBase): ...
+class _SameTypeEntry(_EntryBase):
+    alt_rel_type: str | None = Field(
+        default=None,
+        description=(
+            "The runner-up relationship type when two specific types are genuinely competing "
+            "for this pair. Must be one of the same valid types as rel_type, and must differ "
+            "from rel_type. Populate only when uncertain between two types — never for null "
+            "assignments, never for clear-cut cases, never when uncertain between a type and null."
+        ),
+    )
+
+    @field_validator("alt_rel_type", mode="before")
+    @classmethod
+    def coerce_null_string_alt(cls, v: object) -> object:
+        return None if v == "null" else v
+
+    @model_validator(mode="after")
+    def alt_differs_from_primary(self) -> _SameTypeEntry:
+        if self.alt_rel_type is not None and self.alt_rel_type == self.rel_type:
+            raise ValueError("alt_rel_type must differ from rel_type")
+        return self
 
 
 class _CrossTypeEntry(_EntryBase):
@@ -118,7 +139,7 @@ class _BaseResolutionAgent(_BaseAgent, Generic[E]):
         t0 = time.perf_counter()
         per_agent_sem = asyncio.Semaphore(self._config.max_concurrent_calls)
 
-        async def _run_with_concurrency_limit(src: KBNode) -> list[ResolvedRelationship]:
+        async def _run_with_concurrency_limit(src: KBNode) -> tuple[list[E], dict[str, UUID]]:
             # global_sem outer, per_agent_sem inner: a per-agent slot is only held
             # while the task is running, not while waiting for the global budget.
             if global_sem is not None:
@@ -136,21 +157,22 @@ class _BaseResolutionAgent(_BaseAgent, Generic[E]):
             if isinstance(result, ResolutionRetryExhaustedError):
                 logger.error(
                     "Resolution exhausted retries for source=%s",
-                    src.id,
+                    src,
                     extra={"node_id": str(src.id), "concept_type": src.type},
                 )
                 failed.append(FailedResolutionSource(node_id=src.id, concept_type=src.type))
             elif isinstance(result, Exception):
                 logger.error(
                     "Resolution call failed for source=%s: %s",
-                    src.id,
+                    src,
                     result,
                     extra={"node_id": str(src.id), "concept_type": src.type},
                 )
                 failed.append(FailedResolutionSource(node_id=src.id, concept_type=src.type))
             else:
-                assert isinstance(result, list)
-                entries.extend(result)
+                assert isinstance(result, tuple)
+                raw_entries, id_map = result
+                entries.extend(self._to_relationships(raw_entries, id_map))
 
         valid, dropped = self._validate_relationships(entries)
         if dropped:
@@ -162,8 +184,8 @@ class _BaseResolutionAgent(_BaseAgent, Generic[E]):
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
         logger.info(
-            "%s resolved %d relationships from %d sources, %d failed (elapsed: %dms)",
-            type(self).__name__,
+            "%s resolved %d relationships from %d source(s), %d failed (elapsed: %dms)",
+            self.name,
             len(valid),
             len(source_nodes),
             len(failed),
@@ -177,11 +199,11 @@ class _BaseResolutionAgent(_BaseAgent, Generic[E]):
         source: KBNode,
         targets: list[KBNode],
         siblings: list[KBNode] | None = None,
-    ) -> list[ResolvedRelationship]:
+    ) -> tuple[list[E], dict[str, UUID]]:
         # targets is bounded by RAGConfig.top_k * 2 per source; raise top_k with care
         targets = [t for t in targets if t.id != source.id]
         if not targets:
-            return []
+            return [], {}
 
         # Positional indices keep IDs short and unambiguous for the LLM.
         # Index 0 is always the source; targets start at 1.
@@ -198,7 +220,7 @@ class _BaseResolutionAgent(_BaseAgent, Generic[E]):
             raise_on_exhaustion=ResolutionRetryExhaustedError(f"Resolution exhausted retries for source={source.id}"),
             on_error_log_prefix=f"Resolution(source={source.id})",
         )
-        return self._to_relationships(result.entries, id_map)
+        return result.entries, id_map
 
     def _build_messages(self, context: dict, siblings: list[KBNode] | None) -> list:
         messages: list = [
@@ -277,6 +299,10 @@ class BaseCrossTypeResolutionAgent(_BaseResolutionAgent[E]):
       open_question → action_item:      { blocks }
       action_item   → risk:             { mitigates }
     """
+
+    def __init__(self, llm: BaseChatModel, config: ResolutionLLMConfig, target_type: ConceptType):
+        super().__init__(llm=llm, config=config)
+        self._target_type = target_type
 
     def _validate_relationships(
         self,

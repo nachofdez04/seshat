@@ -15,6 +15,7 @@ from seshat.eval.grouping.corpus_loader import load_corpus
 from seshat.eval.grouping.scorers import scorer
 from seshat.eval.mlflow_logging import log_eval_run_metadata
 from seshat.models.enums import ConceptType
+from seshat.observability.latency_tracker import track_eval_latency
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.log import set_task_num
 
@@ -94,7 +95,8 @@ class GroupingEvalRunner:
         )
         return gate
 
-    @track_eval_usage(label="grouping")
+    @track_eval_usage("grouping")
+    @track_eval_latency("grouping")
     async def _run_all_predictions(
         self, examples: list[GroupingCorpusExample]
     ) -> tuple[dict[str, _GroupingCacheEntry], set[Path]]:

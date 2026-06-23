@@ -1,6 +1,6 @@
 import pytest
 
-from seshat.eval.verification.scorers import scorer
+from seshat.eval.grounding.scorers import scorer
 
 
 def _run(expected_supported: bool, predicted_supported: bool) -> list:
@@ -11,14 +11,14 @@ def _run(expected_supported: bool, predicted_supported: bool) -> list:
     )
 
 
-class TestVerificationScorer:
+class TestGroundingScorer:
     @pytest.mark.parametrize(
         ("expected", "predicted", "key"),
         [
-            (True, True, "verification.tp"),
-            (False, True, "verification.fp"),
-            (True, False, "verification.fn"),
-            (False, False, "verification.tn"),
+            (True, True, "grounding.tp"),
+            (False, True, "grounding.fp"),
+            (True, False, "grounding.fn"),
+            (False, False, "grounding.tn"),
         ],
     )
     def test_outcome_label(self, expected, predicted, key):

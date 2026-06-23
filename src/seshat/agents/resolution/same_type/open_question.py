@@ -3,9 +3,12 @@ from typing import Literal
 from seshat.agents.resolution.base import BaseSameTypeResolutionAgent, _ResultBase, _SameTypeEntry
 from seshat.models.enums import RelationshipType
 
+_OPEN_QUESTION_RELATION_TYPES = Literal[RelationshipType.AMENDS, RelationshipType.DEPENDS_ON]
+
 
 class _OpenQuestionEntry(_SameTypeEntry):
-    rel_type: Literal[RelationshipType.AMENDS, RelationshipType.DEPENDS_ON] | None  # type: ignore[override]
+    rel_type: _OPEN_QUESTION_RELATION_TYPES | None  # type: ignore[override]
+    alt_rel_type: _OPEN_QUESTION_RELATION_TYPES | None = None  # type: ignore[override]
 
 
 class _OpenQuestionResult(_ResultBase[_OpenQuestionEntry]): ...
@@ -57,6 +60,12 @@ Once the same concern domain guard passes, select the first label that applies:
 - amends vs null:
   - "What cache TTL should we use for compliance fields?" → amends "What cache TTL should we use for profile data?" — same question, source adds a scope constraint.
   - "What retry budget should we apply to failed cache reads?" → null "What cache TTL should we use for profile data?" — same cache domain, different concern.
+
+## Ambiguity signal
+If, after applying the selection rules above, you are genuinely uncertain between two specific
+relationship types (not between a type and null), set alt_rel_type to the runner-up.
+alt_rel_type must be one of the same valid types as rel_type, and must differ from rel_type.
+Leave alt_rel_type null for clear-cut cases, null assignments, and when uncertain between a type and null.
 """
 
 

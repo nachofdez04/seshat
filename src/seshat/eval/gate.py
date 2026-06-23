@@ -5,6 +5,8 @@ from pathlib import Path  # noqa: TC003
 
 from seshat.eval.models import GateResult, MetricEntry
 from seshat.eval.thresholds import (
+    GROUNDING_PRECISION,
+    GROUNDING_RECALL,
     GROUPING_GROUP_HIT_RATE,
     IDENTIFICATION_PRECISION,
     IDENTIFICATION_RECALL,
@@ -12,8 +14,6 @@ from seshat.eval.thresholds import (
     RESOLUTION_PRECISION,
     RESOLUTION_RECALL,
     RETRIEVAL_RECALL_AT_5,
-    VERIFICATION_PRECISION,
-    VERIFICATION_RECALL,
 )
 from seshat.models.enums import ConceptType
 
@@ -40,14 +40,14 @@ def upsert_gate(
     identification_metrics: dict[str, float] | None = None,
     resolution_metrics: dict[str, float] | None = None,
     retrieval_metrics: dict[str, float] | None = None,
-    verification_metrics: dict[str, float] | None = None,
+    grounding_metrics: dict[str, float] | None = None,
     grouping_metrics: dict[str, float] | None = None,
 ) -> GateResult:
     """Update only the supplied metric blocks; carry over the rest from the existing file."""
     id_entries = identification_entries(identification_metrics) if identification_metrics is not None else None
     res_entries = resolution_entries(resolution_metrics) if resolution_metrics is not None else None
     ret_entries = retrieval_entries(retrieval_metrics) if retrieval_metrics is not None else None
-    ver_entries = verification_entries(verification_metrics) if verification_metrics is not None else None
+    grd_entries = grounding_entries(grounding_metrics) if grounding_metrics is not None else None
     grp_entries = grouping_entries(grouping_metrics) if grouping_metrics is not None else None
 
     if gate_path.exists():
@@ -58,8 +58,8 @@ def upsert_gate(
             res_entries = existing.resolution_metrics
         if ret_entries is None:
             ret_entries = existing.retrieval_metrics
-        if ver_entries is None:
-            ver_entries = existing.verification_metrics
+        if grd_entries is None:
+            grd_entries = existing.grounding_metrics
         if grp_entries is None:
             grp_entries = existing.grouping_metrics
 
@@ -68,7 +68,7 @@ def upsert_gate(
         identification_metrics=id_entries,
         resolution_metrics=res_entries,
         retrieval_metrics=ret_entries,
-        verification_metrics=ver_entries,
+        grounding_metrics=grd_entries,
         grouping_metrics=grp_entries,
     )
     write_gate(result, gate_path)
@@ -117,13 +117,13 @@ def retrieval_entries(metrics: dict[str, float]) -> dict[str, MetricEntry]:
     return {k: MetricEntry(value=round(v, 3), passed=passes(k, v)) for k, v in metrics.items()}
 
 
-def verification_entries(metrics: dict[str, float]) -> dict[str, MetricEntry]:
+def grounding_entries(metrics: dict[str, float]) -> dict[str, MetricEntry]:
     def passes(key: str, value: float) -> bool:
         match key:
             case "precision":
-                return value >= VERIFICATION_PRECISION
+                return value >= GROUNDING_PRECISION
             case "recall":
-                return value >= VERIFICATION_RECALL
+                return value >= GROUNDING_RECALL
             case _:  # non-blocking metrics; just logged, not gated on
                 return True
 

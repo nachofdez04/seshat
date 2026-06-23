@@ -51,12 +51,20 @@ class IdentificationLLMConfig(_LLMConfig):
     model: str = "claude-sonnet-4-6"
 
 
-class VerificationLLMConfig(_LLMConfig):
+class GroundingLLMConfig(_LLMConfig):
     provider: LLMProvider = LLMProvider.OPENAI
     model: str = "gpt-5.4-nano"
     use_full_transcript: bool = Field(
         default=True,
-        description="When False, verification uses only the identified quote instead of the full transcript.",
+        description="When False, grounding uses only the identified quote instead of the full transcript.",
+    )
+
+
+class ReflectiveLLMConfig(BaseConfig):
+    enabled: bool = Field(default=False, description="When True, the agent runs an extract → validate → filter pass.")
+    llm: _LLMConfig | None = Field(
+        default=None,
+        description="LLM used for the self-review (validate) call. Falls back to the stage's primary LLM when None.",
     )
 
 
@@ -72,17 +80,36 @@ class ResolutionLLMConfig(_LLMConfig):
 
 
 class ExtractionConfig(BaseConfig):
-    identification: IdentificationLLMConfig = Field(
-        default_factory=IdentificationLLMConfig, description="LLM settings used for the identification step."
-    )
-    resolution: ResolutionLLMConfig = Field(
-        default_factory=ResolutionLLMConfig, description="LLM and concurrency settings for the resolution step."
-    )
     concept_types: list[ConceptType] = Field(
         default_factory=lambda: list(ConceptType),
         description="Concept types that the extraction pipeline will attempt to extract.",
     )
-    # TODO: calibrate against a labeled corpus before use
+    identification: IdentificationLLMConfig = Field(
+        default_factory=IdentificationLLMConfig, description="LLM settings used for the identification step."
+    )
+    identification_self_review: ReflectiveLLMConfig = Field(
+        default_factory=ReflectiveLLMConfig,
+        description=(
+            "Self-review loop settings for identification agents; "
+            "set identification_self_review.enabled=True to activate."
+        ),
+    )
+    resolution: ResolutionLLMConfig = Field(
+        default_factory=ResolutionLLMConfig, description="LLM and concurrency settings for the resolution step."
+    )
+    resolution_self_review: ReflectiveLLMConfig = Field(
+        default_factory=ReflectiveLLMConfig,
+        description=(
+            "Self-review loop settings for resolution agents; set resolution_self_review.enabled=True to activate."
+        ),
+    )
+    grouped_identification_types: set[ConceptType] = Field(
+        default_factory=lambda: {ConceptType.DECISION},
+        description="Concept types for which identified items are passed through the grouping step.",
+    )
+    grounding: GroundingLLMConfig | None = Field(
+        default=None, description="Optional second LLM used to ground extraction results; None disables grounding."
+    )
     confidence_threshold: float = Field(
         default=0.7, ge=0, le=1, description="Minimum heuristics score required to retain an identified node."
     )
@@ -107,25 +134,18 @@ class ExtractionConfig(BaseConfig):
     max_hint_tokens: int = Field(
         default=1000, gt=0, description="Maximum tokens consumed by hint nodes injected into the extraction prompt."
     )
-    verification: VerificationLLMConfig | None = Field(
-        default=None, description="Optional second LLM used to verify extraction results; None disables verification."
-    )
     identification_timeout_seconds: float | None = Field(
         default=None, gt=0, description="Optional wall-clock timeout for a full extraction run; None means no limit."
     )
     resolution_timeout_seconds: float | None = Field(
         default=None, gt=0, description="Optional wall-clock timeout for a full resolution run; None means no limit."
     )
-    grouped_identification_types: set[ConceptType] = Field(
-        default_factory=lambda: {ConceptType.DECISION},
-        description="Concept types for which identified items are passed through the grouping step.",
-    )
 
     @model_validator(mode="after")
-    def check_verification_provider(self) -> "ExtractionConfig":
-        if self.verification is not None and self.verification.provider == self.identification.provider:
+    def check_grounding_provider(self) -> "ExtractionConfig":
+        if self.grounding is not None and self.grounding.provider == self.identification.provider:
             raise ValueError(
-                "`verification.provider` must differ from `identification.provider`"
+                "`grounding.provider` must differ from `identification.provider`"
                 f" (both are '{self.identification.provider}')"
             )
 
@@ -266,9 +286,9 @@ class SeshatConfig(BaseSettings):
     max_concurrent_init_runs: int = Field(default=1, gt=0)
 
     @model_validator(mode="after")
-    def _warn_verification_disabled(self) -> "SeshatConfig":
-        if self.extraction.verification is None:
-            logger.warning("verification=None: heuristics-only confidence scoring.")
+    def _warn_grounding_disabled(self) -> "SeshatConfig":
+        if self.extraction.grounding is None:
+            logger.warning("grounding=None: heuristics-only confidence scoring.")
         return self
 
 

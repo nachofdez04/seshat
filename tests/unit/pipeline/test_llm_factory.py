@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from seshat.config.settings import ExtractionConfig, IdentificationLLMConfig, SeshatConfig, VerificationLLMConfig
+from seshat.config.settings import ExtractionConfig, GroundingLLMConfig, IdentificationLLMConfig, SeshatConfig
 from seshat.models.enums import LLMProvider
 from seshat.pipeline.llm_factory import _build_llm
 
@@ -57,14 +57,14 @@ class TestBuildLlm:
         call_kwargs = mock_init.call_args.kwargs
         assert call_kwargs["model_kwargs"]["extra_headers"]["anthropic-beta"] == "prompt-caching-2024-07-31"
 
-    def test_bedrock_converse_sends_prompt_caching_header(self, minimal_config):
+    def test_bedrock_converse_does_not_send_prompt_caching_header(self, minimal_config):
         llm_cfg = IdentificationLLMConfig(provider=LLMProvider.BEDROCK_CONVERSE, model="anthropic.claude-sonnet-4-5")
 
         with patch("seshat.pipeline.llm_factory.init_chat_model") as mock_init:
             _build_llm(llm_cfg, minimal_config)
 
         call_kwargs = mock_init.call_args.kwargs
-        assert call_kwargs["model_kwargs"]["extra_headers"]["anthropic-beta"] == "prompt-caching-2024-07-31"
+        assert "model_kwargs" not in call_kwargs or "extra_headers" not in call_kwargs.get("model_kwargs", {})
 
     def test_azure_openai_does_not_send_prompt_caching_header(self, minimal_config):
         llm_cfg = IdentificationLLMConfig(provider=LLMProvider.AZURE_OPENAI, model="gpt-4o")
@@ -75,33 +75,33 @@ class TestBuildLlm:
         call_kwargs = mock_init.call_args.kwargs
         assert "model_kwargs" not in call_kwargs
 
-    def test_get_verification_llm_raises_value_error_when_not_configured(self):
-        from seshat.pipeline.llm_factory import get_verification_llm
+    def test_get_grounding_llm_raises_value_error_when_not_configured(self):
+        from seshat.pipeline.llm_factory import get_grounding_llm
 
         cfg = SeshatConfig(
             _env_file=None,  # type: ignore[call-arg]
             extraction=ExtractionConfig(
                 identification=IdentificationLLMConfig(provider=LLMProvider.ANTHROPIC),
-                verification=None,
+                grounding=None,
             ),
         )
 
-        with pytest.raises(ValueError, match="verification is not configured"):
-            get_verification_llm(cfg)
+        with pytest.raises(ValueError, match="grounding is not configured"):
+            get_grounding_llm(cfg)
 
-    def test_verification_llm_uses_its_own_secret_key(self, mocked_secrets_resolver):
-        from seshat.pipeline.llm_factory import get_verification_llm
+    def test_grounding_llm_uses_its_own_secret_key(self, mocked_secrets_resolver):
+        from seshat.pipeline.llm_factory import get_grounding_llm
 
-        ver_cfg = VerificationLLMConfig(provider=LLMProvider.OPENAI, api_key_secret_key="openai_verify_key")
+        grd_cfg = GroundingLLMConfig(provider=LLMProvider.OPENAI, api_key_secret_key="openai_grounding_key")
         cfg = SeshatConfig(
             _env_file=None,  # type: ignore[call-arg]
             extraction=ExtractionConfig(
                 identification=IdentificationLLMConfig(provider=LLMProvider.ANTHROPIC),
-                verification=ver_cfg,
+                grounding=grd_cfg,
             ),
         )
 
         with patch("seshat.pipeline.llm_factory.init_chat_model"):
-            get_verification_llm(cfg)
+            get_grounding_llm(cfg)
 
-        mocked_secrets_resolver.get_secret.assert_called_once_with("openai_verify_key")
+        mocked_secrets_resolver.get_secret.assert_called_once_with("openai_grounding_key")

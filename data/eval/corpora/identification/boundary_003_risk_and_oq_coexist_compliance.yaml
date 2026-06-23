@@ -14,6 +14,8 @@ transcript: |
   If those logs are retained in the US region, we may violate the EU data processing agreement.
   That is more than a policy question; it could create a compliance incident if we ship beta with the current logging.
   Agreed. That is a real compliance exposure.
+  So what do we do — do we strip the email from the payload, mask it, or move the logs to an EU region?
+  Let's wait until we have a compliance ruling. Maybe Legal can provide guidance.
 
 expected:
   risk:
@@ -30,11 +32,13 @@ expected:
     - quote: "We are logging customer email addresses in the analytics event payload.\n\
         If those logs are retained in the US region, we may violate the EU data processing agreement.\n\
         That is more than a policy question; it could create a compliance incident if we ship beta with the current logging.\n\
-        Agreed. That is a real compliance exposure."
+        Agreed. That is a real compliance exposure.\n\
+        So what do we do — do we strip the email from the payload, mask it, or move the logs to an EU region?\n\
+        Let's wait until we have a compliance ruling. Maybe Legal can provide guidance."
       title: How should email logging be changed to avoid EU data residency exposure before beta?
-      description: The group acknowledged a compliance exposure from logging email addresses in the US region but established no mitigation path, owner, or decision.
-      question: How should analytics event logging be changed or governed to avoid EU data processing compliance exposure before beta?
-      context: The group has not established a mitigation path or owner; no next step was assigned in the transcript.
+      description: The group identified three candidate approaches (strip, mask, or move logs to EU region) but deferred the choice pending a compliance ruling; no option was selected and no owner assigned.
+      question: Should email addresses be stripped from the analytics payload, masked, or should the logs be moved to an EU region to meet data processing requirements?
+      context: The group explicitly deferred the choice pending a legal compliance ruling; no mitigation path or owner was established.
 
   decision: []
   action_item: []

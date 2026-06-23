@@ -7,9 +7,9 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 
 from seshat.config.settings import (
+    GroundingLLMConfig,
     IdentificationLLMConfig,
     ResolutionLLMConfig,
-    VerificationLLMConfig,
 )
 from seshat.models.enums import LLMProvider, RelationshipType
 from seshat.models.nodes import KBNode, KBRelationship
@@ -39,7 +39,7 @@ def _get_cheap_model(provider: LLMProvider) -> str:
     return _PROVIDER2CHEAP_MODEL_MAPPING[provider]
 
 
-def _pick_verification_provider() -> LLMProvider:
+def _pick_grounding_provider() -> LLMProvider:
     # Must differ in provider family from _pick_provider() (ExtractionConfig validator).
     if _anthropic_reachable():
         return LLMProvider.AZURE_OPENAI if _azure_available() else LLMProvider.OPENAI
@@ -68,9 +68,9 @@ def cheap_resolution_config() -> ResolutionLLMConfig:
     return ResolutionLLMConfig(provider=provider, model=_get_cheap_model(provider))
 
 
-def cheap_verification_config() -> VerificationLLMConfig:
-    provider = _pick_verification_provider()
-    return VerificationLLMConfig(provider=provider, model=_get_cheap_model(provider), max_retries=1)
+def cheap_grounding_config() -> GroundingLLMConfig:
+    provider = _pick_grounding_provider()
+    return GroundingLLMConfig(provider=provider, model=_get_cheap_model(provider), max_retries=1)
 
 
 async def upload_transcript(blob_store, content: str) -> str:

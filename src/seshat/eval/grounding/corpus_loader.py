@@ -11,25 +11,25 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class VerificationCorpusNode(BaseModel):
+class GroundingCorpusNode(BaseModel):
     title: str
     description: str
     quote: str
     expected_supported: bool
 
 
-class VerificationCorpusExample(BaseModel):
+class GroundingCorpusExample(BaseModel):
     corpus_id: str
     description: str
     transcript: str | None
-    nodes: list[VerificationCorpusNode]
+    nodes: list[GroundingCorpusNode]
     tags: dict[str, Any] = Field(default_factory=dict)
 
 
 def load_corpus(
     corpus_dir: Path,
     tag_filter: dict[str, str | list[str]] | None = None,
-) -> list[VerificationCorpusExample]:
+) -> list[GroundingCorpusExample]:
     examples = []
     for path in sorted(corpus_dir.glob("*.yaml")):
         with open(path, encoding="utf-8") as f:
@@ -42,11 +42,11 @@ def load_corpus(
     return examples
 
 
-def _parse_example(corpus_id: str, data: dict[str, Any]) -> VerificationCorpusExample:
-    return VerificationCorpusExample(
+def _parse_example(corpus_id: str, data: dict[str, Any]) -> GroundingCorpusExample:
+    return GroundingCorpusExample(
         corpus_id=corpus_id,
         description=data["description"],
         transcript=data.get("transcript"),
-        nodes=[VerificationCorpusNode(**n) for n in data["nodes"]],
+        nodes=[GroundingCorpusNode(**n) for n in data["nodes"]],
         tags=data.get("tags") or {},
     )

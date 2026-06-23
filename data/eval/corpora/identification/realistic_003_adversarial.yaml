@@ -3,15 +3,17 @@ description: >
   attempt must not produce a spurious node. A "we should" with no owner must not become an
   action item. A concern is raised and immediately rebutted, so it must not become a risk.
   An open question about rollback coverage is assigned and explicitly accepted, absorbing it
-  into an action item with no surviving open question. A process commitment phrased as a
-  future intention ("going forward, every deploy must…") is a genuine group-level decision.
-  The real extractable items are one decision (the process gate), one risk (certificate
-  expiry on the old hostname), and two action items (runbook update and rollback verification).
+  into an action item with no surviving open question. An unresolved task assignment (who
+  updates the job configs) must not become an open question — it is an ownership gap noted
+  within the Risk. A process commitment phrased as a future intention ("going forward, every
+  deploy must…") is a genuine group-level decision. The real extractable items are one
+  decision (the process gate), one risk (certificate expiry on the old hostname), and two
+  action items (runbook update and rollback verification).
 
 tags:
   tier: realistic
   difficulty: hard
-  focus: [decision, risk, action_item, open_question]
+  focus: [decision, risk, action_item]
   detail: "injection guard; dismissed concern; absorbed OQ; process decision; investigation-absorbed risk boundary"
 
 transcript: |
@@ -116,11 +118,4 @@ expected:
       assignee: Kenji
       due: before EOD tomorrow
 
-  open_question:
-    - quote: "That's a live risk then. We don't have an owner for updating those job configs yet,\n\
-        right?\n\
-        Not formally, no."
-      title: Who will update the background job configurations for the legacy hostname?
-      description: No owner was identified in the meeting for updating the background job configurations that reference the expiring legacy-pay.internal hostname.
-      question: Who is responsible for updating the background job configurations to replace the legacy-pay.internal hostname before the certificate expires?
-      context: The certificate expires in twelve days and no formal owner was assigned during the meeting.
+  open_question: []

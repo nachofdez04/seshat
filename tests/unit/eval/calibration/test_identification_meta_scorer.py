@@ -180,14 +180,12 @@ class TestSuggestedThreshold:
 # ── gate logic (_filter_by_threshold) ────────────────────────────────────────
 
 
-def _make_kb_node_with_verification(
-    ctype: ConceptType, title: str, heuristics: float, verification_passed: bool
-) -> KBNode:
+def _make_kb_node_with_grounding(ctype: ConceptType, title: str, heuristics: float, grounding_passed: bool) -> KBNode:
     metadata = NodeMetadata(
         job_id="test",
         meeting_date=date(2026, 1, 1),
         confidence_breakdown=ConfidenceBreakdown(
-            verification_enabled=True, heuristics=heuristics, verification_passed=verification_passed
+            grounding_enabled=True, heuristics=heuristics, grounding_passed=grounding_passed
         ),
     )
     return make_node(
@@ -201,14 +199,14 @@ def _make_kb_node_with_verification(
     )
 
 
-def _make_result_with_verification(job_id: str, nodes: list[KBNode]) -> IdentificationResult:
+def _make_result_with_grounding(job_id: str, nodes: list[KBNode]) -> IdentificationResult:
     breakdowns = {n.id: n.metadata.confidence_breakdown for n in nodes if n.metadata.confidence_breakdown}
     return IdentificationResult(job_id=job_id, nodes=nodes, confidence_breakdowns=breakdowns)
 
 
 class TestFilterByThreshold:
-    def test_verification_disabled_passes_on_heuristics_alone(self) -> None:
-        # No verification score → heuristics-only path
+    def test_grounding_disabled_passes_on_heuristics_alone(self) -> None:
+        # No grounding score → heuristics-only path
         node = _make_kb_node(ConceptType.DECISION, "Use Kafka", 0.8)
         result = _make_result(CORPUS_ID, [node])
 
@@ -217,32 +215,26 @@ class TestFilterByThreshold:
         assert _filter_by_threshold(result, 0.7) == [node]
         assert _filter_by_threshold(result, 0.9) == []
 
-    def test_verification_pass_and_heuristics_pass_approved(self) -> None:
-        node = _make_kb_node_with_verification(
-            ConceptType.DECISION, "Use Kafka", heuristics=0.8, verification_passed=True
-        )
-        result = _make_result_with_verification(CORPUS_ID, [node])
+    def test_grounding_pass_and_heuristics_pass_approved(self) -> None:
+        node = _make_kb_node_with_grounding(ConceptType.DECISION, "Use Kafka", heuristics=0.8, grounding_passed=True)
+        result = _make_result_with_grounding(CORPUS_ID, [node])
 
         from seshat.eval.calibration.identification_meta_scorer import _filter_by_threshold
 
         assert _filter_by_threshold(result, 0.7) == [node]
 
-    def test_verification_fail_blocks_regardless_of_heuristics(self) -> None:
-        # verification_passed=False → blocked even with heuristics=0.99
-        node = _make_kb_node_with_verification(
-            ConceptType.DECISION, "Use Kafka", heuristics=0.99, verification_passed=False
-        )
-        result = _make_result_with_verification(CORPUS_ID, [node])
+    def test_grounding_fail_blocks_regardless_of_heuristics(self) -> None:
+        # grounding_passed=False → blocked even with heuristics=0.99
+        node = _make_kb_node_with_grounding(ConceptType.DECISION, "Use Kafka", heuristics=0.99, grounding_passed=False)
+        result = _make_result_with_grounding(CORPUS_ID, [node])
 
         from seshat.eval.calibration.identification_meta_scorer import _filter_by_threshold
 
         assert _filter_by_threshold(result, 0.0) == []
 
-    def test_verification_pass_but_heuristics_below_threshold_blocked(self) -> None:
-        node = _make_kb_node_with_verification(
-            ConceptType.DECISION, "Use Kafka", heuristics=0.3, verification_passed=True
-        )
-        result = _make_result_with_verification(CORPUS_ID, [node])
+    def test_grounding_pass_but_heuristics_below_threshold_blocked(self) -> None:
+        node = _make_kb_node_with_grounding(ConceptType.DECISION, "Use Kafka", heuristics=0.3, grounding_passed=True)
+        result = _make_result_with_grounding(CORPUS_ID, [node])
 
         from seshat.eval.calibration.identification_meta_scorer import _filter_by_threshold
 

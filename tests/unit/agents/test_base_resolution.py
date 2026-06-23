@@ -1,13 +1,14 @@
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from seshat.agents.resolution.base import (
     ResolutionRetryExhaustedError,
     ResolvedRelationship,
     _EntryBase,
 )
-from seshat.agents.resolution.same_type.decision import DecisionResolutionAgent, _DecisionResult
+from seshat.agents.resolution.same_type.decision import DecisionResolutionAgent, _DecisionEntry, _DecisionResult
 from seshat.config.settings import ResolutionLLMConfig
 from seshat.models.enums import RelationshipType
 from tests.helpers import make_node, make_structured_llm
@@ -279,11 +280,44 @@ class TestIndexIdMapping:
         tgt = make_node("tgt")
         agent = _make_agent_with_llm(return_value=_decision_result("0", "1", RelationshipType.SUPERSEDES))
 
-        result = await agent._run_for_source(source=src, targets=[tgt])
+        # resolve() applies _to_relationships — UUIDs are resolved in the final output
+        rels, _ = await agent.resolve(source_nodes=[src], per_source_targets={src.id: [tgt]})
 
-        assert len(result) == 1
-        assert result[0].source_id == src.id
-        assert result[0].target_id == tgt.id
+        assert len(rels) == 1
+        assert rels[0].source_id == src.id
+        assert rels[0].target_id == tgt.id
+
+
+class TestSameTypeEntryAltRelType:
+    def test_alt_rel_type_same_as_rel_type_rejected(self):
+        with pytest.raises(ValidationError):
+            _DecisionEntry(
+                source_id="0",
+                target_id="1",
+                rel_type=RelationshipType.SUPERSEDES,
+                alt_rel_type=RelationshipType.SUPERSEDES,
+                rationale="test",
+            )
+
+    def test_alt_rel_type_invalid_value_rejected(self):
+        with pytest.raises(ValidationError):
+            _DecisionEntry(
+                source_id="0",
+                target_id="1",
+                rel_type=RelationshipType.SUPERSEDES,
+                alt_rel_type="mitigates",
+                rationale="test",
+            )
+
+    def test_null_string_coerced_to_none(self):
+        entry = _DecisionEntry(
+            source_id="0",
+            target_id="1",
+            rel_type=RelationshipType.SUPERSEDES,
+            alt_rel_type="null",
+            rationale="test",
+        )
+        assert entry.alt_rel_type is None
 
 
 class TestRunForSource:
@@ -291,21 +325,23 @@ class TestRunForSource:
         node = make_node("n1")
         agent = _make_agent_with_llm()
 
-        result = await agent._run_for_source(source=node, targets=[node])
+        entries, _ = await agent._run_for_source(source=node, targets=[node])
 
-        assert result == []
+        assert entries == []
         assert agent._llm.with_structured_output.call_count == 0
 
-    async def test_successful_llm_call_returns_relationships(self):
+    async def test_successful_llm_call_returns_entries_and_id_map(self):
         src = make_node("src")
         tgt = make_node("tgt")
         result_schema = _decision_result("0", "1", RelationshipType.SUPERSEDES)
         agent = _make_agent_with_llm(return_value=result_schema)
 
-        result = await agent._run_for_source(source=src, targets=[tgt])
+        entries, id_map = await agent._run_for_source(source=src, targets=[tgt])
 
-        assert len(result) == 1
-        assert result[0].rel_type == RelationshipType.SUPERSEDES
+        assert len(entries) == 1
+        assert entries[0].rel_type == RelationshipType.SUPERSEDES
+        assert id_map["0"] == src.id
+        assert id_map["1"] == tgt.id
 
     async def test_exhausted_retries_raises(self):
         src = make_node("src")
