@@ -22,9 +22,20 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
     from seshat.config.settings import KBStoreConfig
-    from seshat.models.api import NodeFilter
+    from seshat.models.api_graph import NodeFilter
 
 logger = get_logger(__name__)
+
+
+def _pg_should_retry(exc: Exception) -> bool:
+    if isinstance(exc, asyncpg.PostgresError):
+        return isinstance(
+            exc, (asyncpg.PostgresConnectionError, asyncpg.TooManyConnectionsError, asyncpg.DeadlockDetectedError)
+        )
+    return True
+
+
+_PG_ASYNC_RETRY = async_retry(retryable_exceptions=(Exception,), should_retry=_pg_should_retry)
 
 
 class PostgresKBStore:
@@ -50,6 +61,7 @@ class PostgresKBStore:
 
         return connection_string
 
+    @_PG_ASYNC_RETRY
     async def connect(self) -> None:
         self._pool = await asyncpg.create_pool(
             self._connection_string,
@@ -70,7 +82,6 @@ class PostgresKBStore:
         return self._pool
 
     @asynccontextmanager
-    # AsyncContextManager[_Conn] from the caller's view; @asynccontextmanager does the transform
     async def transaction(self) -> AsyncIterator[_Conn]:
         """Async context manager that acquires a connection and starts a transaction.
 
@@ -143,13 +154,14 @@ class PostgresKBStore:
                 (source_id, target_id, rel_type, job_id, created_at)
             VALUES ($1,$2,$3,$4,$5)
             """,
-            rel.source_id,
-            rel.target_id,
+            str(rel.source_id),
+            str(rel.target_id),
             rel.rel_type.value,
             rel.job_id,
             rel.created_at,
         )
 
+    @_PG_ASYNC_RETRY
     async def update_node_state(self, node_id: str, new_state: NodeState, *, conn: _Conn | None = None) -> None:
         logger.debug("Updating node state with node_id=%s to new_state=%s", node_id, new_state)
 
@@ -162,7 +174,65 @@ class PostgresKBStore:
         if result == "UPDATE 0":
             raise KeyError(f"update_node_state: node_id={node_id!r} not found")
 
-    @async_retry()
+    @_PG_ASYNC_RETRY
+    async def update_node(self, node: KBNode, *, conn: _Conn | None = None) -> None:
+        logger.debug("Updating node with node_id=%s", node.id)
+
+        executor = conn or self.pool
+        result = await executor.execute(
+            f"""
+            UPDATE {self._schema}.kb_nodes
+            SET title=$1, description=$2, metadata=$3, schema_version=$4
+            WHERE node_id=$5
+            """,
+            node.title,
+            node.description,
+            json.dumps(node.metadata.model_dump(mode="json")),
+            node.schema_version,
+            str(node.id),
+        )
+        if result == "UPDATE 0":
+            raise KeyError(f"update_node: node_id={node.id!r} not found")
+
+    @_PG_ASYNC_RETRY
+    async def delete_node(self, node_id: str, *, conn: _Conn | None = None) -> None:
+        logger.debug("Deleting node with node_id=%s", node_id)
+
+        executor = conn or self.pool
+        await executor.execute(
+            f"DELETE FROM {self._schema}.kb_nodes WHERE node_id=$1",
+            node_id,
+        )
+
+    @_PG_ASYNC_RETRY
+    async def count_inbound_relationships(self, node_id: str) -> int:
+        """Return the number of relationships where target_id = node_id."""
+        row = await self.pool.fetchrow(
+            f"SELECT COUNT(*) FROM {self._schema}.kb_relationships WHERE target_id=$1",
+            node_id,
+        )
+        return row[0] if row else 0
+
+    @_PG_ASYNC_RETRY
+    async def delete_relationships_for_node(
+        self, node_id: str, *, cascade: bool = True, conn: _Conn | None = None
+    ) -> None:
+        """Delete relationships for node_id.
+
+        cascade=True (default): delete both outbound (source_id) and inbound (target_id) edges.
+        cascade=False: delete only outbound (source_id) edges — caller must ensure no inbound
+        edges remain before calling delete_node, otherwise the FK constraint will raise.
+        """
+        logger.debug("Deleting relationships for node_id=%s cascade=%s", node_id, cascade)
+
+        query = f"DELETE FROM {self._schema}.kb_relationships WHERE source_id=$1"
+        if cascade:
+            query += " OR target_id=$1"
+
+        executor = conn or self.pool
+        await executor.execute(query, node_id)
+
+    @_PG_ASYNC_RETRY
     async def get_node(self, node_id: str) -> KBNode | None:
         logger.debug("Fetching node with node_id=%s", node_id)
 
@@ -172,7 +242,7 @@ class PostgresKBStore:
 
         return self._row_to_node(row)
 
-    @async_retry()
+    @_PG_ASYNC_RETRY
     async def get_neighbours(
         self,
         node_id: str,
@@ -210,7 +280,7 @@ class PostgresKBStore:
         rows = await self.pool.fetch(query, *params)
         return [self._row_to_node(r) for r in rows]
 
-    @async_retry()
+    @_PG_ASYNC_RETRY
     async def query(self, node_filter: NodeFilter) -> list[KBNode]:
         conditions = ["1=1"]
         params: list[object] = []
@@ -271,7 +341,7 @@ class PostgresKBStore:
     @staticmethod
     def _node_to_row_args(node: KBNode, created_at: datetime) -> tuple:
         return (
-            node.id,
+            str(node.id),
             node.schema_version,
             node.type.value,
             node.title,

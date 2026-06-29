@@ -15,7 +15,7 @@ from seshat.eval.mlflow_logging import log_eval_run_metadata
 from seshat.eval.models import RetrievalScoredResult
 from seshat.eval.retrieval.corpus_loader import build_kb_nodes, load_corpus
 from seshat.eval.retrieval.scorers import TOP_K, scorer
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import SearchMode
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.hashing import fingerprint

@@ -6,7 +6,7 @@ import pytest
 
 from seshat.config.settings import KBStoreConfig
 from seshat.knowledge_store.pg_store import PostgresKBStore
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import (
     ConceptType,
     GraphDirection,

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from seshat.eval.calibration.retrieval_meta_scorer import RetrievalMetaScorer
-from seshat.models.api import NodeFilter, SearchResult
+from seshat.models.api_graph import NodeFilter, SearchResult
 from seshat.vector_store.base_store import AbstractVectorStore
 from tests.integration.eval.helpers import make_eval_config
 

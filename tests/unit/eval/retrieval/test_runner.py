@@ -16,7 +16,7 @@ from tests.unit.eval.helpers import make_eval_result
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from seshat.models.api import NodeFilter, SearchResult
+    from seshat.models.api_graph import NodeFilter, SearchResult
 
 
 class _CapturingVectorStore(AbstractVectorStore):

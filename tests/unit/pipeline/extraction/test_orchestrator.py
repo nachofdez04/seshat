@@ -191,7 +191,7 @@ class TestExtractionOrchestrator:
             kb_approved_nodes=[approved_node],
         )
 
-        result = await orchestrator.run_resolution(make_doc(), job_id="job-1")
+        result = await orchestrator.run_resolution(job_id="job-1")
 
         assert len(result.relationships) == 1
         assert result.relationships[0].rel_type == RelationshipType.SUPERSEDES
@@ -283,7 +283,7 @@ class TestExtractionOrchestrator:
         approved_node = make_node("n1", status=NodeStatus.APPROVED)
         orchestrator = _make_orchestrator(kb_approved_nodes=[approved_node])
 
-        await orchestrator.run_resolution(make_doc(), job_id="job-1")
+        await orchestrator.run_resolution(job_id="job-1")
 
         call_kwargs = orchestrator._retriever.retrieve.call_args.kwargs
         node_filter = call_kwargs["node_filter"]
@@ -298,7 +298,7 @@ class TestExtractionOrchestrator:
         orchestrator = _make_orchestrator(kb_approved_nodes=[approved_node])
         orchestrator._resolution_registry.resolve_all = AsyncMock(return_value=([], [failed_source]))
 
-        result = await orchestrator.run_resolution(make_doc(), job_id="job-1")
+        result = await orchestrator.run_resolution(job_id="job-1")
 
         assert result.relationships == []
         assert len(result.failed_sources) == 1
@@ -308,7 +308,7 @@ class TestExtractionOrchestrator:
         orchestrator = _make_orchestrator()
         orchestrator._kb.paginated_query = AsyncMock(return_value=[])
 
-        result = await orchestrator.run_resolution(make_doc(), job_id="job-1")
+        result = await orchestrator.run_resolution(job_id="job-1")
 
         assert result.relationships == []
 
@@ -342,7 +342,7 @@ class TestJobTimeout:
         orchestrator._resolution_registry.resolve_all = _slow
 
         with pytest.raises(asyncio.TimeoutError):
-            await orchestrator.run_resolution(make_doc(), job_id="job-1")
+            await orchestrator.run_resolution(job_id="job-1")
 
 
 class TestKbHintIsolation:

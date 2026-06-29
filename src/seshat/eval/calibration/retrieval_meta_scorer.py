@@ -9,7 +9,7 @@ from seshat.eval.calibration.models import RetrievalSweepPoint, RetrievalSweepRe
 from seshat.eval.models import RetrievalScoredResult
 from seshat.eval.retrieval.corpus_loader import load_corpus
 from seshat.eval.retrieval.scorers import TOP_K
-from seshat.models.api import SearchResult
+from seshat.models.api_graph import SearchResult
 from seshat.models.enums import SearchMode
 from seshat.observability.usage_tracker import track_eval_usage
 from seshat.utils.hashing import fingerprint

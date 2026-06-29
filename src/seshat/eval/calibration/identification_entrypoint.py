@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, Literal
 
 import mlflow
 
+from seshat.eval.bootstrap import build_extraction_orchestrator
 from seshat.eval.calibration.identification_meta_scorer import IdentificationMetaScorer
 from seshat.eval.mlflow_logging import log_eval_model
-from seshat.pipeline.bootstrap import build_orchestrator
 from seshat.utils.log import get_logger
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ async def run(
     p_target: float = 0.95,
     ignore_grounding: bool = False,
 ) -> None:
-    async with build_orchestrator(seshat_config) as orchestrator:
+    async with build_extraction_orchestrator(seshat_config) as orchestrator:
         llm_cfg = seshat_config.extraction.identification
         logger.info(
             "LLM provider=%r model=%r temperature=%s", llm_cfg.provider.value, llm_cfg.model, llm_cfg.temperature

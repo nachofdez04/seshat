@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from seshat.knowledge_store.pg_store import PostgresKBStore
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import (
     ConceptType,
     NodeState,
@@ -32,7 +32,7 @@ class TestNodeToRowArgs:
         node = _make_node()
         created_at = datetime(2026, 4, 21, 12, 0, tzinfo=UTC)
         row = PostgresKBStore._node_to_row_args(node, created_at)
-        assert row[0] == node.id
+        assert row[0] == str(node.id)
         assert row[2] == "decision"
         assert row[7] == "approved"
         assert row[8] == "current"

@@ -11,12 +11,11 @@ class UsageRecord(BaseModel):
 
 
 class ErrorPayload(BaseModel):
-    stage: JobStatus
+    stage: str
     reason: str = Field(description="Human-readable error message.")
     recoverable: bool = Field(description="Whether the job can be retried without changes.")
-    usage: dict[JobStatus, list[UsageRecord]] = Field(
-        default_factory=lambda: defaultdict[JobStatus, list[UsageRecord]](list)
-    )
+    status: JobStatus
+    usage: dict[str, list[UsageRecord]] = Field(default_factory=lambda: defaultdict[str, list[UsageRecord]](list))
 
 
 class JobResponse(BaseModel):

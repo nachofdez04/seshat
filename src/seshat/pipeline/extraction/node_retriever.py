@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import GraphDirection
 from seshat.utils.log import get_logger
 from seshat.utils.retry import async_retry
@@ -11,7 +11,7 @@ from seshat.utils.tokens import count_tokens
 if TYPE_CHECKING:
     from seshat.config.settings import RAGConfig
     from seshat.knowledge_store.pg_store import PostgresKBStore
-    from seshat.models.api import SearchResult
+    from seshat.models.api_graph import SearchResult
     from seshat.models.nodes import KBNode
     from seshat.vector_store.base_store import AbstractVectorStore
 

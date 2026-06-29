@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from seshat.eval.calibration.retrieval_meta_scorer import RetrievalMetaScorer
-from seshat.models.api import SearchResult
+from seshat.models.api_graph import SearchResult
 
 
 def _make_scorer(cache: dict, step: float = 0.5) -> tuple[RetrievalMetaScorer, dict]:

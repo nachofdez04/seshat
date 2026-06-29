@@ -3,7 +3,8 @@ from datetime import date, timedelta
 import pytest
 from pydantic import ValidationError
 
-from seshat.models.api import ApproveRequest, BulkApproveRule, NodeFilter, SearchResult
+from seshat.models.api_graph import NodeFilter, SearchResult
+from seshat.models.api_jobs import ApproveRequest, BulkApproveRule
 
 
 class TestNodeFilterValidation:

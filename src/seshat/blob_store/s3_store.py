@@ -82,9 +82,14 @@ class S3BlobStore(BlobPathsMixin):
         await self.client.put_object(Bucket=self._bucket, Key=key, Body=data)
 
     @_S3_ASYNC_RETRY
-    async def get(self, key: str) -> bytes:
-        response = await self.client.get_object(Bucket=self._bucket, Key=key)
-        return await response["Body"].read()
+    async def get(self, key: str) -> bytes | None:
+        try:
+            response = await self.client.get_object(Bucket=self._bucket, Key=key)
+            return await response["Body"].read()
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
+                return None
+            raise
 
     @_S3_ASYNC_RETRY
     async def exists(self, key: str) -> bool:
@@ -92,6 +97,6 @@ class S3BlobStore(BlobPathsMixin):
             await self.client.head_object(Bucket=self._bucket, Key=key)
             return True
         except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") == "404":
+            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
                 return False
             raise

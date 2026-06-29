@@ -1,43 +1,23 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from seshat.agents.grounding import GroundingAgent
 from seshat.agents.identification.registry import IdentificationAgentRegistry
 from seshat.agents.resolution.registry import ResolutionRegistry
-from seshat.blob_store.factory import get_blob_store
-from seshat.knowledge_store.factory import get_kb_store
 from seshat.pipeline.extraction.keyword_extractor import build_keyword_extractor
 from seshat.pipeline.extraction.node_retriever import NodeRetriever
 from seshat.pipeline.extraction.orchestrator import ExtractionOrchestrator
+from seshat.pipeline.ingestion.orchestrator import IngestionOrchestrator
 from seshat.pipeline.llm_factory import _build_llm, get_grounding_llm, get_identification_llm, get_resolution_llm
+from seshat.transcription.factory import get_transcriber
 from seshat.vector_store.factory import get_vector_store
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-
     from seshat.blob_store.s3_store import S3BlobStore
     from seshat.config.settings import SeshatConfig
     from seshat.knowledge_store.pg_store import PostgresKBStore
     from seshat.vector_store.base_store import AbstractVectorStore
-
-
-@asynccontextmanager
-async def build_orchestrator(seshat_config: SeshatConfig) -> AsyncIterator[ExtractionOrchestrator]:
-    vector_store = build_vector_store(seshat_config)
-
-    kb_store = get_kb_store(seshat_config)
-    await kb_store.connect()
-
-    blob_store = get_blob_store(seshat_config)
-    await blob_store.connect()
-
-    try:
-        yield _build_orchestrator(seshat_config, kb_store, vector_store, blob_store)
-    finally:
-        await kb_store.close()
-        await blob_store.close()
 
 
 def build_vector_store(seshat_config: SeshatConfig) -> AbstractVectorStore:
@@ -48,7 +28,7 @@ def build_vector_store(seshat_config: SeshatConfig) -> AbstractVectorStore:
     return get_vector_store(seshat_config, keyword_extractor=keyword_extractor)
 
 
-def _build_orchestrator(
+def build_extraction_orchestrator(
     config: SeshatConfig,
     kb_store: PostgresKBStore,
     vector_store: AbstractVectorStore,
@@ -89,3 +69,9 @@ def _build_orchestrator(
         blob_store=blob_store,
         grounding_agent=grounding_agent,
     )
+
+
+def build_ingestion_orchestrator(config: SeshatConfig, blob_store: S3BlobStore) -> IngestionOrchestrator:
+    transcriber = get_transcriber(config)
+    ingestion_orch = IngestionOrchestrator(transcriber, blob_store, config.transcription)
+    return ingestion_orch

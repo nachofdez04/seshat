@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 from seshat.agents.grounding import GroundingRetryExhaustedError
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import ConceptType, NodeStatus
 from seshat.models.nodes import (
     ConfidenceBreakdown,
@@ -121,15 +121,11 @@ class ExtractionOrchestrator:
         accumulate_to_fn=lambda self: self._job_tracker,
     )
     @track_latency_profile("resolution")
-    async def run_resolution(self, doc: TranscriptDocument, job_id: str) -> ResolutionResult:
-        approved = await self._kb.paginated_query(NodeFilter(job_id=job_id, status=NodeStatus.APPROVED))
-        logger.info("Resolution run: %d approved nodes retrieved", len(approved))
-        # TODO: resolution should run exactly once, after the job is fully settled:
-        # - auto_mode / all-above-threshold jobs: trigger immediately after identification (current path, correct).
-        # - jobs with PENDING_REVIEW nodes: defer until the reviewer has acted on every pending node
-        #   (job transitions AWAITING_REVIEW → REVIEWED), then run resolution once against all approved nodes.
-        # Running resolution on partial approval and re-running on each subsequent reviewer action causes
-        # the full O(4N) LLM fan-out to repeat for already-resolved nodes on every approval event.
+    async def run_resolution(self, job_id: str, *, approved: list[KBNode] | None = None) -> ResolutionResult:
+        if approved is None:
+            approved = await self._kb.paginated_query(NodeFilter(job_id=job_id, status=NodeStatus.APPROVED))
+
+        logger.info("Resolution run: %d approved nodes", len(approved))
 
         rag_sem = asyncio.Semaphore(self._retriever.max_concurrent_retrievals)
 

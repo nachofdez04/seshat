@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from seshat.models.enums import SearchMode
 
 if TYPE_CHECKING:
-    from seshat.models.api import NodeFilter, SearchResult
+    from seshat.models.api_graph import NodeFilter, SearchResult
 
 
 class AbstractVectorStore(ABC):

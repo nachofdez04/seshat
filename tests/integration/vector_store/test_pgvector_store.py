@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.embeddings import Embeddings
 
-from seshat.models.api import NodeFilter
+from seshat.models.api_graph import NodeFilter
 from seshat.models.enums import ConceptType, SearchMode
 from seshat.vector_store.pgvector_store import PGVectorStore
 from tests.integration.conftest import SKIP_IF_NO_EMBEDDINGS_API, SKIP_IF_NO_POSTGRES

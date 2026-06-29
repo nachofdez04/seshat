@@ -901,6 +901,7 @@ PostgresKBStore              AbstractVectorStore          S3BlobStore
 class NodeFilter(BaseModel):
     # All fields optional. Filters AND together; None = no constraint on that field.
     node_type: ConceptType | None = None
+    job_id: str | None = None             # filter by originating job ID
     team: str | None = None
     project: str | None = None
     domain: str | None = None
@@ -910,7 +911,9 @@ class NodeFilter(BaseModel):
     state: NodeState | None = None
     meeting_date_from: date | None = None   # inclusive lower bound on NodeMetadata.meeting_date
     meeting_date_to: date | None = None     # inclusive upper bound on NodeMetadata.meeting_date
-    # AbstractVectorStore.search() ignores state, meeting_date_from, meeting_date_to —
+    limit: int = 1000                       # max nodes to return (1–10 000); default 1000
+    offset: int = 0                         # pagination offset
+    # AbstractVectorStore.search() ignores state, meeting_date_from, meeting_date_to, limit, offset —
     # these fields are only applied by PostgresKBStore.query() (WHERE clauses on ops.kb_nodes).
 ```
 
@@ -1017,9 +1020,9 @@ One role (`seshat`) with read/write on both schemas. Connection string stored in
 
 Three operational tables in the `ops` schema, all managed by Alembic:
 
-**`ops.api_keys`** — one row per issued API key. Fields: `key_hash` (PK, bcrypt), `user_id`, `role` (`submitter | reviewer | operator`), `created_at`, `last_used_at`.
+**`ops.api_keys`** — one row per issued API key. Fields: `key_hash` (PK, bcrypt), `user_id`, `role` (`viewer | reviewer | operator | admin`), `created_at`, `last_used_at`.
 
-**`ops.jobs`** — authoritative job state. Fields: `job_id` (PK, UUID4), `user_id` (FK → api_keys.user_id), `status` (mirrors `JobStatus`), `idempotency_key` (UNIQUE nullable), `source_type`, `created_at`, `updated_at`, `error_payload` (JSONB, null until FAILED), `mlflow_run_id` (null while PENDING). Index on `(user_id, created_at)` for the per-user rate-limit query.
+**`ops.jobs`** — authoritative job state. Fields: `job_id` (PK, UUID4), `user_id` (FK → api_keys.user_id), `status` (mirrors `JobStatus`), `idempotency_key` (UNIQUE nullable), `source_type`, `created_at`, `updated_at`, `error_payload` (JSONB, null until FAILED), `mlflow_run_id` (null while PENDING), `meeting_date` (DATE NOT NULL), `submission` (JSONB NOT NULL — the full `JobSubmissionRequest` JSON), `raw_blob_key` (TEXT NOT NULL — S3 key of the raw uploaded file). Index on `(user_id, created_at)` for the per-user rate-limit query. The three `meeting_date`/`submission`/`raw_blob_key` columns are written atomically by `OpsLedger.set_job_submission()` immediately after the raw file is stored — they power both `GET /jobs/{id}/results` blob fallback and `POST /jobs/{id}/retry` without additional DB calls.
 
 **`ops.init_runs`** — coordination for `seshat init`. Fields: `job_id` (PK, UUID4), `status` (`running | done | failed`), `source_path`, `created_at`, `updated_at`.
 
@@ -1029,9 +1032,10 @@ Three operational tables in the `ops` schema, all managed by Alembic:
 
 | Role | Allowed actions |
 |------|----------------|
-| `submitter` | `POST /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/results`, `GET /graph`, `GET /graph/{node_id}`, `GET /graph/{node_id}/impact` |
-| `reviewer` | All `submitter` actions + `POST /jobs/{id}/approve` |
-| `operator` | All actions + `auto_mode=True` per-request override |
+| `viewer` | `GET /jobs/{id}`, `GET /jobs/{id}/results`, `GET /graph`, `GET /graph/{node_id}`, `GET /graph/{node_id}/impact`, `GET /health` |
+| `reviewer` | All `viewer` actions + `POST /jobs`, `POST /jobs/{id}/approve` |
+| `operator` | All `reviewer` actions + `POST /jobs/{id}/retry`, `POST /graph`, `PUT /graph/{node_id}`, `PUT /graph/{node_id}/override`, `POST /graph/bulk`, `POST /graph/nodes/resolve`, `auto_mode=True` per-request override |
+| `admin` | All `operator` actions + `DELETE /graph/{node_id}`, `DELETE /graph/bulk` |
 
 Key provisioning is a CLI command (`seshat create-api-key --user <id> --role <role>`) that prints the plaintext key once and stores the hash.
 
@@ -1040,24 +1044,31 @@ Key provisioning is a CLI command (`seshat create-api-key --user <id> --role <ro
 ### Endpoints
 
 ```
-POST /jobs                   Submit a new job (audio file or text); see Job Submission below
-GET  /jobs/{id}              Job status + per-stage progress; see Job Progress Contract below
-GET  /jobs/{id}/results      ExtractionResult (nodes + relationships); available from AWAITING_REVIEW onwards (also DONE); returns HTTP 409 if job is not yet in a reviewable or completed state
-POST /jobs/{id}/approve      Submit node review decisions
-POST /jobs/{id}/retry        Retry a FAILED job (operator only)
-GET  /graph                  Query KB nodes with filters
-GET  /graph/{node_id}        Node + neighbours
-GET  /graph/{node_id}/impact Traversal from node; see Impact Traversal below
-GET  /health                 Liveness + readiness; returns {status: "ok"|"degraded"|"down", components: {postgres: str, mlflow: str, localstack: str, worker: str}}
+POST /jobs                        Submit a new job (audio file or text); see Job Submission below
+GET  /jobs/{id}                   Job status + per-stage progress; see Job Progress Contract below
+GET  /jobs/{id}/results           ExtractionResult (nodes + relationships); available from AWAITING_REVIEW onwards (also DONE); returns HTTP 409 if not yet ready
+POST /jobs/{id}/approve           Submit node review decisions (reviewer+)
+POST /jobs/{id}/retry             Retry a FAILED job (operator only)
+GET  /graph                       Query KB nodes with filters
+GET  /graph/{node_id}             Node + neighbours (filters non-CURRENT neighbours)
+GET  /graph/{node_id}/impact      Traversal from node; see Impact Traversal below
+POST /graph                       Create a manual KB node (operator+)
+PUT  /graph/{node_id}             Update a manually-created node (operator+)
+PUT  /graph/{node_id}/override    Override any node regardless of ingestion source (operator+)
+POST /graph/bulk                  Bulk-create nodes with on_error semantics (operator+)
+POST /graph/nodes/resolve         Run resolution for manually-created APPROVED nodes (operator+)
+DELETE /graph/{node_id}           Delete a node, cascade by default (admin only)
+DELETE /graph/bulk                Bulk-delete nodes with on_error semantics (admin only)
+GET  /health                      Liveness + readiness; returns {status: "ok"|"degraded"|"down", components: {postgres: str, mlflow: str, localstack: str, worker: str}}
 ```
 
-`GET /graph` filter fields from `NodeFilter` are passed as query params: `?node_type=adr&team=platform&min_confidence=0.7&ingestion_source=job`. All fields are optional and AND-combined. Enum fields accept the lowercased `StrEnum` value.
+`GET /graph` filter fields from `NodeFilter` are passed as query params: `?node_type=adr&team=platform&min_confidence=0.7&ingestion_source=job&job_id=abc&limit=100&offset=0`. All fields are optional and AND-combined. Enum fields accept the lowercased `StrEnum` value. `limit` defaults to 1000 (max 10 000); `offset` enables pagination.
 
 ### Job Submission
 
 `POST /jobs` is a `multipart/form-data` request with two parts:
-- **`file`** — the audio or text payload (required for all `source_type` values; the text variant carries the caller's pre-formatted YAML/JSON file)
-- **`request`** — a `JobSubmissionRequest` JSON document:
+- **`file`** — the audio or text payload (required for all `source_type` values; the text variant carries the caller's pre-formatted YAML/JSON file). The file must have a file extension (e.g. `.yaml`, `.mp3`) — requests with an extensionless filename are rejected with HTTP 400.
+- **`body`** — a `JobSubmissionRequest` JSON document (form field named `body`, not `request`):
 
 ```python
 class JobSubmissionRequest(BaseModel):
@@ -1116,7 +1127,7 @@ class JobResponse(BaseModel):
 
 > **v2 — Server-Sent Events:** a `GET /jobs/{id}/stream` SSE endpoint is the natural upgrade for lower-latency progress. Deferred until the pipeline stage model is stable and the Streamlit UI is mature enough to warrant it.
 
-**`auto_mode` authorization and audit:** setting `auto_mode=True` requires the `operator` role — the `Depends` function rejects it for `submitter` and `reviewer`. Every job run with `auto_mode=True` is logged in MLflow with: requesting `user_id`, timestamp, job ID, and the full list of nodes that were auto-approved without human review. Auto-approved nodes have `approval_method=ApprovalMethod.AUTO`, `approved_by=user_id`, and `approved_at` set to the job submission timestamp.
+**`auto_mode` authorization and audit:** setting `auto_mode=True` requires the `operator` role — the `Depends` function rejects it for `viewer` and `reviewer`. Every job run with `auto_mode=True` is logged in MLflow with: requesting `user_id`, timestamp, job ID, and the full list of nodes that were auto-approved without human review. Auto-approved nodes have `approval_method=ApprovalMethod.AUTO`, `approved_by=user_id`, and `approved_at` set to the job submission timestamp.
 
 ### FAILED State and Recovery
 
@@ -1158,8 +1169,8 @@ If a cap is exceeded, the job transitions to `FAILED` with `recoverable=True`. T
 - **Scope:** per-call retry within the stage. A stage that exhausts retries on any single call transitions to `FAILED` with `recoverable=True`
 
 **Recoverable failures:**
-- Transcription transient error (API timeout, rate limit) — retried automatically; if exhausted, raw input file in blob store; user re-submits via `POST /jobs` with original `idempotency_key`
-- Extraction failure (LLM timeout, rate limit) — retried automatically per agent call; if exhausted, raw transcript in blob store; user re-submits via `POST /jobs` with original `idempotency_key`
+- Transcription transient error (API timeout, rate limit) — retried automatically; if exhausted, raw input file in blob store; user re-submits via `POST /jobs` with original `idempotency_key`, or operator retries via `POST /jobs/{id}/retry`
+- Extraction failure (LLM timeout, rate limit) — retried automatically per agent call; if exhausted, raw input in blob store; user re-submits via `POST /jobs` with original `idempotency_key`, or operator retries via `POST /jobs/{id}/retry`
 - Usage cap exceeded — operator raises cap in config, then retries via `POST /jobs/{id}/retry` (preserves job ID) or user re-submits via `POST /jobs`
 - Transaction failure during node write — Postgres atomicity ensures neither KB row nor vector embedding is written; retry re-runs the full job cleanly
 
@@ -1186,10 +1197,10 @@ If a cap is exceeded, the job transitions to `FAILED` with `recoverable=True`. T
 
 | Path | Role | Job ID | When to use |
 |---|---|---|---|
-| `POST /jobs` with original `idempotency_key` | Any submitter | New job ID | Normal client retry — the Streamlit retry button uses this path |
-| `POST /jobs/{id}/retry` | Operator only | Same job ID | Operator-initiated recovery where job ID continuity matters (e.g. audit trail, config change before re-run) |
+| `POST /jobs` with original `idempotency_key` | `reviewer`+ | New job ID | Normal client retry — the Streamlit retry button uses this path |
+| `POST /jobs/{id}/retry` | `operator` only | Same job ID | Operator-initiated recovery where job ID continuity matters (e.g. audit trail, config change before re-run) |
 
-The Streamlit UI retry button always uses `POST /jobs` with the original `idempotency_key` — it creates a new job ID and is available to all roles. `POST /jobs/{id}/retry` is an operator tool not surfaced in the UI. A `submitter` whose job fails retries via re-submission; they do not need operator access.
+The Streamlit UI retry button always uses `POST /jobs` with the original `idempotency_key` — it creates a new job ID. `POST /jobs/{id}/retry` is an operator tool not surfaced in the UI. `POST /jobs/{id}/retry` reads the raw input file and original submission from `ops.jobs` (`raw_blob_key` + `submission` columns) — no re-upload needed; returns HTTP 409 if those fields are missing (jobs submitted before migration 004).
 
 ### Review Flow
 
@@ -1199,16 +1210,13 @@ The Streamlit UI retry button always uses `POST /jobs` with the original `idempo
 
 ```python
 class KBNodeEdit(BaseModel):
-    title: str | None = None
-    description: str | None = None
+    title: str                           # required; min_length=1
+    description: str                     # required; min_length=1
     # metadata fields the pipeline does not extract; operators may fill these in
     participants: list[str] | None = None
     team: str | None = None
     project: str | None = None
     domain: str | None = None
-
-    # model_validator: at least one field must be non-None
-    # (an all-None edit is a no-op and rejected with a validation error)
 
 class NodeDecision(BaseModel):
     node_id: str
@@ -1230,7 +1238,9 @@ class ManualNodeCreate(BaseModel):
     team: str | None = None
     project: str | None = None
     domain: str | None = None
+    meeting_date: date | None = None       # meeting this node was extracted from
     concept_fields: dict[str, Any] | None = None   # type-specific fields (assignee, due, etc.)
+    relationships: list[RelationshipInput] | None = None   # optional initial relationships to write alongside the node
 
     # model_validator: source_quote and blob_key are co-required —
     # providing one without the other is a validation error
@@ -1312,13 +1322,45 @@ Answers "what would break if this node changed?" — inbound BFS from `node_id`,
 - `rel_types` — comma-separated `RelationshipType` values to follow during traversal; default: all types
 - `min_confidence` — filters traversed nodes by `KBNode.confidence >= min_confidence`; default 0.0
 
-Role requirement: `submitter` (read-only, same as `GET /graph/{node_id}`).
+Role requirement: `viewer` (read-only, same as `GET /graph/{node_id}`).
 
 `get_neighbours()` is called with `direction="inbound"` at each BFS level. `traversal_depth` on each returned node is the hop count from the seed node. Example: if Decision-A `DEPENDS_ON` Decision-B, traversing inbound from Decision-B returns Decision-A at depth=1 — the node that would break if Decision-B changes.
 
+#### `POST /graph/nodes/resolve` — trigger resolution for manually-created nodes
+
+```
+POST /graph/nodes/resolve
+```
+
+Runs relationship resolution for a set of manually-created KB nodes that have already been approved but never had their relationships resolved (because they were created outside the extraction pipeline).
+
+Request body: `ResolveRequest`:
+
+```python
+class ResolveRequest(BaseModel):
+    node_ids: list[UUID] = Field(..., min_length=1, max_length=50)
+```
+
+Response: `ResolveResponse`:
+
+```python
+class ResolveResponse(BaseModel):
+    relationships_created: int
+```
+
+**Validation:**
+- 404 if any `node_id` is not found in the KB.
+- 422 if any node is not in `APPROVED` status.
+
+**Processing:** delegates to `ManualIngestionService.resolve()`, which calls `ExtractionOrchestrator.run_resolution(job_id=f"manual_resolve_{uuid4()}", approved=nodes)` and persists the resulting `KBRelationship` objects via `kb_store.write_relationship()`.
+
+Role requirement: `operator`.
+
 ### Reviewer Data Contract
 
-`GET /jobs/{id}/results` returns `ExtractionResult`. The Streamlit review screen is the only consumer of this endpoint for MVP — the data contract between the API and the UI is:
+`GET /jobs/{id}/results` returns `ExtractionResult`. The result is served from the in-memory `result_store` dict while the server is running. After a server restart, the endpoint falls back to the curated extraction blob (`blob_store.curated_extraction_key(meeting_date, job_id)`) written by `PipelineRunner.run_post_approval()` at the start of the WRITING stage — this blob is the durable source of truth for completed jobs. Returns HTTP 409 if the job is not yet in a reviewable or completed state; HTTP 404 if neither in-memory result nor blob is available.
+
+The Streamlit review screen is the only consumer of this endpoint for MVP — the data contract between the API and the UI is:
 
 | Field | Source | Used by |
 |---|---|---|
