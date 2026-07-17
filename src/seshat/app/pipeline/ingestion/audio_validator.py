@@ -5,11 +5,19 @@ class AudioValidationError(Exception):
     pass
 
 
+class FileTooLargeError(AudioValidationError):
+    pass
+
+
+class UnsupportedFormatError(AudioValidationError):
+    pass
+
+
 class AudioValidator:
     @staticmethod
     def check_size(actual_bytes: int, max_bytes: int) -> None:
         if actual_bytes > max_bytes:
-            raise AudioValidationError(f"File size {actual_bytes} exceeds maximum {max_bytes} bytes")
+            raise FileTooLargeError(f"File size {actual_bytes} exceeds maximum {max_bytes} bytes")
 
     @staticmethod
     def check_duration(actual_seconds: float, max_seconds: int) -> None:
@@ -31,12 +39,12 @@ class AudioValidator:
         elif len(header) >= 11 and header[4:11] == b"ftypM4A":
             inferred = "m4a"
         else:
-            raise AudioValidationError(f"Unsupported audio format. Magic bytes: {header[:8].hex()}")
+            raise UnsupportedFormatError(f"Unsupported audio format. Magic bytes: {header[:8].hex()}")
 
         if alleged_ext is not None:
             normalised = alleged_ext.lstrip(".").lower()
             if normalised != inferred:
-                raise AudioValidationError(
+                raise UnsupportedFormatError(
                     f"Extension mismatch: file claims {normalised!r} but magic bytes indicate {inferred!r}"
                 )
 

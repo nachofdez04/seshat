@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, 
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from seshat.app.pipeline.ingestion.audio_validator import (
+    AudioValidationError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
+from seshat.app.pipeline.ingestion.text_validator import TextValidationError
 from seshat.app.platform.api.dependencies import CurrentUser, get_app_state, require_role
 from seshat.app.platform.api.state import AppState
 from seshat.app.services.job import (
@@ -65,6 +71,9 @@ async def list_jobs(
         401: {"description": "Missing or invalid API key"},
         403: {"description": "Insufficient role or overrides require operator"},
         409: {"description": "Content already ingested (use force=true to re-ingest)"},
+        413: {"description": "Uploaded file exceeds the maximum allowed size"},
+        415: {"description": "Unsupported or mismatched audio format"},
+        422: {"description": "Malformed request body or invalid input file"},
         429: {"description": "Rate limit exceeded (per-user or global concurrency cap)"},
     },
 )
@@ -95,6 +104,12 @@ async def submit_job(
         return await state.job_service.submit(file_bytes, file.filename, submission, user.user_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FileTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
+    except UnsupportedFormatError as exc:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
+    except (AudioValidationError, TextValidationError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except RateLimitExceededError as exc:
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

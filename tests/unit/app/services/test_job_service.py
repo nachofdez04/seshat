@@ -9,6 +9,7 @@ from uuid import UUID
 import asyncpg
 import pytest
 
+from seshat.app.pipeline.ingestion.text_validator import TextValidationError
 from seshat.app.platform.worker.queue import AsyncioTaskQueue
 from seshat.app.services.job import (
     ContentAlreadyIngestedError,
@@ -547,6 +548,15 @@ class TestSubmitRateLimit:
 
         with pytest.raises(ValueError, match="extension"):
             await svc.submit(b"data", "noextension", _make_submission(), "alice")
+
+        svc._ops.create_job.assert_not_called()
+
+    async def test_validation_failure_blocks_job_creation(self):
+        svc, ingestion, *_ = _make_service()
+        ingestion.validate.side_effect = TextValidationError("Invalid YAML")
+
+        with pytest.raises(TextValidationError, match="Invalid YAML"):
+            await svc.submit(b"data", "file.yaml", _make_submission(), "alice")
 
         svc._ops.create_job.assert_not_called()
 

@@ -5,6 +5,12 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from seshat.app.pipeline.ingestion.audio_validator import (
+    AudioValidationError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
+from seshat.app.pipeline.ingestion.text_validator import TextValidationError
 from seshat.app.services.job import (
     JobNotFoundError,
     JobStateError,
@@ -128,6 +134,38 @@ class TestSubmitJob:
         async with api_client(_make_app_state(), make_current_user(role=UserRole.OPERATOR)) as ac:
             resp = await ac.post("/jobs", files={"file": ("input.yaml", b"data", "text/plain")}, data={"body": body})
         assert resp.status_code == 403
+
+    async def test_file_too_large_returns_413(self, api_client):
+        state = _make_app_state()
+        state.job_service.submit = AsyncMock(side_effect=FileTooLargeError("File size 999 exceeds maximum 10 bytes"))
+        body = json.dumps({"source_type": "audio", "metadata": {"meeting_date": "2026-01-15"}})
+        async with api_client(state, make_current_user()) as ac:
+            resp = await ac.post("/jobs", files={"file": ("rec.mp3", b"data", "audio/mpeg")}, data={"body": body})
+        assert resp.status_code == 413
+
+    async def test_unsupported_format_returns_415(self, api_client):
+        state = _make_app_state()
+        state.job_service.submit = AsyncMock(side_effect=UnsupportedFormatError("Extension mismatch"))
+        body = json.dumps({"source_type": "audio", "metadata": {"meeting_date": "2026-01-15"}})
+        async with api_client(state, make_current_user()) as ac:
+            resp = await ac.post("/jobs", files={"file": ("rec.mp3", b"data", "audio/mpeg")}, data={"body": body})
+        assert resp.status_code == 415
+
+    async def test_invalid_audio_returns_422(self, api_client):
+        state = _make_app_state()
+        state.job_service.submit = AsyncMock(side_effect=AudioValidationError("Unable to determine audio duration"))
+        body = json.dumps({"source_type": "audio", "metadata": {"meeting_date": "2026-01-15"}})
+        async with api_client(state, make_current_user()) as ac:
+            resp = await ac.post("/jobs", files={"file": ("rec.mp3", b"data", "audio/mpeg")}, data={"body": body})
+        assert resp.status_code == 422
+
+    async def test_invalid_text_returns_422(self, api_client):
+        state = _make_app_state()
+        state.job_service.submit = AsyncMock(side_effect=TextValidationError("Invalid YAML"))
+        body = json.dumps({"source_type": "text", "metadata": {"meeting_date": "2026-01-15"}})
+        async with api_client(state, make_current_user()) as ac:
+            resp = await ac.post("/jobs", files={"file": ("input.yaml", b"data", "text/plain")}, data={"body": body})
+        assert resp.status_code == 422
 
 
 class TestListJobs:

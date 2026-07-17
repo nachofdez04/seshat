@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
-from seshat.app.pipeline.ingestion.audio_validator import AudioValidationError
+from seshat.app.pipeline.ingestion.audio_validator import (
+    AudioValidationError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
 from seshat.app.pipeline.ingestion.orchestrator import IngestionOrchestrator
 from seshat.app.pipeline.ingestion.text_validator import TextValidationError
 from seshat.core.config.settings import TranscriptionConfig
@@ -53,11 +57,6 @@ class TestIngestionOrchestratorAudio:
                 short_audio_bytes, date(2026, 4, 21), "job-mismatch", metadata, filename="recording.wav"
             )
 
-    async def test_ingest_oversized_raises(self, mock_transcriber, blob_store, short_audio_bytes):
-        orchestrator = _build_orchestrator(mock_transcriber, blob_store, TranscriptionConfig(max_file_bytes=10))
-        with pytest.raises(AudioValidationError, match="exceeds maximum"):
-            await orchestrator.ingest_audio(short_audio_bytes, date(2026, 4, 21), "job-oversized", MagicMock())
-
 
 class TestIngestionOrchestratorText:
     async def test_ingest_valid_yaml(self, orchestrator):
@@ -77,3 +76,29 @@ class TestIngestionOrchestratorText:
         raw = yaml.dump({"date": "2026-04-21", "content": "Notes."}).encode()
         with pytest.raises(TextValidationError, match="mismatch"):
             await orchestrator.ingest_text(raw, date(2026, 1, 1), "job-text-2", "meeting.yaml")
+
+
+class TestIngestionOrchestratorValidate:
+    # async def (with no internal await): sync test defs bypass pytest-asyncio's
+    # loop-factory hook entirely, so their async fixtures fall back to the platform
+    # default loop (ProactorEventLoop on Windows), which psycopg async rejects.
+    async def test_valid_audio_passes(self, orchestrator, short_audio_bytes):
+        orchestrator.validate(short_audio_bytes, "audio", date(2026, 4, 21), "recording.mp3")
+
+    async def test_oversized_audio_raises_file_too_large(self, mock_transcriber, blob_store, short_audio_bytes):
+        orchestrator = _build_orchestrator(mock_transcriber, blob_store, TranscriptionConfig(max_file_bytes=10))
+        with pytest.raises(FileTooLargeError, match="exceeds maximum"):
+            orchestrator.validate(short_audio_bytes, "audio", date(2026, 4, 21), "recording.mp3")
+
+    async def test_mismatched_extension_raises_unsupported_format(self, orchestrator, short_audio_bytes):
+        with pytest.raises(UnsupportedFormatError, match="mismatch"):
+            orchestrator.validate(short_audio_bytes, "audio", date(2026, 4, 21), "recording.wav")
+
+    async def test_valid_text_passes(self, orchestrator):
+        raw = yaml.dump({"date": "2026-04-21", "content": "Notes."}).encode()
+        orchestrator.validate(raw, "text", date(2026, 4, 21), "meeting.yaml")
+
+    async def test_text_meeting_date_mismatch_raises(self, orchestrator):
+        raw = yaml.dump({"date": "2026-04-21", "content": "Notes."}).encode()
+        with pytest.raises(TextValidationError, match="mismatch"):
+            orchestrator.validate(raw, "text", date(2026, 1, 1), "meeting.yaml")

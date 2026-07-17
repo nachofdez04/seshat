@@ -29,6 +29,22 @@ class IngestionOrchestrator:
         self._blob = blob_repo
         self._config = transcription_config
 
+    def validate(self, file_bytes: bytes, source_type: str, meeting_date: date, filename: str | None) -> None:
+        """Validate input at the API boundary, before a job is created.
+
+        Raises AudioValidationError / TextValidationError on invalid input. Runs no
+        side effects (no transcription, no blob writes) so the caller can reject the
+        submission synchronously.
+        """
+        if source_type == "audio":
+            self._validate_and_get_audio_extension(file_bytes, filename)
+        else:
+            parsed = TextValidator.parse(file_bytes, filename or "input.yaml")
+            if parsed.meeting_date != meeting_date:
+                raise TextValidationError(
+                    f"meeting_date mismatch: submission says {meeting_date}, file says {parsed.meeting_date}"
+                )
+
     @track_token_budget("ingestion", uncapped=True)
     async def ingest_audio(
         self,
@@ -38,7 +54,9 @@ class IngestionOrchestrator:
         metadata: TranscriptMetadata,
         filename: str | None = None,
     ) -> TranscriptDocument:
-        ext = self._validate_and_get_audio_extension(audio_bytes, filename)
+        # Bytes reaching the worker were already validated at submit time; only the
+        # extension (from magic bytes) is needed here to drive transcription.
+        ext = self._get_audio_extension(audio_bytes, filename)
 
         transcript_text = await self._transcription.transcribe(audio_bytes, extension=ext)
 
@@ -86,6 +104,9 @@ class IngestionOrchestrator:
         audio_duration = AudioValidator.get_duration_seconds(audio_bytes)
         AudioValidator.check_duration(audio_duration, self._config.max_audio_seconds)
 
+        return self._get_audio_extension(audio_bytes, filename)
+
+    @staticmethod
+    def _get_audio_extension(audio_bytes: bytes, filename: str | None) -> str:
         alleged_ext = filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else None
-        ext = AudioValidator.validate_magic_bytes(audio_bytes, alleged_ext=alleged_ext)
-        return ext
+        return AudioValidator.validate_magic_bytes(audio_bytes, alleged_ext=alleged_ext)

@@ -84,8 +84,9 @@ class JobService:
         submission: JobSubmissionRequest,
         user_id: str,
     ) -> JobSubmitResponse:
-        if submission.idempotency_key:
-            existing = await self._ops.find_job_by_idempotency_key(submission.idempotency_key)
+        idempotency_key = submission.idempotency_key
+        if idempotency_key:
+            existing = await self._ops.find_job_by_idempotency_key(idempotency_key)
             if existing and existing["status"] != JobStatus.FAILED:
                 return JobSubmitResponse(job_id=existing["job_id"])
 
@@ -98,6 +99,10 @@ class JobService:
         if not filename or "." not in filename:
             raise ValueError("Uploaded file must have an extension.")
 
+        source_type = submission.source_type
+        meeting_date = submission.metadata.meeting_date
+        self._ingestion.validate(file_bytes, source_type, meeting_date, filename)
+
         content_hash = hashlib.sha256(file_bytes).hexdigest()
         existing_job_id = await self._ops.find_job_by_content_hash(content_hash)
         if existing_job_id:
@@ -109,7 +114,6 @@ class JobService:
 
         job_id = str(uuid.uuid4())
         now = datetime.now(UTC)
-        meeting_date = submission.metadata.meeting_date
         ext = filename.rsplit(".", 1)[-1]
         raw_key = self._blob.raw_input_key(meeting_date, job_id, ext)
         submission_json = submission.model_dump_json()
@@ -121,8 +125,8 @@ class JobService:
             await self._ops.create_job(
                 job_id,
                 user_id,
-                submission.source_type,
-                submission.idempotency_key,
+                source_type,
+                idempotency_key,
                 now,
                 meeting_date,
                 submission_json,
@@ -130,8 +134,8 @@ class JobService:
                 content_hash,
             )
         except asyncpg.UniqueViolationError:
-            if submission.idempotency_key:
-                existing = await self._ops.find_job_by_idempotency_key(submission.idempotency_key)
+            if idempotency_key:
+                existing = await self._ops.find_job_by_idempotency_key(idempotency_key)
                 if existing:
                     return JobSubmitResponse(job_id=existing["job_id"])
             raise
