@@ -17,23 +17,26 @@ def _make_retriever(
     neighbour_nodes=None,
     top_k=3,
     max_context_tokens=None,
-    search_mode=None,
     reranker=None,
 ):
-
     rag_kwargs: dict[str, Any] = {"top_k": top_k}
     if max_context_tokens is not None:
         rag_kwargs["max_context_tokens"] = max_context_tokens
-    if search_mode is not None:
-        rag_kwargs["search_mode"] = search_mode
     rag_config = RAGConfig(**rag_kwargs)
 
     node_repo = MagicMock()
-    node_repo.search = AsyncMock(return_value=search_results or [])
     node_repo.get_node = AsyncMock(side_effect=lambda nid: next((n for n in (kb_nodes or []) if n.id == nid), None))
     node_repo.get_neighbours = AsyncMock(return_value=neighbour_nodes or [])
 
-    return NodeRetriever(rag_config=rag_config, node_repo=node_repo, reranker=reranker)
+    search_engine = MagicMock()
+    search_engine.search = AsyncMock(return_value=search_results or [])
+
+    return NodeRetriever(
+        rag_config=rag_config,
+        node_repo=node_repo,
+        search_engine=search_engine,
+        reranker=reranker,
+    )
 
 
 class TestNodeRetriever:
@@ -75,12 +78,11 @@ class TestNodeRetriever:
 
         await retriever.retrieve(source, node_filter=override)
 
-        call_kwargs = retriever._repo.search.call_args.kwargs
+        call_kwargs = retriever._search_engine.search.call_args.kwargs
         node_filter: NodeFilter = call_kwargs["node_filter"]
         assert node_filter.status == NodeStatus.PENDING_REVIEW
 
     async def test_orphan_vector_result_is_silently_skipped(self):
-        # vector store returns a hit, but the KB has no matching node
         orphan_id = str(make_node("orphan").id)
         search_results = [SearchResult(node_id=orphan_id, score=0.9)]
         retriever = _make_retriever(search_results=search_results, kb_nodes=[])
@@ -96,7 +98,7 @@ class TestNodeRetriever:
 
         await retriever.retrieve(source, exclude_job_id="job-42")
 
-        call_kwargs = retriever._repo.search.call_args.kwargs
+        call_kwargs = retriever._search_engine.search.call_args.kwargs
         assert call_kwargs["exclude_job_id"] == "job-42"
 
     async def test_fetch_loop_stops_at_cap_without_fetching_remaining_results(self):
@@ -157,7 +159,7 @@ class TestNodeRetriever:
 
         await retriever.retrieve(source, node_filter=override_filter)
 
-        call_kwargs = retriever._repo.search.call_args.kwargs
+        call_kwargs = retriever._search_engine.search.call_args.kwargs
         node_filter = call_kwargs["node_filter"]
         assert node_filter.node_type == expected_type
 
@@ -242,50 +244,32 @@ class TestNodeRetriever:
         ids = [n.id for n in result]
         assert len(ids) == len(set(ids))
 
-    async def test_search_mode_forwarded_to_vector_search(self):
-        from seshat.core.models.enums import SearchMode
+    async def test_search_engine_error_propagates(self):
+        search_engine = MagicMock()
+        search_engine.search = AsyncMock(side_effect=RuntimeError("search failed"))
+        retriever = NodeRetriever(
+            rag_config=RAGConfig(top_k=3),
+            node_repo=MagicMock(),
+            search_engine=search_engine,
+        )
 
-        retriever = _make_retriever(search_mode=SearchMode.HYBRID)
-        await retriever.retrieve(make_node("n1"))
-        call_kwargs = retriever._repo.search.call_args.kwargs
-        assert call_kwargs["mode"] == SearchMode.HYBRID
+        with pytest.raises(RuntimeError, match="search failed"):
+            await retriever.retrieve(make_node("n1"))
 
-    async def test_search_mode_defaults_semantic(self):
-        from seshat.core.models.enums import SearchMode
-
-        retriever = _make_retriever()
-        await retriever.retrieve(make_node("n1"))
-        call_kwargs = retriever._repo.search.call_args.kwargs
-        assert call_kwargs["mode"] == SearchMode.SEMANTIC
-
-    async def test_reranker_called_with_query_and_results(self):
+    async def test_reranker_called_with_query_and_kb_nodes(self):
         candidate = make_node("n2", title="Use Kafka")
         search_results = [SearchResult(node_id=str(candidate.id), score=0.9)]
         reranker = MagicMock()
-        reranker.rerank = AsyncMock(return_value=search_results)
+        reranker.rerank = AsyncMock(return_value=[candidate])
         retriever = _make_retriever(search_results=search_results, kb_nodes=[candidate], reranker=reranker)
 
         source = make_node("n1", title="Kafka consumer lag")
         await retriever.retrieve(source)
 
         reranker.rerank.assert_awaited_once()
-        called_query = reranker.rerank.call_args.args[0]
+        called_query, called_nodes = reranker.rerank.call_args.args
         assert "kafka" in called_query.lower()
-
-    async def test_vector_search_retries_on_transient_failure(self):
-        candidate = make_node("n2", title="Use Redis")
-        search_results = [SearchResult(node_id=str(candidate.id), score=0.9)]
-
-        node_repo = MagicMock()
-        node_repo.search = AsyncMock(side_effect=[RuntimeError("transient"), search_results])
-        node_repo.get_node = AsyncMock(return_value=candidate)
-        node_repo.get_neighbours = AsyncMock(return_value=[])
-        retriever = NodeRetriever(rag_config=RAGConfig(top_k=3), node_repo=node_repo, reranker=None)
-
-        result = await retriever.retrieve(make_node("n1"))
-
-        assert node_repo.search.call_count == 2
-        assert any(n.id == candidate.id for n in result)
+        assert called_nodes == [candidate]
 
     async def test_reranker_raises_propagates(self):
         candidate = make_node("n2", title="Use Redis")
@@ -298,19 +282,15 @@ class TestNodeRetriever:
         with pytest.raises(RuntimeError, match="reranker down"):
             await retriever.retrieve(make_node("n1"))
 
-    async def test_reranker_result_used_by_fetch_direct_hits(self):
+    async def test_reranker_reorders_direct_hits(self):
         n2 = make_node("n2", title="Kafka consumer")
         n3 = make_node("n3", title="Kafka topic")
         search_results = [
             SearchResult(node_id=str(n2.id), score=0.9),
             SearchResult(node_id=str(n3.id), score=0.8),
         ]
-        reranked = [
-            SearchResult(node_id=str(n3.id), score=0.95),
-            SearchResult(node_id=str(n2.id), score=0.85),
-        ]
         reranker = MagicMock()
-        reranker.rerank = AsyncMock(return_value=reranked)
+        reranker.rerank = AsyncMock(return_value=[n3, n2])
         retriever = _make_retriever(
             search_results=search_results,
             kb_nodes=[n2, n3],

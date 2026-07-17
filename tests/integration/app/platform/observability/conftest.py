@@ -3,7 +3,7 @@ from langchain_openai import AzureOpenAIEmbeddings
 
 from seshat.app.platform.observability.usage_tracker import TrackingEmbeddings
 from seshat.core.config.settings import IdentificationLLMConfig
-from tests.integration._env import _openai_reachable
+from tests.integration._probes import _openai_reachable
 from tests.integration.helpers import cheap_identification_config
 
 

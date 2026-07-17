@@ -6,21 +6,22 @@ import sys
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from aiobotocore.session import get_session
 from botocore.exceptions import ClientError
-from dotenv import load_dotenv
 
 from seshat.app.repositories.blob_repository import BlobRepository
 from seshat.core.config.settings import BlobStoreConfig
 from seshat.infra.blob_store.s3_store import S3BlobStore
-from tests.integration._env import (
+from tests.integration._probes import (
     _anthropic_reachable,
     _assemblyai_reachable,
+    _cohere_reachable,
+    _openai_direct_reachable,
     _openai_reachable,
+    _voyage_reachable,
 )
 from tests.integration.helpers import make_cheap_llm
-
-load_dotenv()
 
 _AUDIO_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "audio"
 
@@ -56,6 +57,16 @@ SKIP_IF_NO_LLM_API = pytest.mark.skipif(
     ),
 )
 
+SKIP_IF_NO_COHERE_API = pytest.mark.skipif(
+    not _cohere_reachable(),
+    reason="No Cohere API key — set COHERE_API_KEY",
+)
+
+SKIP_IF_NO_VOYAGE_API = pytest.mark.skipif(
+    not _voyage_reachable(),
+    reason="No Voyage API key — set VOYAGE_API_KEY",
+)
+
 SKIP_IF_NO_POSTGRES = pytest.mark.skipif(
     not _port_open("localhost", _PG_PORT),
     reason="Postgres not reachable — run: docker compose up -d postgres",
@@ -81,8 +92,13 @@ SKIP_IF_NO_OPENAI_API = pytest.mark.skipif(
     reason="OpenAI API not reachable — OPENAI_API_KEY not set or network issue",
 )
 
+SKIP_IF_NO_OPENAI_TRANSCRIPTION_API = pytest.mark.skipif(
+    not _openai_direct_reachable(),
+    reason="OpenAI transcription API not reachable — OPENAI_API_KEY not set or api.openai.com unreachable",
+)
 
-@pytest.fixture
+
+@pytest_asyncio.fixture(loop_scope="function")
 async def vector_store(pg_test_url):
     from seshat.core.config.settings import SecretsConfig, SeshatConfig, VectorStoreConfig
     from seshat.core.models.enums import SecretsProvider
@@ -109,7 +125,7 @@ def cheap_llm():
     return make_cheap_llm()
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def pg_test_url():
     """Create a throw-away seshat_test database, yield its URL, then drop it.
 
@@ -163,7 +179,7 @@ def _run_alembric_migrations(database_url: str):
     subprocess.run(["uv", "run", "alembic", "upgrade", "head"], env=env, check=True)
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def localstack_secretsmanager_url():
     """Create a throw-away Secrets Manager in LocalStack, yield the endpoint URL, then delete it.
 
@@ -173,7 +189,7 @@ async def localstack_secretsmanager_url():
     return _get_localstack_url()
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def localstack_s3_url():
     """Create a throw-away S3 bucket in LocalStack, yield the endpoint URL, then delete it.
 
@@ -213,7 +229,7 @@ def short_audio_bytes(short_audio_path) -> bytes:
     return short_audio_path.read_bytes()
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def blob_store(localstack_s3_url):
     config = BlobStoreConfig(
         bucket=LOCALSTACK_TEST_BUCKET,

@@ -12,7 +12,6 @@ import pandas as pd
 from seshat.app.platform.observability.usage_tracker import track_eval_usage
 from seshat.core.models.api_graph import NodeFilter
 from seshat.core.models.enums import SearchMode
-from seshat.core.utils.hashing import fingerprint
 from seshat.core.utils.log import get_logger, set_task_num
 from seshat.core.utils.retry import async_retry
 from seshat.eval.cache import build_cache_fp, read_or_run, sweep_stale_entries
@@ -27,7 +26,9 @@ if TYPE_CHECKING:
 
     from mlflow.genai.evaluation.entities import EvaluationResult
 
+    from seshat.app.pipeline.extraction.search_engine import SearchEngine
     from seshat.core.config.eval_settings import EvalConfig
+    from seshat.core.config.settings import RAGConfig
     from seshat.core.models.nodes import KBNode
     from seshat.eval.corpus_tags import CorpusTagFilter
     from seshat.eval.models import GateResult, RetrievalCorpusExample, RetrievalCorpusNode
@@ -46,16 +47,17 @@ class RetrievalEvalRunner:
 
     def __init__(
         self,
+        search_engine: SearchEngine,
         vector_store: AbstractVectorStore,
         config: EvalConfig,
-        search_mode: SearchMode = SearchMode.SEMANTIC,
-        extractor_model_id: str | None = None,
+        rag_config: RAGConfig,
     ) -> None:
+        self._search_engine = search_engine
         self._vs = vector_store
         self._config = config
-        self._search_mode = search_mode
-        self._extractor_model_id = extractor_model_id or "none"
-        self._search_mode_hash = fingerprint(f"{search_mode.value}:{self._extractor_model_id}")
+        self._rag_config = rag_config
+        self._search_mode = rag_config.search_mode
+        self._search_mode_hash = search_engine.fingerprint()
 
     async def run(self, tag_filter: CorpusTagFilter | None = None, model_id: str | None = None) -> GateResult:
         examples = load_corpus(self._config.retrieval_corpus_dir, tag_filter=tag_filter)
@@ -100,9 +102,29 @@ class RetrievalEvalRunner:
             cache_hits=cache_hits,
             total_predictions=len(examples),
             extra_params={
-                "retrieval.search_mode": self._search_mode.value,
+                "retrieval.search_mode": self._search_mode,
                 "retrieval.score_threshold": str(threshold),
-                "retrieval.keyword_extraction_llm": self._extractor_model_id,
+                "retrieval.keyword_extraction_provider": (
+                    self._rag_config.keyword_extraction_llm.provider
+                    if self._rag_config.keyword_extraction_llm
+                    else "none"
+                ),
+                "retrieval.keyword_extraction_model": (
+                    self._rag_config.keyword_extraction_llm.model if self._rag_config.keyword_extraction_llm else "none"
+                ),
+                "retrieval.multi_query_model": (
+                    self._rag_config.multi_query.llm.model if self._rag_config.multi_query else "none"
+                ),
+                "retrieval.multi_query_llm_provider": (
+                    self._rag_config.multi_query.llm.provider if self._rag_config.multi_query else "none"
+                ),
+                "retrieval.multi_query_num_variants": str(
+                    self._rag_config.multi_query.num_variants if self._rag_config.multi_query else 0
+                ),
+                "retrieval.reranker_provider": (
+                    self._rag_config.reranker.provider if self._rag_config.reranker else "none"
+                ),
+                "retrieval.reranker_model": (self._rag_config.reranker.model if self._rag_config.reranker else "none"),
             },
         )
 
@@ -156,7 +178,7 @@ class RetrievalEvalRunner:
         # Exception: for hybrid, the calibrated semantic threshold is used as a dense
         # pre-filter before RRF fusion, matching production behaviour (where
         # RAG__MIN_SIMILARITY_SCORE filters the dense leg before fusion). This embeds
-        # the threshold in the cached result
+        # the threshold in the cached result.
         # NOTE: the user must clear the hybrid cache if the semantic threshold is recalibrated.
         # NOTE: If EVAL__RETRIEVAL_SCORE_THRESHOLDS__SEMANTIC is absent, .get() returns None
         # and no dense pre-filter is applied (as with keyword and semantic).
@@ -165,8 +187,8 @@ class RetrievalEvalRunner:
             if self._search_mode == SearchMode.HYBRID
             else None
         )
-        return await self._vs.search(
-            query, top_k=top_k, node_filter=node_filter, score_threshold=score_threshold, mode=self._search_mode
+        return await self._search_engine.search(
+            query, node_filter=node_filter, exclude_job_id=None, top_k=top_k, score_threshold=score_threshold
         )
 
     async def _seed_candidates(self, nodes: list[KBNode]) -> bool:
@@ -183,9 +205,9 @@ class RetrievalEvalRunner:
             metadata = {"node_type": node.type.value, "confidence": node.confidence}
             try:
                 await self._vs.upsert(str(node.id), text=node.vector_store_text, metadata=metadata)
-            except Exception:
+            except Exception as exc:
                 failures += 1
-                logger.warning("Failed to seed node %s; eval scores for this example will be inaccurate", node.id)
+                logger.warning("Failed to seed node %s: %s: %s", node.id, type(exc).__name__, exc)
 
         await asyncio.gather(*(_upsert(node) for node in nodes))
 

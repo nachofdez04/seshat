@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from seshat.app.platform.observability.usage_tracker import track_eval_usage
-from seshat.core.models.enums import SearchMode
-from seshat.core.utils.hashing import fingerprint
 from seshat.eval.cache import build_cache_fp, read_or_run, sweep_stale_entries
 from seshat.eval.calibration.models import RetrievalSweepPoint, RetrievalSweepResult
 from seshat.eval.models import RetrievalScoredResult
@@ -14,7 +12,9 @@ from seshat.eval.retrieval.corpus_loader import load_corpus
 from seshat.eval.retrieval.scorers import TOP_K
 
 if TYPE_CHECKING:
+    from seshat.app.pipeline.extraction.search_engine import SearchEngine
     from seshat.core.config.eval_settings import EvalConfig
+    from seshat.core.config.settings import RAGConfig
     from seshat.infra.vector_store.base_store import AbstractVectorStore
 
 type _Slug = str
@@ -26,17 +26,18 @@ type _Cache = dict[str, _CacheEntry]  # corpus_id → entry
 class RetrievalMetaScorer:
     def __init__(
         self,
+        search_engine: SearchEngine,
         vector_store: AbstractVectorStore,
         config: EvalConfig,
-        search_mode: SearchMode = SearchMode.SEMANTIC,
+        rag_config: RAGConfig,
         step: float = 0.005,
-        extractor_model_id: str | None = None,
     ) -> None:
+        self._search_engine = search_engine
         self._vs = vector_store
         self._config = config
-        self._search_mode = search_mode
-        self._extractor_model_id = extractor_model_id or "none"
-        self._search_mode_hash = fingerprint(f"{search_mode.value}:{self._extractor_model_id}")
+        self._rag_config = rag_config
+        self._search_mode = rag_config.search_mode
+        self._search_mode_hash = search_engine.fingerprint()
         self._step = step
 
     async def sweep_threshold(self) -> RetrievalSweepResult:
@@ -77,7 +78,10 @@ class RetrievalMetaScorer:
 
         examples = load_corpus(self._config.retrieval_corpus_dir)
         runner = RetrievalEvalRunner(
-            self._vs, self._config, search_mode=self._search_mode, extractor_model_id=self._extractor_model_id
+            search_engine=self._search_engine,
+            vector_store=self._vs,
+            config=self._config,
+            rag_config=self._rag_config,
         )
         cache: _Cache = {}
         touched = set()

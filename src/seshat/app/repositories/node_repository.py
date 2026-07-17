@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from seshat.core.models.enums import GraphDirection, NodeState, NodeStatus, RelationshipType, SearchMode
 from seshat.core.utils.log import get_logger
 
 if TYPE_CHECKING:
-    from uuid import UUID
-
     from seshat.core.models.api_graph import NodeFilter, SearchResult
     from seshat.core.models.nodes import ExtractionResult, KBNode, KBRelationship
     from seshat.infra.knowledge_store.pg_store import PostgresKBStore, _Conn
@@ -45,7 +44,7 @@ class NodeRepository:
                 for rel in relationships:
                     await self._kb.write_relationship(rel, conn=conn)
 
-        await self._vs.upsert(str(node.id), node.vector_store_text, node.metadata.model_dump(mode="json"))
+        await self._vs.upsert(str(node.id), node.vector_store_text, _get_vector_store_metadata(node))
 
     async def update_node(
         self,
@@ -62,7 +61,7 @@ class NodeRepository:
                 for rel in relationships:
                     await self._kb.write_relationship(rel, conn=conn)
 
-        await self._vs.upsert(str(node.id), node.vector_store_text, node.metadata.model_dump(mode="json"))
+        await self._vs.upsert(str(node.id), node.vector_store_text, _get_vector_store_metadata(node))
 
     async def delete_node(self, node_id: UUID, *, cascade: bool = True) -> None:
         # Before deleting, find nodes whose state was set by an outbound SUPERSEDES/AMENDS
@@ -79,7 +78,7 @@ class NodeRepository:
                     target_id, excluding_source_id=sid, conn=conn
                 )
                 if remaining == 0:
-                    await self._kb.update_node_state(target_id, NodeState.CURRENT, conn=conn)
+                    await self._transition_node_state(UUID(target_id), NodeState.CURRENT, conn=conn)
                     logger.info("Reverted node %s to CURRENT (source %s deleted)", target_id, sid)
 
             await self._kb.delete_relationships_for_node(sid, cascade=cascade, conn=conn)
@@ -94,6 +93,13 @@ class NodeRepository:
 
     async def update_node_state(self, node_id: UUID, state: NodeState) -> None:
         await self._kb.update_node_state(str(node_id), state)
+
+    async def _transition_node_state(self, node_id: UUID, state: NodeState, *, conn: _Conn) -> None:
+        # conn is mandatory: callers must enlist this in an outer transaction so a VS
+        # failure rolls back the KB update rather than leaving the two stores out of sync.
+        sid = str(node_id)
+        await self._kb.update_node_state(sid, state, conn=conn)
+        await self._vs.update_metadata(sid, {"state": state})
 
     # -- Batch -----------------------------------------------------------------
 
@@ -121,7 +127,7 @@ class NodeRepository:
                 continue
 
             try:
-                await self._kb.update_node_state(str(rel.target_id), new_state, conn=conn)
+                await self._transition_node_state(rel.target_id, new_state, conn=conn)
                 logger.info(
                     "Node %s state → %s (due to %s from %s)",
                     rel.target_id,
@@ -162,7 +168,7 @@ class NodeRepository:
         for node in nodes:
             if node.id not in approved_ids:
                 continue
-            await self._vs.upsert(str(node.id), node.vector_store_text, node.metadata.model_dump(mode="json"))
+            await self._vs.upsert(str(node.id), node.vector_store_text, _get_vector_store_metadata(node))
 
     # -- Read (delegates to KB) ------------------------------------------------
 
@@ -197,7 +203,7 @@ class NodeRepository:
     ) -> list[KBRelationship]:
         return await self._kb.list_relationships(
             node_id=str(node_id) if node_id else None,
-            rel_type=rel_type.value if rel_type else None,
+            rel_type=rel_type if rel_type else None,
             limit=limit,
         )
 
@@ -209,7 +215,7 @@ class NodeRepository:
         new_state = _STATE_TRANSITIONS.get(rel.rel_type)
         async with self._kb.transaction() as conn:
             if new_state:
-                await self._kb.update_node_state(str(rel.target_id), new_state, conn=conn)
+                await self._transition_node_state(rel.target_id, new_state, conn=conn)
                 logger.info(
                     "Node %s state → %s (manual rel %s from %s)",
                     rel.target_id,
@@ -226,14 +232,14 @@ class NodeRepository:
         if rel.rel_type in revert_types:
             remaining = await self._kb.count_inbound_relationships(
                 str(rel.target_id),
-                rel_types=[rel.rel_type.value],
+                rel_types=[rel.rel_type],
             )
             async with self._kb.transaction() as conn:
                 await self._kb.delete_relationship(str(rel.rel_id), conn=conn)
                 # Re-count inside the transaction: remaining was fetched before deletion,
                 # so the edge being deleted was still counted → revert when count was 1.
                 if remaining <= 1:
-                    await self._kb.update_node_state(str(rel.target_id), NodeState.CURRENT, conn=conn)
+                    await self._transition_node_state(rel.target_id, NodeState.CURRENT, conn=conn)
                     logger.info(
                         "Reverted node %s to CURRENT (manual rel %s deleted)",
                         rel.target_id,
@@ -260,3 +266,8 @@ class NodeRepository:
             score_threshold=score_threshold,
             mode=mode,
         )
+
+
+def _get_vector_store_metadata(node: KBNode) -> dict:
+    """Return a dict of metadata to store in the vector store for a given node."""
+    return node.metadata.model_dump(mode="json") | {"state": node.state}

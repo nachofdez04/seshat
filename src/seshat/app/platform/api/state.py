@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from seshat.app.pipeline.bootstrap import (
     build_extraction_orchestrator,
     build_ingestion_orchestrator,
-    build_vector_store,
 )
 from seshat.app.platform.worker.queue import AsyncioTaskQueue
 from seshat.app.repositories.blob_repository import BlobRepository
@@ -20,6 +19,7 @@ from seshat.app.services.job import JobService
 from seshat.infra.blob_store.factory import get_blob_store
 from seshat.infra.knowledge_store.factory import get_kb_store
 from seshat.infra.ops_store.factory import get_ops_store
+from seshat.infra.vector_store.factory import get_vector_store
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -48,7 +48,7 @@ async def build_app_state(config: SeshatConfig) -> AsyncIterator[AppState]:
     await blob_store.connect()
 
     try:
-        vector_store = build_vector_store(config)
+        vector_store = get_vector_store(config)
         node_repo = NodeRepository(kb_store, vector_store)
         blob_repo = BlobRepository(blob_store)
         extraction_orchestrator = build_extraction_orchestrator(config, node_repo, blob_repo)

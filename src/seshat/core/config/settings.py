@@ -11,6 +11,7 @@ from seshat.core.models.enums import (
     EmbeddingProvider,
     LLMProvider,
     RelationshipType,
+    RerankerProvider,
     SearchMode,
     SecretsProvider,
     TranscriptionProvider,
@@ -51,7 +52,38 @@ class _LLMConfig(BaseConfig):
     )
 
     @model_validator(mode="after")
-    def _default_api_key_secret_key(self) -> "_LLMConfig":
+    def _default_api_key_secret_key(self) -> Self:
+        if self.api_key_secret_key is None:
+            self._set_on_frozen_model("api_key_secret_key", f"{self.provider}_api_key")
+        return self
+
+
+class MultiQueryConfig(BaseConfig):
+    llm: _LLMConfig = Field(description="LLM used to generate query variants.")
+    num_variants: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Number of alternative query phrasings to generate and fan out in parallel.",
+    )
+
+
+class RerankerConfig(BaseConfig):
+    provider: RerankerProvider = Field(description="Hosted reranking provider (cohere or voyage).")
+    model: str = Field(description="Reranker model name, e.g. 'rerank-v3.5' (Cohere) or 'rerank-2' (Voyage).")
+    top_n: int | None = Field(
+        default=None,
+        description="Truncate reranked results to the top-N after reranking; None keeps all results.",
+    )
+    max_retries: int = Field(default=3, ge=0, description="Maximum number of retry attempts on transient errors.")
+    timeout_seconds: float | None = Field(default=None, gt=0, description="Per-request HTTP timeout in seconds.")
+    api_key_secret_key: str | None = Field(
+        default=None,
+        description="Secrets key for the reranker API key. Defaults to '<provider>_api_key' if not set.",
+    )
+
+    @model_validator(mode="after")
+    def _default_api_key_secret_key(self) -> Self:
         if self.api_key_secret_key is None:
             self._set_on_frozen_model("api_key_secret_key", f"{self.provider}_api_key")
         return self
@@ -230,6 +262,20 @@ class RAGConfig(BaseConfig):
             "When set, the sparse leg uses an LLM to extract discriminating keywords from the query "
             "before passing them to plainto_tsquery. Applies to KEYWORD and HYBRID modes. "
             "None disables LLM extraction (raw query passed directly)."
+        ),
+    )
+    multi_query: MultiQueryConfig | None = Field(
+        default=None,
+        description=(
+            "When set, SearchEngine generates query variants via this LLM and fans them out in parallel "
+            "before fusing results with RRF. Applies to SEMANTIC and HYBRID modes. None disables multi-query."
+        ),
+    )
+    reranker: RerankerConfig | None = Field(
+        default=None,
+        description=(
+            "When set, SearchEngine applies a hosted reranker after all retrieval legs are fused. "
+            "The reranker always receives the original query. None disables reranking."
         ),
     )
 

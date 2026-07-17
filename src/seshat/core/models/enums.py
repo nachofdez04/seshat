@@ -130,10 +130,16 @@ class GraphDirection(StrEnum):
     BOTH = auto()
 
 
+class RerankerProvider(StrEnum):
+    COHERE = auto()
+    VOYAGE = auto()
+
+
 class SearchMode(StrEnum):
     SEMANTIC = auto()
     KEYWORD = auto()
     HYBRID = auto()
+    AGENT = auto()
 
 
 class UserRole(StrEnum):

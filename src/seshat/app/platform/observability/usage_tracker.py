@@ -52,6 +52,7 @@ class UsageTracker:
         self._cache_read_tokens = 0
         self._cache_creation_tokens = 0
         self._embedding_input_tokens = 0
+        self._reranker_input_tokens = 0
         self._audio_seconds = 0
         self._lock = asyncio.Lock()
 
@@ -80,6 +81,10 @@ class UsageTracker:
         return self._embedding_input_tokens
 
     @property
+    def reranker_input_tokens(self) -> int:
+        return self._reranker_input_tokens
+
+    @property
     def audio_seconds(self) -> int:
         return self._audio_seconds
 
@@ -90,6 +95,7 @@ class UsageTracker:
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
         embedding_input_tokens: int = 0,
+        reranker_input_tokens: int = 0,
         audio_seconds: int = 0,
     ) -> None:
         async with self._lock:
@@ -98,6 +104,7 @@ class UsageTracker:
             self._cache_read_tokens += cache_read_tokens
             self._cache_creation_tokens += cache_creation_tokens
             self._embedding_input_tokens += embedding_input_tokens
+            self._reranker_input_tokens += reranker_input_tokens
             self._audio_seconds += audio_seconds
 
         in_pct = self._input_tokens / self._max_input
@@ -145,6 +152,8 @@ class UsageTracker:
                 f"embedding={_fmt(self._embedding_input_tokens)}"
                 f" ({self._embedding_input_tokens / self._max_embedding * 100:.1f}%)"
             )
+        if self._reranker_input_tokens:
+            parts.append(f"reranker={_fmt(self._reranker_input_tokens)}")
         if self._audio_seconds:
             parts.append(f"audio={self._audio_seconds}s")
         logger.info("%s token usage: %s", label, ", ".join(parts) if parts else "none")
@@ -318,6 +327,7 @@ def track_token_budget(
                         cache_read_tokens=tracker.cache_read_tokens,
                         cache_creation_tokens=tracker.cache_creation_tokens,
                         embedding_input_tokens=tracker.embedding_input_tokens,
+                        reranker_input_tokens=tracker.reranker_input_tokens,
                         audio_seconds=tracker.audio_seconds,
                     )
 

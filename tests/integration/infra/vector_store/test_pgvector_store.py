@@ -5,6 +5,7 @@ from uuid import UUID
 import pytest
 from langchain_core.embeddings import Embeddings
 
+from seshat.core.config.settings import VectorIndexConfig, VectorStoreConfig
 from seshat.core.models.api_graph import NodeFilter
 from seshat.core.models.enums import ConceptType, SearchMode
 from seshat.infra.vector_store.pgvector_store import PGVectorStore
@@ -32,26 +33,14 @@ class _DummyEmbeddings(Embeddings):
         return [0.0] * 1536
 
 
-async def _make_store_with_extractor(pg_test_url, collection: str) -> PGVectorStore:
-    from seshat.core.config.settings import VectorIndexConfig, VectorStoreConfig
-
-    async def _passthrough_extractor(query: str) -> str:
-        return query
-
+def _make_store(pg_test_url, collection: str) -> PGVectorStore:
     index = VectorIndexConfig().model_copy(update={"collection": collection})
-    return PGVectorStore(VectorStoreConfig(), index, _DummyEmbeddings(), pg_test_url, _passthrough_extractor)
+    return PGVectorStore(VectorStoreConfig(), index, _DummyEmbeddings(), pg_test_url)
 
 
 @pytest.fixture
 async def keyword_store(pg_test_url):
-    store = await _make_store_with_extractor(pg_test_url, "test_keyword_search")
-    yield store
-    await store._store.adelete_collection()
-
-
-@pytest.fixture
-async def hybrid_store(pg_test_url):
-    store = await _make_store_with_extractor(pg_test_url, "test_hybrid_search")
+    store = _make_store(pg_test_url, "test_keyword_search")
     yield store
     await store._store.adelete_collection()
 
@@ -160,24 +149,6 @@ class TestKeywordSearch:
         assert all(r.score > 0 for r in results)
 
 
-class TestHybridSearch:
-    async def test_finds_node_present_in_both_legs(self, hybrid_store: PGVectorStore):
-        text = f"Use Redis for caching sessions {_DISTINCTIVE_TERM}"
-        await hybrid_store.upsert(_TEST_NODE_ID, text, {"node_type": "decision", "confidence": 0.9})
-        results = await hybrid_store.search(text, top_k=5, mode=SearchMode.HYBRID)
-        assert any(r.node_id == _TEST_NODE_UUID for r in results)
-
-    async def test_node_in_both_legs_ranks_first(self, hybrid_store: PGVectorStore):
-        shared_text = f"Use Redis for caching {_DISTINCTIVE_TERM}"
-        await hybrid_store.upsert(_TEST_NODE_ID, shared_text, {"node_type": "decision", "confidence": 0.9})
-        # node_b text is semantically similar but lacks the distinctive term
-        await hybrid_store.upsert(_NODE_B_ID, "Use Redis for caching", {"node_type": "decision", "confidence": 0.9})
-
-        results = await hybrid_store.search(shared_text, top_k=5, mode=SearchMode.HYBRID)
-
-        assert results[0].node_id == _TEST_NODE_UUID
-
-
 class TestScoreThreshold:
     pytestmark = _EMBEDDING_MARKS
 
@@ -203,7 +174,7 @@ class TestScoreThreshold:
 
 @pytest.fixture
 async def fresh_keyword_store(pg_test_url):
-    store = await _make_store_with_extractor(pg_test_url, "test_pagination")
+    store = _make_store(pg_test_url, "test_pagination")
     yield store
     await store._store.adelete_collection()
 
@@ -225,7 +196,7 @@ class TestPagination:
 
 @pytest.fixture
 async def empty_keyword_store(pg_test_url):
-    store = await _make_store_with_extractor(pg_test_url, "test_empty_collection")
+    store = _make_store(pg_test_url, "test_empty_collection")
     yield store
     await store._store.adelete_collection()
 

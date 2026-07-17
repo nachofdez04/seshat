@@ -52,6 +52,7 @@ def fake_vector_store():
     vs.upsert = AsyncMock()
     vs.delete = AsyncMock()
     vs.search = AsyncMock(return_value=[])
+    vs.update_metadata = AsyncMock()
     return vs
 
 
@@ -272,6 +273,7 @@ class TestGraphServiceSearch:
             return [SearchResult(node_id=UUID(nid), score=1.0) for nid, text in store.items() if q in text.lower()]
 
         vs.search = _search
+        vs.update_metadata = AsyncMock()
         return vs
 
     async def test_keyword_search_returns_matching_node(self, svc, kb_store):

@@ -24,6 +24,8 @@ dependencies = [
     "langchain-anthropic>=1.4.8",
     "langchain-aws>=1.6.1",
     "langchain-openai>=1.3.3",
+    "cohere>=7.0.5",
+    "voyageai>=0.5.0",
     # Transcription
     "assemblyai>=0.64.21",
     "mutagen>=1.48.1",
@@ -148,12 +150,15 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 addopts = '--cov=src/seshat --cov-report=term-missing -m "not llm"'
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
 markers = [
     "integration: requires external services (Postgres, LocalStack, MLflow, LLM APIs, etc.)",
     "llm: requires a live LLM API key (any provider); subset of integration",
     "agents: requires a live LLM API key; subset of llm",
     "embedding: requires an embeddings API key; subset of llm",
     "transcription: requires a live transcription API key (AssemblyAI or OpenAI); subset of llm",
+    "reranker: requires a live reranker API key (Cohere or Voyage); subset of llm",
     "eval: eval harness tests (unit and integration)",
 ]
 testpaths = ["tests"]

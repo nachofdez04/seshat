@@ -60,6 +60,55 @@ def _anthropic_reachable() -> bool:
         return False
 
 
+def _cohere_reachable() -> bool:
+    key = os.environ.get("COHERE_API_KEY")
+    if not key:
+        return False
+
+    try:
+        response = httpx.get(
+            "https://api.cohere.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5,
+        )
+        return response.status_code < 400
+    except httpx.RequestError:
+        return False
+
+
+def _voyage_reachable() -> bool:
+    key = os.environ.get("VOYAGE_API_KEY")
+    if not key:
+        return False
+
+    try:
+        response = httpx.get(
+            "https://api.voyageai.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5,
+        )
+        return response.status_code < 400
+    except httpx.RequestError:
+        return False
+
+
+def _openai_direct_reachable() -> bool:
+    """Check OPENAI_API_KEY and api.openai.com reachability — no Azure fallback."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return False
+
+    try:
+        response = httpx.get(
+            "https://api.openai.com/v1/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5,
+        )
+        return response.status_code < 400
+    except httpx.RequestError:
+        return False
+
+
 def _assemblyai_reachable() -> bool:
     key = os.environ.get("ASSEMBLYAI_API_KEY")
     if not key:
@@ -71,6 +120,6 @@ def _assemblyai_reachable() -> bool:
             headers={"Authorization": key},
             timeout=5,
         )
-        return response.status_code < 500
+        return response.status_code < 400
     except httpx.RequestError:
         return False

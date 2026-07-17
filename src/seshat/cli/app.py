@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import selectors
 import subprocess
+import sys
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from seshat.eval.corpus_tags import CorpusTagFilter
 
 import typer
@@ -17,6 +21,15 @@ from seshat.core.config.settings import GroundingLLMConfig, ObservabilityConfig,
 from seshat.core.utils.log import configure_logging, get_logger, set_job_id
 
 logger = get_logger(__name__)
+
+
+def _run_async(coro: Coroutine) -> None:
+    # psycopg (asyncpg-backed PGVector) is incompatible with Windows ProactorEventLoop
+    if sys.platform == "win32":
+        asyncio.run(coro, loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()))
+    else:
+        asyncio.run(coro)
+
 
 app = typer.Typer(name="seshat", help="Seshat — meeting knowledge base CLI", no_args_is_help=True)
 eval_app = typer.Typer(help="Eval harnesses, calibration, and tooling", no_args_is_help=True)
@@ -71,7 +84,7 @@ def eval_cmd(
         with mlflow.start_run(run_name=run_name):
             await run(eval_config, seshat_config, tag_filter=tag_filter)
 
-    asyncio.run(_run())
+    _run_async(_run())
 
 
 @eval_app.command("calibrate")
@@ -105,7 +118,7 @@ def calibrate_cmd(
         with mlflow.start_run(run_name=run_name):
             await run(**_kwargs)
 
-    asyncio.run(_run())
+    _run_async(_run())
 
 
 @eval_app.command("mlflow")

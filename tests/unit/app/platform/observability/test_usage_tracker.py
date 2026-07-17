@@ -82,6 +82,20 @@ class TestUsageTracker:
         with pytest.raises(TokenBudgetExceededError, match="Embedding token cap exceeded"):
             tracker.check_caps()
 
+    async def test_accumulates_reranker_tokens(self):
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        await tracker.add(reranker_input_tokens=300)
+        await tracker.add(reranker_input_tokens=200)
+        assert tracker.reranker_input_tokens == 500
+        assert tracker.input_tokens == 0
+
+    async def test_reranker_tokens_independent_of_other_counters(self):
+        tracker = UsageTracker(max_input_tokens=1000, max_output_tokens=500)
+        await tracker.add(input_tokens=100, embedding_input_tokens=50, reranker_input_tokens=75)
+        assert tracker.input_tokens == 100
+        assert tracker.embedding_input_tokens == 50
+        assert tracker.reranker_input_tokens == 75
+
 
 class TestTokenBudgetCallback:
     async def test_accumulates_from_llm_result(self):

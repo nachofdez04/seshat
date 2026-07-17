@@ -33,6 +33,7 @@ def _make_repo() -> tuple[NodeRepository, MagicMock, MagicMock]:
     vs = MagicMock()
     vs.upsert = AsyncMock()
     vs.delete = AsyncMock()
+    vs.update_metadata = AsyncMock()
 
     return NodeRepository(kb_store, vs), kb_store, vs
 
@@ -106,6 +107,8 @@ class TestWriteNode:
 
 _NODE_UUID = UUID("00000000-0000-0000-0000-000000000001")
 _SOURCE_UUID = UUID("00000000-0000-0000-0000-000000000002")
+_TARGET_ID_1 = "00000000-0000-0000-0000-000000000099"
+_TARGET_ID_2 = "00000000-0000-0000-0000-000000000098"
 
 
 class TestDeleteNode:
@@ -119,18 +122,18 @@ class TestDeleteNode:
 
     async def test_reverts_superseded_target_to_current(self):
         repo, kb, _vs = _make_repo()
-        kb.get_outbound_state_transition_targets = AsyncMock(return_value=["target-1"])
+        kb.get_outbound_state_transition_targets = AsyncMock(return_value=[_TARGET_ID_1])
         kb.count_remaining_state_transition_sources = AsyncMock(return_value=0)
 
         await repo.delete_node(_SOURCE_UUID)
 
         kb.update_node_state.assert_called_once()
         args, _kwargs = kb.update_node_state.call_args
-        assert args == ("target-1", NodeState.CURRENT)
+        assert args == (_TARGET_ID_1, NodeState.CURRENT)
 
     async def test_does_not_revert_if_another_source_remains(self):
         repo, kb, _vs = _make_repo()
-        kb.get_outbound_state_transition_targets = AsyncMock(return_value=["target-1"])
+        kb.get_outbound_state_transition_targets = AsyncMock(return_value=[_TARGET_ID_1])
         kb.count_remaining_state_transition_sources = AsyncMock(return_value=1)
 
         await repo.delete_node(_SOURCE_UUID)
@@ -139,14 +142,14 @@ class TestDeleteNode:
 
     async def test_reverts_only_targets_with_no_remaining_sources(self):
         repo, kb, _vs = _make_repo()
-        kb.get_outbound_state_transition_targets = AsyncMock(return_value=["target-1", "target-2"])
+        kb.get_outbound_state_transition_targets = AsyncMock(return_value=[_TARGET_ID_1, _TARGET_ID_2])
         kb.count_remaining_state_transition_sources = AsyncMock(side_effect=[0, 1])
 
         await repo.delete_node(_SOURCE_UUID)
 
         assert kb.update_node_state.call_count == 1
         args, _ = kb.update_node_state.call_args
-        assert args[0] == "target-1"
+        assert args[0] == _TARGET_ID_1
 
 
 class TestUpdateNode:
@@ -365,6 +368,94 @@ class TestDeleteRelationship:
         kb.delete_relationship.assert_called_once()
         kb.count_inbound_relationships.assert_not_called()
         kb.update_node_state.assert_not_called()
+
+
+class TestTransitionNodeState:
+    async def test_updates_kb_and_vs(self):
+        repo, kb, vs = _make_repo()
+        node_id = UUID("00000000-0000-0000-0000-000000000001")
+        conn = MagicMock()
+        await repo._transition_node_state(node_id, NodeState.SUPERSEDED, conn=conn)
+
+        kb.update_node_state.assert_called_once_with(str(node_id), NodeState.SUPERSEDED, conn=conn)
+        vs.update_metadata.assert_called_once_with(str(node_id), {"state": NodeState.SUPERSEDED})
+
+    async def test_apply_state_transitions_calls_vs_update_metadata(self):
+        repo, _kb, vs = _make_repo()
+        existing = make_node("existing")
+        new_node = make_node("new")
+        rel = make_relationship(new_node, existing, rel_type=RelationshipType.SUPERSEDES)
+
+        result = ExtractionResult(job_id="job-1", nodes=[new_node], relationships=[rel])
+        await repo.write_batch(result)
+
+        vs.update_metadata.assert_called_once_with(str(existing.id), {"state": NodeState.SUPERSEDED})
+
+    async def test_create_relationship_manual_supersedes_calls_vs_update_metadata(self):
+        repo, kb, vs = _make_repo()
+        kb.create_relationship = AsyncMock()
+        source = make_node("src")
+        target = make_node("tgt")
+        rel = make_relationship(source, target, rel_type=RelationshipType.SUPERSEDES)
+
+        await repo.create_relationship_manual(rel)
+
+        vs.update_metadata.assert_called_once_with(str(target.id), {"state": NodeState.SUPERSEDED})
+
+    async def test_create_relationship_manual_amends_calls_vs_update_metadata(self):
+        repo, kb, vs = _make_repo()
+        kb.create_relationship = AsyncMock()
+        source = make_node("src")
+        target = make_node("tgt")
+        rel = make_relationship(source, target, rel_type=RelationshipType.AMENDS)
+
+        await repo.create_relationship_manual(rel)
+
+        vs.update_metadata.assert_called_once_with(str(target.id), {"state": NodeState.AMENDED})
+
+    async def test_delete_relationship_revert_calls_vs_update_metadata(self):
+        repo, kb, vs = _make_repo()
+        kb.delete_relationship = AsyncMock()
+        kb.count_inbound_relationships = AsyncMock(return_value=1)
+        source = make_node("src")
+        target = make_node("tgt")
+        rel = make_relationship(source, target, rel_type=RelationshipType.SUPERSEDES)
+
+        await repo.delete_relationship(rel)
+
+        vs.update_metadata.assert_called_once_with(str(target.id), {"state": NodeState.CURRENT})
+
+    async def test_delete_node_revert_calls_vs_update_metadata(self):
+        repo, kb, vs = _make_repo()
+        kb.get_outbound_state_transition_targets = AsyncMock(return_value=[_TARGET_ID_1])
+        kb.count_remaining_state_transition_sources = AsyncMock(return_value=0)
+
+        await repo.delete_node(_NODE_UUID)
+
+        vs.update_metadata.assert_called_once_with(_TARGET_ID_1, {"state": NodeState.CURRENT})
+
+
+class TestUpsertVectorsIncludesState:
+    async def test_write_node_passes_state_in_metadata(self):
+        repo, _kb, vs = _make_repo()
+        node = make_node()
+        await repo.write_node(node)
+
+        _args, _kwargs = vs.upsert.call_args
+        metadata = _args[2]
+        assert "state" in metadata
+        assert metadata["state"] == node.state
+
+    async def test_upsert_vectors_passes_state_in_metadata(self):
+        repo, _kb, vs = _make_repo()
+        node = make_node()
+        result = ExtractionResult(job_id="job-1", nodes=[node], relationships=[])
+        await repo.write_batch(result)
+
+        _args, _kwargs = vs.upsert.call_args
+        metadata = _args[2]
+        assert "state" in metadata
+        assert metadata["state"] == node.state
 
 
 class TestWriteNodeRelationshipsTransaction:

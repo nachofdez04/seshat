@@ -4,11 +4,11 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from seshat.app.pipeline.bootstrap import build_extraction_orchestrator as _build_extraction_orchestrator
-from seshat.app.pipeline.bootstrap import build_vector_store
 from seshat.app.repositories.blob_repository import BlobRepository
 from seshat.app.repositories.node_repository import NodeRepository
 from seshat.infra.blob_store.factory import get_blob_store
 from seshat.infra.knowledge_store.factory import get_kb_store
+from seshat.infra.vector_store.factory import get_vector_store
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 async def build_extraction_orchestrator(
     seshat_config: SeshatConfig,
 ) -> AsyncIterator[ExtractionOrchestrator]:
-    vector_store = build_vector_store(seshat_config)
+    vector_store = get_vector_store(seshat_config)
 
     kb_store = get_kb_store(seshat_config)
     await kb_store.connect()

@@ -11,6 +11,7 @@ from seshat.app.agents.identification.registry import IdentificationAgentRegistr
 from seshat.app.agents.resolution.registry import ResolutionRegistry
 from seshat.app.pipeline.extraction.node_retriever import NodeRetriever
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
+from seshat.app.pipeline.extraction.search_engine import SearchEngine
 from seshat.app.pipeline.ingestion.orchestrator import IngestionOrchestrator
 from seshat.app.repositories.node_repository import NodeRepository
 from seshat.core.config.settings import ExtractionConfig, KBStoreConfig, RAGConfig, TranscriptionConfig
@@ -30,6 +31,8 @@ from tests.integration.helpers import (
 )
 
 pytestmark = [
+    # module loop required: kb_store fixture is module-scoped and asyncpg pools are loop-bound
+    pytest.mark.asyncio(loop_scope="module"),
     pytest.mark.integration,
     pytest.mark.llm,
     pytest.mark.agents,
@@ -76,7 +79,11 @@ def extraction_orch(kb_store, fake_vector_store, blob_store):
     res_config = cheap_resolution_config()
     extraction_config = ExtractionConfig(identification=id_config, resolution=res_config)
     node_repo = NodeRepository(kb_store, fake_vector_store)
-    retriever = NodeRetriever(RAGConfig(), node_repo)
+    rag_config = RAGConfig()
+    search_engine = SearchEngine(
+        rag_config=rag_config, vector_store=fake_vector_store, keyword_llm=None, multi_query_llm=None
+    )
+    retriever = NodeRetriever(rag_config=rag_config, node_repo=node_repo, search_engine=search_engine)
     return ExtractionOrchestrator(
         config=extraction_config,
         identification_registry=IdentificationAgentRegistry(llm, extraction_config),

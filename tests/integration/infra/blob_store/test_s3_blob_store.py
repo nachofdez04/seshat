@@ -2,7 +2,8 @@ import pytest
 
 from tests.integration.conftest import SKIP_IF_NO_LOCALSTACK
 
-pytestmark = [pytest.mark.integration, SKIP_IF_NO_LOCALSTACK]
+# loop_scope="module" required: blob_store fixture uses a module-scoped aioboto3 session
+pytestmark = [pytest.mark.asyncio(loop_scope="module"), pytest.mark.integration, SKIP_IF_NO_LOCALSTACK]
 
 
 class TestS3BlobStoreGet:

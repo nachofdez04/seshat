@@ -1,6 +1,7 @@
 import pytest
 
 from seshat.app.pipeline.extraction.node_retriever import NodeRetriever
+from seshat.app.pipeline.extraction.search_engine import SearchEngine
 from seshat.core.config.settings import RAGConfig
 from seshat.core.models.enums import ConceptType, NodeStatus, RelationshipType
 from tests.helpers import make_node
@@ -8,6 +9,8 @@ from tests.integration.conftest import SKIP_IF_NO_EMBEDDINGS_API, SKIP_IF_NO_POS
 from tests.integration.helpers import make_relationship, seed_node
 
 pytestmark = [
+    # module loop required: kb_store fixture is module-scoped and asyncpg pools are loop-bound
+    pytest.mark.asyncio(loop_scope="module"),
     pytest.mark.integration,
     pytest.mark.llm,
     pytest.mark.embedding,
@@ -16,9 +19,20 @@ pytestmark = [
 ]
 
 
+def _make_retriever(node_repo, rag_config: RAGConfig | None = None) -> NodeRetriever:
+    cfg = rag_config or RAGConfig()
+    search_engine = SearchEngine(
+        rag_config=cfg,
+        vector_store=node_repo._vs,
+        keyword_llm=None,
+        multi_query_llm=None,
+    )
+    return NodeRetriever(rag_config=cfg, node_repo=node_repo, search_engine=search_engine)
+
+
 @pytest.fixture
 def node_retriever(node_repo) -> NodeRetriever:
-    return NodeRetriever(RAGConfig(), node_repo)
+    return _make_retriever(node_repo)
 
 
 class TestNodeRetrieverRetrieveCandidates:
@@ -123,7 +137,7 @@ class TestNodeRetrieverRetrieveCandidates:
         )
 
         # top_k=1 → cap=2; direct_hit fills seen (len=1 < cap=2) so neighbour expansion runs
-        retriever = NodeRetriever(RAGConfig(top_k=1), node_repo)
+        retriever = _make_retriever(node_repo, RAGConfig(top_k=1))
         query_node = make_node(
             node_id="rag-query-neighbour",
             title="Switch to PostgreSQL",
@@ -149,7 +163,7 @@ class TestNodeRetrieverRetrieveCandidates:
             await seed_node(node, node_repo)
 
         # max_context_tokens=1 forces exit after the first node's token cost is counted
-        retriever = NodeRetriever(RAGConfig(max_context_tokens=1), node_repo)
+        retriever = _make_retriever(node_repo, RAGConfig(max_context_tokens=1))
         query_node = make_node(
             node_id="rag-query-budget",
             title="PostgreSQL database decision",

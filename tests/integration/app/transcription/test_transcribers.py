@@ -8,7 +8,7 @@ from seshat.app.transcription.assemblyai_transcriber import AssemblyAITranscribe
 from seshat.app.transcription.openai_transcriber import OpenAITranscriber
 from seshat.core.config.settings import TranscriptionConfig
 from seshat.core.models.enums import TranscriptionProvider
-from tests.integration.conftest import SKIP_IF_NO_ASSEMBLYAI_API, SKIP_IF_NO_OPENAI_API
+from tests.integration.conftest import SKIP_IF_NO_ASSEMBLYAI_API, SKIP_IF_NO_OPENAI_TRANSCRIPTION_API
 
 pytestmark = [pytest.mark.integration, pytest.mark.llm, pytest.mark.transcription]
 
@@ -24,7 +24,7 @@ class TestAssemblyAITranscriber:
 
 
 class TestOpenAITranscriber:
-    @SKIP_IF_NO_OPENAI_API
+    @SKIP_IF_NO_OPENAI_TRANSCRIPTION_API
     async def test_transcribe_returns_string(self, short_audio_bytes: bytes):
         config = TranscriptionConfig(provider=TranscriptionProvider.OPENAI)
         service = OpenAITranscriber(config, api_key=os.environ["OPENAI_API_KEY"])

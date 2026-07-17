@@ -1,53 +1,46 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pandas as pd
 import pytest
 
 from seshat.core.config.eval_settings import EvalConfig
+from seshat.core.config.settings import RAGConfig
 from seshat.core.models.enums import ConceptType
 from seshat.eval.models import RetrievalCorpusExample, RetrievalCorpusNode
 from seshat.eval.retrieval.runner import RetrievalEvalRunner, _aggregate_metrics, _build_dataframe
-from seshat.infra.vector_store.base_store import AbstractVectorStore
 from tests.unit.eval.helpers import make_eval_result
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from seshat.core.models.api_graph import NodeFilter, SearchResult
 
+def _make_runner(captured_filters: list | None = None) -> RetrievalEvalRunner:
+    """Build a RetrievalEvalRunner with a mock search engine that captures node_filter kwargs."""
+    filters = captured_filters if captured_filters is not None else []
 
-class _CapturingVectorStore(AbstractVectorStore):
-    """Records the NodeFilter and query string passed to each search() call."""
-
-    def __init__(self) -> None:
-        self.captured_filters: list[NodeFilter | None] = []
-        self.captured_queries: list[str] = []
-
-    @staticmethod
-    def get_supported_filter_fields() -> frozenset[str]:
-        return frozenset({"node_type"})
-
-    async def upsert(self, node_id: str, text: str, metadata: dict) -> None:
-        pass
-
-    async def search(
-        self,
-        query: str,
-        top_k: int,
-        node_filter: NodeFilter | None = None,
-        exclude_job_id: str | None = None,
-        score_threshold: float | None = None,
-        mode: object = None,
-    ) -> list[SearchResult]:
-        self.captured_filters.append(node_filter)
-        self.captured_queries.append(query)
+    async def _search(query: str, *, node_filter=None, exclude_job_id=None, score_threshold=None, top_k=None):
+        filters.append(node_filter)
         return []
 
-    async def delete(self, node_id: str) -> None:
-        pass
+    search_engine = MagicMock()
+    search_engine.search = AsyncMock(side_effect=_search)
+    search_engine.fingerprint = Mock(return_value="test-fp")
+
+    vs = MagicMock()
+    vs.upsert = AsyncMock()
+    vs.delete = AsyncMock()
+
+    config = Mock(spec=EvalConfig)
+    rag_config = RAGConfig()
+    return RetrievalEvalRunner(
+        search_engine=search_engine,
+        vector_store=vs,
+        config=config,
+        rag_config=rag_config,
+    )
 
 
 def _make_cross_type_example() -> RetrievalCorpusExample:
@@ -78,15 +71,14 @@ def _make_cross_type_example() -> RetrievalCorpusExample:
 class TestFetchExampleNodeFilter:
     async def test_search_uses_untyped_filter(self, tmp_path: Path) -> None:
         """_fetch_example must pass NodeFilter(node_type=None) so cross-type candidates are searchable."""
-        vs = _CapturingVectorStore()
-        config = Mock(spec=EvalConfig)
-        runner = RetrievalEvalRunner(vector_store=vs, config=config)
+        captured_filters: list = []
+        runner = _make_runner(captured_filters)
 
         example = _make_cross_type_example()
         await runner._fetch_example(example)
 
-        assert len(vs.captured_filters) == 1
-        captured = vs.captured_filters[0]
+        assert len(captured_filters) == 1
+        captured = captured_filters[0]
         assert captured is not None
         assert captured.node_type is None
 

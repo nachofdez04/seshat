@@ -20,7 +20,6 @@ Technical council members make architecture decisions, surface risks, and assign
 - Extract structured decisions, risks, open questions, and action items from meeting recordings and write them to a queryable, graph-shaped knowledge base.
 - Surface relationships between decisions across meetings (supersession, amendment, conflict, dependency).
 - Provide a human review step before any node enters the knowledge base, with confidence scoring to guide reviewer attention.
-- Enable seeding the KB from an existing documentation corpus (`seshat init`).
 
 ### Non-Goals (MVP)
 
@@ -31,7 +30,8 @@ Technical council members make architecture decisions, surface risks, and assign
 - Integration with Notion, Confluence, or Neo4j (v2 upgrade paths)
 - Any UI beyond Streamlit
 - Post-approval node editing (`PATCH /graph/{node_id}` — deferred to v2)
-- Standalone post-approval node creation (`POST /graph/nodes` — deferred to v2; review-time creation via `ApproveRequest.created_nodes` is in scope)
+- Standalone post-approval node creation (`POST /graph/nodes` — operator+ role, in scope for MVP)
+- KB seeding from an existing documentation corpus (`seshat init` — deferred to v2; config stubs and `IngestionSource.INIT` / `CreationSource.INIT` enums are defined but no CLI command, document loader, or `ops.init_runs` table exists)
 
 ### Success Criteria
 
@@ -133,22 +133,14 @@ seshat-mvp/
           transcript.txt    # raw transcription output (plain text)
         curated/
           extraction.json   # full ExtractionResult (all nodes + relationships)
-  init/
-    {job_id}/               # UUID generated at seshat init time
-      source/               # copy of the markdown files fed in (data lineage)
-      curated/
-        extraction.json
 ```
 
-Artifacts are written at two points per path:
+Artifacts are written at two points per job:
 
-**Regular job (`jobs/`):**
 1. **After ingestion** — `raw/input.*` (original file) and `raw/transcript.txt` (normalised plain text output). For `source_type="text"`, `input.*` is the uploaded YAML/JSON file and `transcript.txt` is the `content` field extracted by the validator.
 2. **At the start of WRITING** — `curated/extraction.json` is written unconditionally at the beginning of the WRITING stage, before any KB writes. It contains the full `ExtractionResult` including all nodes with their final `status` values (`APPROVED`, `PENDING_REVIEW`, or `REJECTED`). This means the artifact is always present after a job completes, including the all-reject case — which is precisely when a complete audit trail matters most.
 
-**Init pipeline (`init/`):**
-1. **After corpus load (step 1)** — `init/{job_id}/source/` is written immediately after all markdown files are loaded, before any LLM calls. Present even for runs the user later aborts; skipped only for `--dry-run`.
-2. **After extraction (step 4)** — `init/{job_id}/curated/extraction.json` is written immediately after extraction completes, before the summary is printed and before the user is prompted. Present even for runs the user subsequently rejects — the audit trail is established as soon as extraction completes, which is precisely when it matters most.
+> **Deferred:** the `init/` blob prefix (for `seshat init` corpus seeding) is not implemented. See Non-Goals.
 
 This provides a full recovery path (reprocess from raw transcript without re-transcribing) and an audit trail independent of the KB store. Per-node `.md` files are not written — the KB is Postgres-backed and the `extraction.json` is the complete audit artifact.
 
@@ -160,79 +152,14 @@ This provides a full recovery path (reprocess from raw transcript without re-tra
 
 Pre-formatted text input must conform to a defined YAML/JSON schema. `ParsedTextInput` is a Pydantic `BaseModel` (not a dataclass) with fields: `meeting_date` (alias `date`, required), `content` (required), `participants` (optional list of strings). Missing or invalid fields raise `TextValidationError`. The validator rejects non-conforming input at the boundary.
 
-### Init Pipeline (KB Seeding)
+### Init Pipeline (KB Seeding) — Deferred to v2
 
-A separate CLI-only path for seeding the KB and vector store from an existing documentation corpus — not API-accessible, not surfaced in the Streamlit UI.
-
-```
-Document corpus (markdown files)
-      │
-      ▼
-AbstractDocumentLoader
-      │
-      └── MarkdownDocumentLoader   # MVP (NotionLoader, ConfluenceLoader — v2)
-      │
-      ▼
-Extraction Pipeline (same agents as meeting pipeline)
-      │
-      ▼
-Init Summary (stdout)
-      │
-  [user confirms]
-      │
-      ▼
-KB Store + Vector Store   (nodes written as APPROVED, ingestion_source=INIT)
-```
-
-**Command:**
-```
-seshat init --source ./docs/           # full run
-seshat init --source ./docs/ --dry-run # scope estimate only — no LLM calls, nothing written
-seshat init --source ./docs/ --force   # run even if the KB is already populated (see step 0)
-```
-
-**Flow:**
-0. **Populated-KB guard:** queries `ops.kb_nodes` for any existing rows. If any are found, the command aborts with a clear error: `"KB already contains N nodes. Use --force to run anyway, or --dry-run to inspect what would be written."` This prevents accidental re-seeding of an already-populated KB. `--force` skips this check and proceeds; `--dry-run` also skips it (a dry run never writes anything so the risk is zero). `max_concurrent_init_runs` is checked here too — if an `ops.init_runs` entry with `status=running` already exists, the command aborts regardless of `--force`.
-1. Discovers and loads all markdown files under `--source` recursively. **Blob write:** `init/{job_id}/source/` — a verbatim copy of every loaded file — is written to blob storage immediately after load, before any LLM calls. This mirrors the `raw/input.*` write in the regular pipeline: data lineage is established as soon as the input is known, independently of whether extraction succeeds or the user aborts. Written even when `--dry-run` is not set; skipped for `--dry-run` (nothing is written on a dry run).
-2. Chunks the corpus and prints a pre-flight scope estimate to stdout — **no LLM calls yet**:
-   - File count and estimated chunk count
-   - Estimated input tokens (chunks × 4 agents × avg prompt size) vs `ExtractionConfig.max_total_input_tokens`
-   - Estimated output tokens vs `ExtractionConfig.max_total_output_tokens`
-3. If `--dry-run`: exits here. Nothing written, no LLM calls made.
-4. Runs the same multi-agent extraction pipeline used for meeting recordings — no special agents or prompts. **Blob write:** `init/{job_id}/curated/extraction.json` — the full `ExtractionResult` — is written immediately after extraction completes, before the summary is printed and before the user is prompted. This mirrors the `curated/extraction.json` write at the start of WRITING in the regular pipeline: the audit trail is always present from the moment extraction completes, regardless of whether the user subsequently approves or aborts. If the user types `N`, the `ExtractionResult` remains in blob storage for inspection.
-5. Prints an extraction summary to stdout before writing anything:
-   - Total nodes extracted per `ConceptType`
-   - Confidence distribution (mean, min, max per type)
-   - A sample of extracted titles (up to 5 per type)
-6. Prompts `Approve and write to KB? [y/N]`. On rejection, no KB or vector store writes are made; blob artifacts from steps 1 and 4 are retained.
-7. On approval, all nodes are written as `APPROVED` with `ingestion_source=INIT`.
-
-**Rollback and recovery:** if `seshat init` crashes mid-write, re-running it is safe — each node write is a single Postgres transaction (KB row + vector embedding), so no partial state can be left behind. The init `job_id` is recorded in `init_runs`; re-running queries `init_runs` to detect the previous incomplete run and resumes from where it stopped. Resume is defined as **path (a) — skip, not upsert**: on detecting an incomplete `init_runs` entry, query `ops.kb_nodes WHERE job_id = X` to load already-written nodes, skip re-extraction for documents whose nodes are already present, and continue from the first document whose nodes are absent. This is consistent with the Node Lifecycle Invariant (append-only) and does not require upsert semantics. A full undo of a completed init is `DELETE FROM ops.kb_nodes WHERE job_id = X` (cascades to `ops.kb_relationships`) followed by deleting the corresponding pgvector embeddings and clearing the `init_runs` row.
-
-**Re-running on a completed KB:** if `seshat init` is run again against the same `--source` path and the previous `init_runs` entry has `status=done`, the command treats it as a fresh run — it generates a new `job_id`, runs extraction from scratch, and writes any new nodes it produces. Previously written nodes (from the earlier init run) are not touched — the Node Lifecycle Invariant (append-only) applies. This means duplicate nodes may be written if the source corpus has not changed. Operators should use `--dry-run` to inspect what would be written before running a second init on an already-seeded KB.
-
-**Document loader factory:**
-
-```python
-class DocumentLoaderProvider(StrEnum):
-    MARKDOWN = auto()
-    # NOTION = auto()     # v2
-    # CONFLUENCE = auto() # v2
-
-class AbstractDocumentLoader(ABC):
-    async def load(self, source: str) -> list[Document]: ...
-    # Returns a list of LangChain Documents (text + metadata) to feed into the extraction pipeline.
-    # metadata carries at minimum {"source": filepath} for MarkdownDocumentLoader; v2 loaders
-    # (Notion, Confluence) may include page title, URL, last-modified, etc.
-    # Async for consistency with the rest of the pipeline and v2 network-backed loaders;
-    # MarkdownDocumentLoader wraps its file I/O in asyncio.to_thread().
-
-class DocumentLoaderConfig(BaseModel):
-    provider: DocumentLoaderProvider = DocumentLoaderProvider.MARKDOWN
-    source_path: str = "./init-docs"
-```
-
-`DocumentLoaderConfig` is added to `SeshatConfig` as an optional field — only required when running `seshat init`.
+> **Not implemented.** The `seshat init` CLI command, `AbstractDocumentLoader`/`MarkdownDocumentLoader`, and `ops.init_runs` DB table do not exist. The following config stubs are defined but unused:
+> - `DocumentLoaderProvider` enum (`MARKDOWN`) and `DocumentLoaderConfig` in `src/seshat/core/config/settings.py`
+> - `SeshatConfig.document_loader: DocumentLoaderConfig | None` and `SeshatConfig.max_concurrent_init_runs: int`
+> - `IngestionSource.INIT` and `CreationSource.INIT` enum values
+>
+> The design below is the intended v2 specification.
 
 ---
 
@@ -254,27 +181,29 @@ class LoggingConfig(BaseConfig):
 
 class APIConfig(BaseConfig):
     max_jobs_per_user_per_hour: int = 10     # per-user job submission rate limit
-    max_concurrent_jobs: int = 1             # global cap on TRANSCRIBING/EXTRACTING/WRITING jobs
+    max_concurrent_jobs: int = 1             # global cap on TRANSCRIBING/IDENTIFYING/RESOLVING/WRITING jobs
     eval_gate_path: Path = PROJECT_ROOT / "eval_gate.json"
     skip_eval_gate: bool = False             # bypass eval gate at startup; never use in production
     skip_llm_ping: bool = False              # bypass LLM connectivity check at startup
-    admin_api_key_secret_key: str = "admin-api-key"  # Secrets key for the root admin API key
+    root_api_key_secret_key: str = "root-api-key"  # Secrets key for the root admin API key
 
 class SeshatConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_nested_delimiter="__"   # e.g. EXTRACTION__LLM__PROVIDER=anthropic
+        env_nested_delimiter="__",  # e.g. EXTRACTION__IDENTIFICATION__MODEL=claude-sonnet-4-6
+        extra="ignore",
     )
     logging: LoggingConfig = LoggingConfig()
-    transcription: TranscriptionConfig
-    vector_store: VectorStoreConfig
-    vector_index: VectorIndexConfig
-    kb_store: KBStoreConfig
-    blob_store: BlobStoreConfig
-    extraction: ExtractionConfig
-    rag: RAGConfig
-    secrets: SecretsConfig
-    observability: ObservabilityConfig
+    transcription: TranscriptionConfig = TranscriptionConfig()
+    vector_store: VectorStoreConfig = VectorStoreConfig()
+    vector_index: VectorIndexConfig = VectorIndexConfig()
+    kb_store: KBStoreConfig = KBStoreConfig()
+    ops_store: OpsStoreConfig = OpsStoreConfig()
+    blob_store: BlobStoreConfig = BlobStoreConfig()
+    extraction: ExtractionConfig = ExtractionConfig()
+    rag: RAGConfig = RAGConfig()
+    secrets: SecretsConfig = SecretsConfig()
+    observability: ObservabilityConfig = ObservabilityConfig()
     api: APIConfig = APIConfig()
     document_loader: DocumentLoaderConfig | None = None  # only required for seshat init
     max_concurrent_init_runs: int = 1                    # cap on simultaneous seshat init runs
@@ -300,10 +229,20 @@ class VectorStoreProvider(StrEnum):
     # QDRANT = auto()    # v2
     # WEAVIATE = auto()  # v2
 
+class SearchMode(StrEnum):
+    SEMANTIC = auto()  # cosine-similarity ANN via pgvector
+    KEYWORD = auto()   # PostgreSQL full-text search (GIN tsvector / ts_rank_cd)
+    HYBRID = auto()    # RRF fusion of SEMANTIC + KEYWORD legs
+    AGENT = auto()     # reserved; raises NotImplementedError in SearchEngine
+
+class RerankerProvider(StrEnum):
+    COHERE = auto()
+    VOYAGE = auto()
+
 class EmbeddingProvider(StrEnum):
     OPENAI = auto()
     AZURE_OPENAI = auto()
-    ANTHROPIC = auto()
+    COHERE = auto()   # not yet handled by the factory — implementation deferred
 
 class SecretsProvider(StrEnum):
     ENV = auto()
@@ -349,10 +288,10 @@ class IdentificationLLMConfig(_LLMConfig):
     provider: LLMProvider = LLMProvider.ANTHROPIC
     model: str = "claude-sonnet-4-6"
 
-class VerificationLLMConfig(_LLMConfig):
+class GroundingLLMConfig(_LLMConfig):
     provider: LLMProvider = LLMProvider.OPENAI   # must differ from identification.provider — enforced by model_validator at startup
     model: str = "gpt-5.4-nano"
-    use_full_transcript: bool = True      # When False, verification uses only the extracted quote
+    use_full_transcript: bool = True      # When False, grounding uses only the extracted quote
 
 class ResolutionLLMConfig(_LLMConfig):
     provider: LLMProvider = LLMProvider.ANTHROPIC
@@ -360,24 +299,32 @@ class ResolutionLLMConfig(_LLMConfig):
     max_concurrent_calls: int = 10        # per-agent concurrency cap
     max_global_calls: int = 30            # global cap across all resolution agents combined
 
+class ReflectiveLLMConfig(BaseModel):
+    enabled: bool = False
+    llm: _LLMConfig | None = None  # None = falls back to the stage's primary LLM
+
 class ExtractionConfig(BaseModel):
-    identification: IdentificationLLMConfig = IdentificationLLMConfig()
-    resolution: ResolutionLLMConfig = ResolutionLLMConfig()
     concept_types: list[ConceptType] = list(ConceptType)
-    confidence_threshold: float = 0.7
+    identification: IdentificationLLMConfig = IdentificationLLMConfig()
+    identification_self_review: ReflectiveLLMConfig = ReflectiveLLMConfig()
+    resolution: ResolutionLLMConfig = ResolutionLLMConfig()
+    resolution_self_review: ReflectiveLLMConfig = ReflectiveLLMConfig()
+    grouped_identification_types: set[ConceptType] = {ConceptType.DECISION}  # types passed through the grouping step; toggleable without code deploy
+    grounding: GroundingLLMConfig | None = None  # None = heuristics-only scoring; see Confidence Scoring
+    confidence_threshold: float | None = 0.7
     per_type_thresholds: dict[ConceptType, float] | None = None  # overrides confidence_threshold per type; None = use global default for all types
     auto_mode: bool = False
     max_total_input_tokens: int = 2_000_000         # aggregate input token cap across all agent calls in the extraction stage
     max_total_output_tokens: int = 500_000          # aggregate output token cap across all agent calls in the extraction stage
+    max_total_embedding_tokens: int = 10_000_000    # aggregate embedding token cap across all RAG calls
     max_hint_nodes: int = 20                        # most recent same-type KB nodes included in extraction-time hint
     max_hint_tokens: int = 1000                     # hard token cap on the hint; oldest nodes dropped first if exceeded
-    verification: VerificationLLMConfig | None = None  # None = heuristics-only scoring; see Confidence Scoring
     identification_timeout_seconds: float | None = None  # wall-clock cap on the full identification pass; None = no cap
     resolution_timeout_seconds: float | None = None      # wall-clock cap on the full resolution pass; None = no cap
-    grouped_identification_types: set[ConceptType] = {ConceptType.DECISION}  # types passed through the grouping step; toggleable without code deploy
 
-    # model_validator enforces: verification.provider != identification.provider (startup error if violated)
-    # and logs a warning when verification=None (heuristics-only)
+    # model_validator enforces: grounding.provider != identification.provider (startup error if violated)
+    # and logs a warning when grounding=None (heuristics-only)
+    # model_validator enforces: confidence_threshold=None is incompatible with auto_mode=True
 
 # Note: there is no result_cache_enabled field in ExtractionConfig.
 # Every eval run makes full LLM calls. Intermediate results are cached via read_or_run()
@@ -402,6 +349,18 @@ class ExtractionConfig(BaseModel):
 ### RAGConfig
 
 ```python
+class MultiQueryConfig(BaseModel):
+    llm: _LLMConfig
+    num_variants: int = 3  # 1–10 query variants generated per search
+
+class RerankerConfig(BaseModel):
+    provider: RerankerProvider
+    model: str
+    top_n: int | None = None          # truncate to top-N after reranking; None = keep all
+    max_retries: int = 3
+    timeout_seconds: float | None = None
+    api_key_secret_key: str | None = None  # defaults to '<provider>_api_key' if not set
+
 class RAGConfig(BaseModel):
     enabled: bool = True
     top_k: int = 5        # candidates retained from vector search (fed to graph traversal)
@@ -410,8 +369,10 @@ class RAGConfig(BaseModel):
     traversal_max_depth: int = 1                            # direct neighbours only for MVP
     traversal_rel_types: list[RelationshipType] | None = None  # None = all relationship types
     max_concurrent_retrievals: int = 20                     # maximum number of simultaneous RAG retrieval calls
-    search_mode: SearchMode = SearchMode.SEMANTIC           # SEMANTIC | KEYWORD | HYBRID
-    keyword_extraction_llm: LLMConfig | None = None         # required for KEYWORD and HYBRID modes; None disables sparse leg
+    search_mode: SearchMode = SearchMode.SEMANTIC           # SEMANTIC | KEYWORD | HYBRID | AGENT (reserved)
+    keyword_extraction_llm: _LLMConfig | None = None        # required for KEYWORD and HYBRID modes; None disables sparse leg
+    multi_query: MultiQueryConfig | None = None             # when set, generates num_variants query variants and fuses with RRF
+    reranker: RerankerConfig | None = None                  # when set, reranks retrieval results after vector search
 ```
 
 `keyword_extraction_llm` controls whether the sparse leg is active. When `None`, any call to `KEYWORD` or `HYBRID` mode logs a warning and returns no results from the sparse leg — `HYBRID` degrades to pure semantic. When set, the LLM extracts 3–6 discriminating keywords from the query before sparse search (see **Sparse leg design** below).
@@ -448,10 +409,16 @@ class VectorIndexConfig(BaseModel):
 
 ```python
 class KBStoreConfig(BaseModel):
-    schema_name: str = "ops"             # PostgreSQL schema that owns kb_nodes and kb_relationships
+    schema_name: str = "knowledge_base"  # PostgreSQL schema that owns kb_nodes and kb_relationships
     pool_min_size: int = 2
     pool_max_size: int = 10
     connection_secret_key: str = "postgres_url"   # shared with VectorStoreConfig; same Postgres instance
+
+class OpsStoreConfig(BaseModel):
+    schema_name: str = "ops"             # PostgreSQL schema that owns jobs, api_keys
+    pool_min_size: int = 2
+    pool_max_size: int = 10
+    connection_secret_key: str = "postgres_url"
 ```
 
 ### BlobStoreConfig
@@ -541,8 +508,8 @@ Each `ConceptType` maps to a registered agent class with its own system prompt. 
 
 Both the identification and same-type resolution families support an optional **reflective mode** that wraps each shallow agent with a second LLM pass. Enabled via `ReflectiveLLMConfig` fields on `ExtractionConfig`:
 
-- `identification_self_review.enabled` — wraps all identification agents in `ReflectiveIdentificationAgent`.
-- `resolution_self_review.enabled` — wraps all same-type resolution agents in `ReflectiveResolutionAgent`.
+- `identification_self_review.enabled` — wraps all identification agents in `ReflectiveIdentificationAgent`. The review LLM is `identification_self_review.llm`; falls back to the primary identification LLM when `None`.
+- `resolution_self_review.enabled` — wraps all same-type resolution agents in `ReflectiveResolutionAgent`. Cross-type agents are never wrapped. The review LLM is `resolution_self_review.llm`; falls back to the primary resolution LLM when `None`.
 
 Both flags default to `False`. When disabled, shallow agents are instantiated unchanged.
 
@@ -593,10 +560,12 @@ class KBNode(BaseModel):
     metadata: NodeMetadata
 
 class KBRelationship(BaseModel):
+    rel_id: UUID = Field(default_factory=uuid4)  # surrogate PK; used by delete_relationship / get_relationship
     source_id: UUID
     target_id: UUID
     rel_type: RelationshipType
     job_id: str           # which job created this relationship; duplicates source_id → KBNode.metadata.job_id
+    source: RelationshipSource = RelationshipSource.PIPELINE
     created_at: datetime  # genuinely non-derivable; not available via the source node
 
     # Implementation note: `job_id` is intentionally duplicated here for query convenience —
@@ -621,9 +590,14 @@ class ApprovalMethod(StrEnum):
     MANUAL = auto()       # node created directly by an operator at review time
 
 class IngestionSource(StrEnum):
-    JOB = auto()    # extracted from a meeting recording via the normal pipeline
-    INIT = auto()   # seeded from a document corpus via seshat init
-    MANUAL = auto() # created directly by an operator (review time or future standalone endpoint)
+    PIPELINE = auto()  # extracted from a meeting recording via the normal pipeline
+    INIT = auto()      # seeded from a document corpus via seshat init
+    MANUAL = auto()    # created directly by an operator (review time or future standalone endpoint)
+
+class RelationshipSource(StrEnum):
+    PIPELINE = auto()  # created by the resolution pipeline
+    MANUAL = auto()    # created via POST /graph/relationships by an operator
+    INIT = auto()      # created during seshat init seeding
 
 class NodeMetadata(BaseModel):
     job_id: str                               # UUID4; same namespace for both JOB and INIT ingestion (refs ops.jobs.job_id or ops.init_runs.job_id)
@@ -639,6 +613,7 @@ class NodeMetadata(BaseModel):
     pending_reason: str | None = None         # human-readable reason why the node is PENDING_REVIEW (e.g. "below confidence threshold")
     corrected_by: str | None = None    # set when a reviewer provides edited_content in NodeDecision
     corrected_at: datetime | None = None   # set to the same timestamp as approved_at (corrections only happen at approval time in v1)
+    correction_reason: str | None = None
     confidence_breakdown: ConfidenceBreakdown | None = None  # populated during extraction; echoes ExtractionResult.confidence_breakdowns[node.id]
     concept_fields: dict[str, Any] | None = None             # type-specific extracted fields not in ConceptModel base (e.g. assignee, due, type)
 ```
@@ -647,9 +622,8 @@ class NodeMetadata(BaseModel):
 class ExtractionResult(BaseModel):
     job_id: str
     nodes: list[KBNode]
-    confidence_breakdowns: dict[UUID, ConfidenceBreakdown]  # node.id → breakdown
-    failed_concept_types: list[ConceptType] = []            # types whose extraction failed entirely
-    nodes_by_type: dict[ConceptType, int] = {}              # convenience count of nodes per type
+    relationships: list[KBRelationship] = []
+    confidence_breakdowns: dict[str, ConfidenceBreakdown] = {}  # str(node.id) → breakdown
 
 class ResolutionResult(BaseModel):
     job_id: str
@@ -671,9 +645,9 @@ class FailedResolutionSource(BaseModel):
 
 **Heuristics** is the sole continuous confidence signal; `KBNode.confidence` equals the heuristics score directly.
 
-**Verification** is a hard binary gate, not a blended signal. When `ExtractionConfig.verification` is configured, a separate lightweight agent independently judges each extracted node. A node that fails (`verification_passed=False`) is rejected outright regardless of its heuristics score. When verification is disabled or retries are exhausted, `verification_passed` is `None` and the decision falls through to the heuristics threshold alone.
+**Grounding** is a hard binary gate, not a blended signal. When `ExtractionConfig.grounding` is configured, a separate lightweight agent independently judges each extracted node. A node that fails (`grounding_passed=False`) is rejected outright regardless of its heuristics score. When grounding is disabled or retries are exhausted, `grounding_passed` is `None` and the decision falls through to the heuristics threshold alone.
 
-1. **Verification agent** — a separate lightweight agent (cheap model: `gpt-4o-mini`, `claude-haiku`) that receives the extraction and source quote and answers a binary "is this well-supported?" question. Must use a different `LLMProvider` than the extraction agent — same-provider verification produces correlated errors (enforced by `model_validator`). Example pairing: extraction on `anthropic`, verification on `openai`.
+1. **Grounding agent** — a separate lightweight agent (cheap model: `gpt-5.4-nano` via OpenAI, or another low-cost provider) that receives the extraction and source quote and answers a binary "is this well-supported?" question. Must use a different `LLMProvider` than the extraction agent — same-provider grounding produces correlated errors (enforced by `model_validator`). Example pairing: extraction on `anthropic`, grounding on `openai`.
 2. **Heuristics** — always active. Formula:
 
 ```
@@ -708,20 +682,20 @@ title_specificity = 0.45 * has_named_entity + 0.35 * has_qualifier + 0.20 * word
 
 **Auto-approval policy:**
 
-| `verification_passed` | heuristics vs threshold | Outcome |
+| `grounding_passed` | heuristics vs threshold | Outcome |
 |---|---|---|
-| `None` (disabled or retries exhausted) | ≥ threshold | APPROVED (auto) |
-| `True` | ≥ threshold | APPROVED (auto) |
+| `None` (disabled or retries exhausted) | ≥ threshold | APPROVED (auto or threshold) |
+| `True` | ≥ threshold | APPROVED (auto or threshold) |
 | `False` | any | REJECTED |
 | any | < threshold | REJECTED (auto-mode) or PENDING_REVIEW (manual mode) |
 
-When `verification=None`, no verification agent runs and startup issues a warning. The heuristics threshold calibrated in a heuristics-only run is not directly comparable to one calibrated with verification enabled — recalibrate when toggling verification.
+When `grounding=None`, no grounding agent runs and startup issues a warning. The heuristics threshold calibrated in a heuristics-only run is not directly comparable to one calibrated with grounding enabled — recalibrate when toggling grounding.
 
 ```python
 class ConfidenceBreakdown(BaseModel):
-    verification_enabled: bool             # True when a VerificationLLMConfig is present
-    verification_passed: bool | None       # None when verification is disabled or retries exhausted
-    heuristics: float                      # always present; echoes KBNode.confidence
+    grounding_enabled: bool        # True when a GroundingLLMConfig is present on ExtractionConfig
+    grounding_passed: bool | None  # None when grounding is disabled or retries exhausted
+    heuristics: float              # always present; echoes KBNode.confidence
 ```
 
 ### Prompt Injection Mitigation
@@ -810,7 +784,7 @@ A hard token cap (`max_hint_tokens`) is enforced after assembly: if the serialis
 ### Retrieval Flow
 
 - **Embedding target:** each new `KBNode` is embedded from `title + description` — node-to-node comparison is homogeneous and avoids the semantic distance problem of comparing raw transcript chunks against distilled KB summaries. **Known limitation:** `text-embedding-3-small` is a general-purpose semantic model — it conflates semantic similarity with logical coupling. Two Decisions on the same topic but independent may score highly similar; a Risk and a Decision with a `MITIGATES` relationship may score dissimilar. This is the primary reason the retrieval baseline must be measured before real use. If recall@5 < 0.7, switching the embedding model (e.g. a domain-specific or fine-tuned encoder) is the first tuning lever, before increasing `top_k`.
-- **Vector search:** semantic similarity via embedding model (pgvector for MVP), per new node against all KB nodes regardless of type. Returns top-K candidates — no reranker in MVP (see Decisions Deferred). Cross-type search is intentional: a DECISION source node may need to resolve against RISK or OPEN_QUESTION targets; restricting to same-type would miss valid candidates for cross-type resolution agents.
+- **Vector search:** handled by `SearchEngine` — SEMANTIC, KEYWORD, or HYBRID mode per `rag_config.search_mode`. Returns top-K candidates. Cross-type search is intentional: a DECISION source node may need to resolve against RISK or OPEN_QUESTION targets; restricting to same-type would miss valid candidates for cross-type resolution agents. Optional reranking via `AbstractReranker` (`CohereReranker` or `VoyageReranker`) is applied after retrieval if `rag_config.reranker` is configured.
 - **Graph traversal:** structural retrieval from KB Store — direct neighbours of top-K candidates (both inbound and outbound edges, depth=1). For MVP (Postgres): SQL join on `ops.kb_relationships`. For Neo4j: Cypher query. Same interface.
 
 ### Resolution
@@ -839,10 +813,12 @@ Resolution is two parallel LLM calls routed through the registry — both run co
 
 | Relationship | Source → Target |
 |---|---|
-| `MITIGATES` | Risk → Decision |
-| `BLOCKS` | Risk → Decision \| Risk → OpenQuestion |
-| `DEPENDS_ON` | Decision → Decision |
+| `MITIGATES` | Risk → Decision \| ActionItem → Risk |
+| `BLOCKS` | Risk → Decision \| Risk → OpenQuestion \| Risk → ActionItem \| OpenQuestion → Decision \| OpenQuestion → ActionItem |
+| `DEPENDS_ON` | Decision → Decision \| ActionItem → Decision (same-type only) |
 | `RESOLVES` | Decision → OpenQuestion |
+
+Nine cross-type agent instances in total, one per permitted `(source_type, target_type)` pair.
 
 Once both calls return, a **heuristic validation step** merges the outputs and rejects malformed relationships before the result is finalised:
 
@@ -855,12 +831,20 @@ Validation failures are logged and the offending relationship is dropped — the
 
 Heuristic validation operates on the `KBRelationship` list only — validation failures drop the offending relationship but do not otherwise affect the resolution result.
 
+### NodeRetriever and SearchEngine
+
+**`NodeRetriever`** is the RAG retrieval class used by `ExtractionOrchestrator` during the resolution pass. For each approved node it builds a `query = node.vector_store_text`, calls `SearchEngine.search(...)` (with `score_threshold=rag_config.min_similarity_score`), optionally reranks via `AbstractReranker`, then expands results with direct KB neighbours. A `_ContextBudget` caps total retrieved token cost. Both `SearchEngine` and `AbstractReranker` are wired at startup via `build_extraction_orchestrator`.
+
+**`SearchEngine`** handles `SEMANTIC`, `KEYWORD`, and `HYBRID` modes with optional multi-query fan-out (RRF fusion) and keyword extraction via LLM. `SearchMode.AGENT` is not handled — the catch-all raises `ValueError`. It is constructed by `get_search_engine(config, vector_store)` in `bootstrap.py` and passed to `NodeRetriever`.
+
+`SearchEngine` constructor: `(rag_config, vector_store: AbstractVectorStore, keyword_llm, multi_query_llm)`. It holds a direct reference to the `AbstractVectorStore` instance (not a callable `VectorSearchFn`). Its `search()` method delegates to `_semantic`, `_keyword`, or `_hybrid` based on `rag_config.search_mode`. `SearchMode.AGENT` is not handled by a dedicated branch — the catch-all raises `ValueError`.
+
 ### Retrieval Quality Baseline
 
 The `top_k=5` default must be justified against a measured baseline before MVP ships — not tuned by intuition.
 
 **Baseline approach:**
-1. Seed a test KB from the eval corpus (`tests/eval/corpus/`) using `seshat init`.
+1. Seed a test KB from the eval corpus (`tests/eval/corpus/`) by running the extraction pipeline directly against the corpus fixtures and writing results as `APPROVED` nodes.
 2. For each labelled transcript in the eval corpus, run extraction to produce new nodes, then embed them and search against the seeded KB.
 3. For each new node with a known ground-truth match in the KB, measure **recall@5**: fraction of known matches appearing in the top-5 retrieved candidates.
 4. If recall@5 is below 0.7 with default settings, tune `top_k` upward or adjust the embedding model before locking defaults.
@@ -921,7 +905,7 @@ PostgresKBStore              AbstractVectorStore          S3BlobStore
 | `PostgresKBStore` | Concrete class | Single MVP implementation; v2 adds `Neo4jKBStore` and a shared `KBStore` protocol *at that point* — no speculative interface today |
 | `S3BlobStore` | Concrete class | Single MVP implementation (LocalStack / real S3); no v2 provider swap planned within the same process |
 | `AbstractVectorStore` | Abstract + implementations | LangChain already owns provider abstraction here; interface is thin and multiple v2 providers (Chroma, Qdrant, Weaviate) are realistic |
-| `AbstractTranscriber` | Abstract + implementations | Three providers are already enumerated (AssemblyAI, OpenAI, Deepgram); factory-swappable at startup via `get_transcriber()`, which returns a `TrackingTranscriber` wrapper that records audio duration via mutagen and pushes ceiling-rounded seconds into the active `UsageTracker` |
+| `AbstractTranscriber` | Abstract + implementations | Three providers are enumerated (AssemblyAI, OpenAI, Deepgram — no `DeepgramTranscriber` implementation yet); factory-swappable at startup via `get_transcriber()`, which wraps the concrete transcriber in `TrackingTranscriber` (usage tracking) before returning |
 | `AbstractDocumentLoader` | Abstract + implementations | v2 loaders (Notion, Confluence) are network-backed and behaviourally different from `MarkdownDocumentLoader` |
 | `AbstractSecretsResolver` | Abstract + implementations | Two providers in MVP (ENV, AWS); v2 adds Azure and Vault — startup factory swap |
 | `AsyncioTaskQueue` | Concrete class, duck-typed swap | One queue for MVP; the v2 `ARQTaskQueue` exposes the same three methods (`enqueue / get_status / cancel`) — no formal protocol needed, the swap is a one-line change at the worker entrypoint |
@@ -950,7 +934,7 @@ class NodeFilter(BaseModel):
 
 ```python
 class SearchResult(BaseModel):
-    node_id: str
+    node_id: UUID
     score: float   # provider-native similarity score; higher = more similar
 ```
 
@@ -962,14 +946,14 @@ All methods are async — the pipeline runs in an asyncio context. `PostgresKBSt
 
 **`PostgresKBStore`** exposes: write a node (plain `INSERT`, returns its UUID as `str`; relationships are always written separately); write a relationship (both source and target UUIDs required); transition a node's state (the only pipeline-legal mutation on an existing node); retrieve a node by ID; retrieve a node's neighbours filtered by relationship type(s) and direction (`inbound`, `outbound`, or `both`); query nodes by `NodeFilter`.
 
-**`AbstractVectorStore`** exposes: upsert a node embedding (node ID + text + metadata); similarity search returning ranked `SearchResult` objects (query text, top-K count, optional `NodeFilter`); delete a node embedding by ID.
+**`AbstractVectorStore`** exposes: upsert a node embedding (node ID + text + metadata); `search_dense(query, top_k, node_filter, exclude_job_id, score_threshold)` — cosine similarity over the dense vector index; `search_sparse(query, top_k, node_filter, exclude_job_id)` — full-text search via `ts_rank_cd`; `search(query, top_k, ..., mode)` — concrete convenience dispatcher that routes to `search_dense` or `search_sparse` based on `mode` (used by callers that receive `SearchMode` at runtime, e.g. `NodeRepository` and eval runner); `update_metadata(node_id, patch)` — JSONB merge patch on an existing embedding; `delete(node_id)`. `SearchEngine` calls `search_dense`/`search_sparse` directly. Supported filter fields are declared via `get_supported_filter_fields()` — filters outside this set are silently ignored with a warning log.
 
 **`S3BlobStore`** exposes: put an artifact at a path key; get an artifact by key; check whether a key exists.
 
 ```python
 class S3BlobStore:
     async def put(self, key: str, data: bytes) -> None: ...
-    async def get(self, key: str) -> bytes: ...
+    async def get(self, key: str) -> bytes | None: ...  # returns None on 404; never raises on missing key
     async def exists(self, key: str) -> bool: ...
 ```
 
@@ -985,9 +969,9 @@ class S3BlobStore:
 
 KB nodes and relationships are stored in the `ops` schema alongside the operational tables. Two tables, managed by Alembic (same migration path as `ops.jobs`, `ops.api_keys`, and `ops.init_runs`):
 
-**`ops.kb_nodes`** — one row per `KBNode`. Columns: `node_id` (PK), `schema_version`, `job_id`, `type` (ConceptType), `title`, `description`, `confidence`, `quote_anchors` (JSONB), `status` (NodeStatus), `state` (NodeState, default `current`), `metadata` (JSONB), `created_at` (TIMESTAMPTZ).
+**`knowledge_base.kb_nodes`** — one row per `KBNode`. The `PostgresKBStore` stores nodes in the `knowledge_base` schema (not `ops`). Columns: `node_id` (PK), `schema_version`, `job_id`, `type` (ConceptType), `title`, `description`, `confidence`, `quote_anchors` (JSONB), `status` (NodeStatus), `state` (NodeState, default `current`), `metadata` (JSONB), `created_at` (TIMESTAMPTZ).
 
-**`ops.kb_relationships`** — one row per `KBRelationship`. Columns: `source_id` (FK → kb_nodes), `target_id` (FK → kb_nodes), `rel_type` (RelationshipType), `job_id` (UUID4, which job created this relationship), `created_at` (TIMESTAMPTZ). Composite PK on `(source_id, target_id, rel_type)`. Index on `target_id` for inbound traversal.
+**`knowledge_base.kb_relationships`** — one row per `KBRelationship`. Columns: `rel_id` (surrogate PK, UUID), `source_id` (FK → kb_nodes), `target_id` (FK → kb_nodes), `rel_type` (RelationshipType), `job_id` (UUID4, which job created this relationship), `source` (RelationshipSource, default `pipeline`), `created_at` (TIMESTAMPTZ). Composite unique constraint on `(source_id, target_id, rel_type)`. Index on `target_id` for inbound traversal.
 
 `get_neighbours()` joins on `ops.kb_relationships`. `direction="both"` returns inbound and outbound edges (used by `GET /graph/{node_id}` and RAG graph traversal); `direction="inbound"` filters to edges where `target_id = node_id` (used by impact traversal); `direction="outbound"` filters to edges where `source_id = node_id`. `query()` applies `NodeFilter` fields as SQL predicates on `ops.kb_nodes`.
 
@@ -1055,51 +1039,65 @@ Three operational tables in the `ops` schema, all managed by Alembic:
 
 **`ops.jobs`** — authoritative job state. Fields: `job_id` (PK, UUID4), `user_id` (FK → api_keys.user_id), `status` (mirrors `JobStatus`), `idempotency_key` (UNIQUE nullable), `source_type`, `created_at`, `updated_at`, `finished_at` (TIMESTAMP, set when status transitions to `DONE` or `FAILED`; cleared on `reset_failed_job`), `error_payload` (JSONB, null until FAILED), `mlflow_run_id` (null while PENDING), `meeting_date` (DATE NOT NULL), `submission` (JSONB NOT NULL — the full `JobSubmissionRequest` JSON), `raw_blob_key` (TEXT NOT NULL — S3 key of the raw uploaded file). Index on `(user_id, created_at)` for the per-user rate-limit query. The three `meeting_date`/`submission`/`raw_blob_key` columns are written atomically by `OpsRepository.set_job_submission()` immediately after the raw file is stored — they power both `GET /jobs/{id}/results` blob fallback and `POST /jobs/{id}/retry` without additional DB calls.
 
-**`ops.init_runs`** — coordination for `seshat init`. Fields: `job_id` (PK, UUID4), `status` (`running | done | failed`), `source_path`, `created_at`, `updated_at`.
+`ops.jobs` is the authoritative source for API job lifecycle state. Idempotency key deduplication on `POST /jobs` is a single `SELECT` against the `UNIQUE` constraint on `idempotency_key`. KB nodes and relationships live in `knowledge_base.kb_nodes` and `knowledge_base.kb_relationships` — see §6, MVP: PostgresKBStore. The `store` schema is entirely managed by `langchain-postgres` — Seshat code never writes DDL against it directly.
 
-`ops.jobs` is the authoritative source for API job lifecycle state. Idempotency key deduplication on `POST /jobs` is a single `SELECT` against the `UNIQUE` constraint on `idempotency_key`. `ops.init_runs` serves the same coordination role for `seshat init` runs. KB nodes and relationships live in `ops.kb_nodes` and `ops.kb_relationships` — see §6, MVP: PostgresKBStore. The `store` schema is entirely managed by `langchain-postgres` — Seshat code never writes DDL against it directly.
+> **Deferred:** `ops.init_runs` (coordination table for `seshat init`) is not implemented — the `seshat init` feature is deferred to v2.
 
 **Roles:**
 
 | Role | Allowed actions |
 |------|----------------|
-| `viewer` | `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/results`, `GET /graph`, `GET /graph/{node_id}`, `GET /graph/{node_id}/impact`, `GET /health`, `GET /health/components` |
-| `reviewer` | All `viewer` actions + `POST /jobs`, `POST /jobs/{id}/approve` |
-| `operator` | All `reviewer` actions + `POST /jobs/{id}/retry`, `POST /graph`, `PUT /graph/{node_id}`, `PUT /graph/{node_id}/override`, `POST /graph/bulk`, `POST /graph/nodes/resolve`, `auto_mode=True` per-request override |
-| `admin` | All `operator` actions + `DELETE /graph/{node_id}`, `DELETE /graph/bulk` |
+| `viewer` | `GET /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/results`, `GET /v1/jobs/{id}/transcript/excerpt`, `GET /v1/graph`, `GET /v1/graph/search`, `GET /v1/graph/{node_id}`, `GET /v1/graph/{node_id}/neighbours`, `GET /v1/graph/{node_id}/detail`, `GET /v1/graph/{node_id}/impact`, `GET /v1/graph/relationships`, `GET /v1/health`, `GET /v1/health/components`, `GET /v1/me` |
+| `reviewer` | All `viewer` actions + `POST /v1/jobs` (without `overrides` or `force`), `POST /v1/jobs/{id}/approve` |
+| `operator` | All `reviewer` actions + `POST /v1/jobs/{id}/retry`, `POST /v1/jobs` with `overrides`, `POST /v1/graph/nodes`, `POST /v1/graph/nodes/bulk`, `POST /v1/graph/nodes/resolve`, `PUT /v1/graph/nodes/{node_id}`, `PUT /v1/graph/nodes/{node_id}/override`, `POST /v1/graph/relationships` |
+| `admin` | All `operator` actions + `POST /v1/jobs` with `force=True`, `DELETE /v1/graph/nodes/{node_id}`, `DELETE /v1/graph/nodes/bulk`, `DELETE /v1/graph/relationships/{rel_id}` |
 
-Key provisioning is via `POST /admin/api-keys` (root-key authenticated), which returns the plaintext key once. The `/admin` router also exposes `GET /admin/api-keys` (list with revocation status) and `DELETE /admin/api-keys/{key_id}` (revoke). The root key itself is stored in Secrets Manager under `APIConfig.admin_api_key_secret_key` (default: `"admin-api-key"`).
+Key provisioning is via `POST /v1/admin/api-keys` (root-key authenticated), which returns the plaintext key once. The `/v1/admin` router also exposes `GET /v1/admin/api-keys` (list with revocation status) and `DELETE /v1/admin/api-keys/{key_id}` (revoke). The root key itself is stored in Secrets Manager under `APIConfig.root_api_key_secret_key` (default: `"root-api-key"`).
 
 > **JWT (deferred to v2):** JWT with an external IdP (e.g. Azure AD) is the natural upgrade when the user base grows or SSO is needed. See Deferred Decisions.
 
 ### Endpoints
 
-```
-GET  /jobs                        List jobs; optional ?job_status=<status>&limit=<n>&offset=<n> (viewer+)
-POST /jobs                        Submit a new job (audio file or text); see Job Submission below (reviewer+)
-GET  /jobs/{id}                   Job status + timestamps; see Job Progress Contract below (viewer+)
-GET  /jobs/{id}/results           ExtractionResult; available from AWAITING_REVIEW onwards; HTTP 409 if not ready (viewer+)
-POST /jobs/{id}/approve           Submit node review decisions (reviewer+)
-POST /jobs/{id}/retry             Retry a FAILED job (operator only)
-GET  /graph                       Query KB nodes with filters (viewer+)
-GET  /graph/{node_id}             Node + neighbours (filters non-CURRENT neighbours) (viewer+)
-GET  /graph/{node_id}/impact      Traversal from node; see Impact Traversal below (viewer+)
-POST /graph                       Create a manual KB node (operator+)
-PUT  /graph/{node_id}             Update a manually-created node (operator+)
-PUT  /graph/{node_id}/override    Override any node regardless of ingestion source (operator+)
-POST /graph/bulk                  Bulk-create nodes with on_error semantics (operator+)
-POST /graph/nodes/resolve         Run resolution for manually-created APPROVED nodes (operator+)
-DELETE /graph/{node_id}           Delete a node, cascade by default (admin only)
-DELETE /graph/bulk                Bulk-delete nodes with on_error semantics (admin only)
-GET  /health                      API liveness; always returns {status: "ok"}
-GET  /health/components           Component readiness; checks postgres, mlflow, blob_store; returns 503 when degraded
+All routes are under the `/v1` prefix.
 
-GET  /admin/api-keys              List all API keys with revocation status (root-key only)
-POST /admin/api-keys              Create a new API key; returns plaintext once (root-key only)
-DELETE /admin/api-keys/{key_id}   Revoke an API key by integer ID (root-key only)
+```
+GET  /v1/jobs                               List jobs; optional filters (viewer+)
+POST /v1/jobs                               Submit a new job (audio file or text); see Job Submission below (reviewer+)
+GET  /v1/jobs/{id}                          Job status + timestamps; see Job Progress Contract below (viewer+)
+GET  /v1/jobs/{id}/results                  ExtractionResult; available from AWAITING_REVIEW onwards; HTTP 409 if not ready (viewer+)
+GET  /v1/jobs/{id}/transcript/excerpt       Fetch a character-range excerpt from the raw transcript (viewer+)
+POST /v1/jobs/{id}/approve                  Submit node review decisions (reviewer+)
+POST /v1/jobs/{id}/retry                    Retry a FAILED job (operator only)
+
+GET  /v1/graph                              Query KB nodes with NodeFilter (viewer+)
+GET  /v1/graph/search                       Semantic/keyword/hybrid search over KB nodes (viewer+)
+GET  /v1/graph/{node_id}                    Single node (viewer+)
+GET  /v1/graph/{node_id}/neighbours         Direct neighbours of a node (viewer+)
+GET  /v1/graph/{node_id}/detail             Node + neighbours + relationships (viewer+)
+GET  /v1/graph/{node_id}/impact             Traversal from node; see Impact Traversal below (viewer+)
+POST /v1/graph/nodes                        Create a manual KB node (operator+)
+POST /v1/graph/nodes/bulk                   Bulk-create nodes with on_error semantics (operator+)
+POST /v1/graph/nodes/resolve                Run resolution for manually-created APPROVED nodes (operator+)
+PUT  /v1/graph/nodes/{node_id}              Update a manually-created node (operator+)
+PUT  /v1/graph/nodes/{node_id}/override     Override any node regardless of ingestion source (operator+)
+DELETE /v1/graph/nodes/{node_id}            Delete a node, cascade by default (admin only)
+DELETE /v1/graph/nodes/bulk                 Bulk-delete nodes with on_error semantics (admin only)
+GET  /v1/graph/relationships                List relationships with optional filters (viewer+)
+POST /v1/graph/relationships                Create a manual relationship (operator+)
+DELETE /v1/graph/relationships/{rel_id}     Delete a relationship (admin only)
+
+GET  /v1/health                             API liveness; always returns {status: "ok"}
+GET  /v1/health/components                  Component readiness; checks postgres, mlflow, blob_store; returns 503 when degraded
+GET  /v1/me                                 Current user identity and role (viewer+)
+
+GET  /v1/admin/api-keys                     List all API keys with revocation status (root-key only)
+POST /v1/admin/api-keys                     Create a new API key; returns plaintext once (root-key only)
+DELETE /v1/admin/api-keys/{key_id}          Revoke an API key by integer ID (root-key only)
 ```
 
-`GET /graph` filter fields from `NodeFilter` are passed as query params: `?node_type=adr&team=platform&min_confidence=0.7&ingestion_source=job&job_id=abc&limit=100&offset=0`. All fields are optional and AND-combined. Enum fields accept the lowercased `StrEnum` value. `limit` defaults to 1000 (max 10 000); `offset` enables pagination.
+`GET /v1/graph/search` query parameters: `q: str` (required), `NodeFilter` fields (optional), `limit: int = 10`, `search_mode: SearchMode = SEMANTIC`, `score_threshold: float | None`. Returns `NodeSearchResponse` (list of `NodeSearchResult`, each with a `NodeDetailResponse` and optional `score`).
+
+`GET /v1/graph` filter fields from `NodeFilter` are passed as query params: `?node_type=adr&team=platform&min_confidence=0.7&ingestion_source=job&job_id=abc&limit=100&offset=0`. All fields are optional and AND-combined. Enum fields accept the lowercased `StrEnum` value. `limit` defaults to 1000 (max 10 000); `offset` enables pagination.
 
 ### Job Submission
 
@@ -1111,18 +1109,21 @@ DELETE /admin/api-keys/{key_id}   Revoke an API key by integer ID (root-key only
 class JobSubmissionRequest(BaseModel):
     source_type: Literal["audio", "text"]         # "video" deferred to v2 (ffmpeg dependency)
     metadata: TranscriptMetadata                  # meeting_date, participants, etc.
-    idempotency_key: str | None = None
     auto_mode: bool = False                       # shorthand: operator sets True to skip human review for this job
+    idempotency_key: str | None = None
+    force: bool = False                           # re-ingest even if content hash already exists (admin only)
     overrides: SeshatConfigOverride | None = None  # per-request config, deep-merged onto SeshatConfig
     retrieval_filters: NodeFilter | None = None    # runtime RAG retrieval scope; not config (see Section 3)
 ```
 
 The API constructs a `TranscriptDocument` from this request (generating `id`; `blob_key` is set after the transcript is written to blob storage by the transcription stage for audio, or by the text validator for `source_type="text"`) and enqueues the job.
 
-**Rate limiting:** `POST /jobs` enforces two checks before creating a job:
+**Content-hash deduplication:** before creating a new job, `POST /jobs` SHA-256 hashes the uploaded file bytes. If a prior `DONE` job has the same content hash, the request is rejected as a duplicate (HTTP 409) unless `force=True` is set (admin only). When `force=True` is set, the existing job's approved nodes are hard-deleted and the job is re-ingested from scratch.
+
+**Rate limiting:** `POST /jobs` enforces two additional checks before creating a job:
 
 1. **Per-user hourly cap:** counts the user's jobs submitted in the last hour using `ops.jobs` (sliding window: current UTC time − 3600 seconds, indexed on `user_id, created_at`). If the count meets or exceeds `api.max_jobs_per_user_per_hour` (default: 10), the request is rejected with HTTP 429.
-2. **Global concurrency cap:** counts jobs system-wide in `TRANSCRIBING`, `EXTRACTING`, or `WRITING` state. If the count meets or exceeds `api.max_concurrent_jobs` (default: 1), the request is rejected with HTTP 429 and a message indicating a job is already in progress. This prevents LLM cost blowup from simultaneous pipeline runs at MVP scale.
+2. **Global concurrency cap:** counts jobs system-wide in `TRANSCRIBING`, `IDENTIFYING`, `RESOLVING`, or `WRITING` state. If the count meets or exceeds `api.max_concurrent_jobs` (default: 1), the request is rejected with HTTP 429 and a message indicating a job is already in progress. This prevents LLM cost blowup from simultaneous pipeline runs at MVP scale.
 
 Both checks run before the job is created. Violations are logged with `user_id` and timestamp.
 
@@ -1132,14 +1133,15 @@ Both checks run before the job is created. Violations are logged with `user_id` 
 class JobStatus(StrEnum):
     PENDING = auto()
     TRANSCRIBING = auto()
-    EXTRACTING = auto()
+    IDENTIFYING = auto()       # renamed from EXTRACTING; covers the identification pass
     AWAITING_REVIEW = auto()   # pipeline pauses here for human review
+    RESOLVING = auto()         # resolution pass running after approval
     WRITING = auto()
     DONE = auto()
     FAILED = auto()
 ```
 
-`AWAITING_REVIEW` is skipped entirely when `auto_mode=True`.
+`AWAITING_REVIEW` is skipped entirely when `auto_mode=True`. `RESOLVING` is the post-approval resolution pass; in auto-mode the pipeline transitions directly from `IDENTIFYING` to `RESOLVING`.
 
 ### Job Progress Contract
 
@@ -1155,13 +1157,15 @@ class JobResponse(BaseModel):
     idempotency_key: str | None         # echoed from the original JobSubmissionRequest; None when not provided
     stage_progress: str | None          # human-readable; None when no meaningful message available
     error: ErrorPayload | None          # populated when status=FAILED
-    mlflow_run_id: str | None = None    # set when the worker starts the first pipeline stage; NULL while PENDING
+    mlflow_run_id: str | None = None           # set when the worker starts the first pipeline stage; NULL while PENDING
+    confidence_threshold: float | None = None  # the effective threshold used for this job
 ```
 
 **`stage_progress` examples per stage:**
 - `TRANSCRIBING` — `"Transcribing audio"` (AssemblyAI does not expose per-call progress in the polling API)
-- `EXTRACTING` — `"Extracting: {n}/{total} agents complete"`. `n` counts completed individual agent calls (one per concept_type). `total` is `len(concept_types)` — e.g. 4 concept types = 4 total; progress increments per completed call. When chunking is introduced, `total` becomes `len(concept_types) × chunk_count`.
+- `IDENTIFYING` — `"Extracting: {n}/{total} agents complete"`. `n` counts completed individual agent calls (one per concept_type). `total` is `len(concept_types)` — e.g. 4 concept types = 4 total; progress increments per completed call. When chunking is introduced, `total` becomes `len(concept_types) × chunk_count`.
 - `AWAITING_REVIEW` — `"{n} nodes pending review"`
+- `RESOLVING` — `"Resolving relationships"`
 - `WRITING` — `"Writing nodes to KB"`
 
 > **v2 — Server-Sent Events:** a `GET /jobs/{id}/stream` SSE endpoint is the natural upgrade for lower-latency progress. Deferred until the pipeline stage model is stable and the Streamlit UI is mature enough to warrant it.
@@ -1187,10 +1191,11 @@ class UsageRecord(BaseModel):
     # time if the mixed type causes confusion in the MLflow logging or cost display code.
 
 class ErrorPayload(BaseModel):
-    stage: JobStatus                              # which stage failed
+    stage: str                                    # which stage failed (human-readable label)
     reason: str                                   # human-readable description
     recoverable: bool                             # if True, POST /jobs/{id}/retry is available
-    usage: dict[JobStatus, list[UsageRecord]]     # stage → [records] for this attempt
+    status: JobStatus                             # job status at time of failure
+    usage: dict[str, list[UsageRecord]] = {}      # stage → [records] for this attempt
 ```
 
 **Usage tracking:** usage is tracked per stage and per attempt as a list of `UsageRecord` — one record per `CallType` active in that stage. `call_type` determines what `units` means (tokens for LLM/embedding, audio seconds for transcription). Accumulated usage across all retries is reported in MLflow. Cost estimation from unit counts is informational only (shown in the MLflow UI) — enforcement uses token/duration caps, not dollar amounts, so no price table needs to be maintained.
@@ -1203,7 +1208,7 @@ class ErrorPayload(BaseModel):
 If a cap is exceeded, the job transitions to `FAILED` with `recoverable=True`. The `POST /jobs/{id}/retry` endpoint takes no body — to raise a cap, update the config and retry. The UI surfaces a retry button when `recoverable=True`.
 
 **Automatic retry policy:** transient errors (API timeout, HTTP 429 rate limit) are retried automatically before the stage transitions to `FAILED`. Per-stage policy:
-- **Max attempts:** 3 (configurable as `TranscriptionConfig.max_retries` and `_LLMConfig.max_retries` — inherited by `IdentificationLLMConfig`, `VerificationLLMConfig`, `ResolutionLLMConfig`)
+- **Max attempts:** 3 (configurable as `TranscriptionConfig.max_retries` and `_LLMConfig.max_retries` — inherited by `IdentificationLLMConfig`, `GroundingLLMConfig`, `ResolutionLLMConfig`)
 - **Backoff:** exponential with jitter — base 2s, multiplier 2×, max 60s. When a `Retry-After` header is present, it sets the minimum delay floor; jitter is applied on top: `delay = max(computed_backoff, retry_after_seconds) * uniform(0.8, 1.2)`
 - **Scope:** per-call retry within the stage. A stage that exhausts retries on any single call transitions to `FAILED` with `recoverable=True`
 
@@ -1249,13 +1254,8 @@ The Streamlit UI retry button always uses `POST /jobs` with the original `idempo
 
 ```python
 class KBNodeEdit(BaseModel):
-    title: str                           # required; min_length=1
-    description: str                     # required; min_length=1
-    # metadata fields the pipeline does not extract; operators may fill these in
-    participants: list[str] | None = None
-    team: str | None = None
-    project: str | None = None
-    domain: str | None = None
+    title: str        # required; min_length=1
+    description: str  # required; min_length=1
 
 class NodeDecision(BaseModel):
     node_id: str
@@ -1287,21 +1287,16 @@ class ManualNodeCreate(BaseModel):
 class ApproveRequest(BaseModel):
     approve_above_threshold: BulkApproveRule | None = None
     decisions: list[NodeDecision] | None = None
-    created_nodes: list[ManualNodeCreate] | None = None   # operator only; reviewer → HTTP 403
+    # Model validator: at least one of approve_above_threshold or decisions must be set
 ```
 
-Manually created nodes get: `confidence=1.0`, `quote_anchors` computed from `source_quote` + `blob_key` if both provided (falls back to `[]` with a `logging.warning` if the quote cannot be located), `status=APPROVED`, `approval_method=MANUAL`, `ingestion_source=MANUAL`, `approved_by=<user_id>`, `approved_at=<UTC now>`.
-
 **Processing order:**
-1. **Role check:** if `created_nodes` is non-empty → requesting user must be `operator`, else HTTP 403 with message `"created_nodes requires operator role"`. Runs before any processing.
-2. `approve_above_threshold` runs next — approves all `PENDING_REVIEW` nodes with `confidence >= threshold`, skipping any `exclude`d IDs. Sets `approval_method=ApprovalMethod.BULK` on affected nodes.
-3. `decisions` runs next — per-node overrides. Can approve, reject, or edit any node regardless of whether the bulk rule already touched it. Sets `approval_method=ApprovalMethod.INDIVIDUAL` on affected nodes. `KBNodeEdit` patches only the fields that are set — unset fields leave the existing node value intact.
-4. **Build `KBNode` objects from `created_nodes`** — constructed directly from the payload; no LLM calls.
-5. **Merge:** approved LLM nodes + manually created nodes → full node set for resolution.
-6. **Resolution pass** — orchestrator receives the full merged set as `new_nodes`; manual nodes are treated identically to LLM-extracted nodes (RAG retrieval + relationship resolution).
-7. **WRITING** — KB + vector store writes (unchanged).
+1. `approve_above_threshold` runs first — approves all `PENDING_REVIEW` nodes with `confidence >= threshold`, skipping any `exclude`d IDs. Sets `approval_method=ApprovalMethod.BULK` on affected nodes.
+2. `decisions` runs next — per-node overrides. Can approve, reject, or edit any node regardless of whether the bulk rule already touched it. Sets `approval_method=ApprovalMethod.INDIVIDUAL` on affected nodes. `KBNodeEdit` patches only `title` and `description` — other node fields are not editable at review time.
+3. Job transitions to `RESOLVING`; resolution pass runs.
+4. **WRITING** — KB + vector store writes.
 
-In steps 2–3, `approved_by` is set to the requesting user's `user_id` and `approved_at` to the current UTC timestamp.
+In steps 1–2, `approved_by` is set to the requesting user's `user_id` and `approved_at` to the current UTC timestamp.
 
 **Role enforcement summary:**
 
@@ -1309,7 +1304,8 @@ In steps 2–3, `approved_by` is set to the requesting user's `user_id` and `app
 |---|---|
 | `approve_above_threshold` | `reviewer` |
 | `decisions` | `reviewer` |
-| `created_nodes` | `operator` |
+
+Manual node creation during review has been moved to `POST /v1/graph/nodes` (operator+), separate from the approval flow.
 
 Once all `pending_review` nodes have a decision, the pipeline resumes to `WRITING`. If all nodes were rejected (zero approved nodes), the pipeline still transitions to `WRITING` — the writing stage writes zero nodes and the job reaches `DONE` with an empty result. This is valid: a reviewer may legitimately reject all extracted nodes if the meeting produced no recordable decisions. The `DONE` response body will contain an empty `nodes` list; no special terminal state is introduced.
 
@@ -1324,7 +1320,7 @@ The Streamlit app is the primary interface for human operators. Four screens, de
 - Submit button → polls `GET /jobs/{id}` and transitions to Screen 2
 
 **Screen 2 — Job status**
-- Pipeline stage progress bar: `PENDING → TRANSCRIBING → EXTRACTING → AWAITING_REVIEW → WRITING → DONE`
+- Pipeline stage progress bar: `PENDING → TRANSCRIBING → IDENTIFYING → AWAITING_REVIEW → RESOLVING → WRITING → DONE`
 - `stage_progress` text (e.g. `"Extracting: 3/8 agents complete"`)
 - Elapsed time
 - "View in MLflow" deep-link button (visible once `mlflow_run_id` is set on `JobResponse`)
@@ -1340,7 +1336,7 @@ This is the primary correctness gate for the knowledge base. For each `PENDING_R
 - `ConfidenceBreakdown`: final score + per-component breakdown (verification / heuristics)
 - Per-node action: approve / reject / edit (opens an inline form pre-filled with current `title` + `description`; also exposes optional metadata fields `participants`, `team`, `project`, `domain`)
 - Bulk approve rule: threshold slider + optional exclude list → maps to `BulkApproveRule` in `ApproveRequest`
-- **Manual node creation panel** (operator role only — hidden for `reviewer`): form with `type` dropdown (required), `title` (required), `description` (required), optional `source_quote` + `blob_key` (co-required — UI disables "Add node" if exactly one is filled), optional `participants`, `team`, `project`, `domain`. "Add node" appends to an in-memory list shown below the form; each entry has a remove button. Submitted as `created_nodes` in the `ApproveRequest` payload — no separate API call.
+- **Manual node creation panel** (operator role only — hidden for `reviewer`): form with `type` dropdown (required), `title` (required), `description` (required), optional `source_quote` + `blob_key` (co-required — UI disables "Add node" if exactly one is filled), optional `participants`, `team`, `project`, `domain`. "Add node" submits via `POST /v1/graph/nodes` as a separate API call (not via `ApproveRequest`).
 - Submit decisions button → `POST /jobs/{id}/approve`
 
 **Screen 4 — Knowledge base query**
@@ -1352,18 +1348,19 @@ This is the primary correctness gate for the knowledge base. For each `PENDING_R
 ### Impact Traversal
 
 ```
-GET /graph/{node_id}/impact?depth=2&rel_types=supersedes,depends_on&min_confidence=0.0
+GET /graph/{node_id}/impact?depth=2&rel_types=supersedes,depends_on&min_confidence=0.0&direction=outbound
 ```
 
-Answers "what would break if this node changed?" — inbound BFS from `node_id`, following relationship edges backwards (source → seed). Returns `list[KBNode]` with each node annotated with `traversal_depth: int`. Query parameters:
+Returns `list[KBNode]` with each node annotated with `traversal_depth: int`. Query parameters:
 
 - `depth` — BFS traversal depth (default 2, max 3; unbounded traversal on a dense KB is a cost risk)
 - `rel_types` — comma-separated `RelationshipType` values to follow during traversal; default: all types
 - `min_confidence` — filters traversed nodes by `KBNode.confidence >= min_confidence`; default 0.0
+- `direction` — `GraphDirection` enum value (`outbound` | `inbound` | `both`); default `outbound`
 
 Role requirement: `viewer` (read-only, same as `GET /graph/{node_id}`).
 
-`get_neighbours()` is called with `direction="inbound"` at each BFS level. `traversal_depth` on each returned node is the hop count from the seed node. Example: if Decision-A `DEPENDS_ON` Decision-B, traversing inbound from Decision-B returns Decision-A at depth=1 — the node that would break if Decision-B changes.
+`get_neighbours()` is called with the given `direction` at each BFS level. `traversal_depth` on each returned node is the hop count from the seed node. Example with `direction=inbound`: if Decision-A `DEPENDS_ON` Decision-B, traversing inbound from Decision-B returns Decision-A at depth=1 — the node that would break if Decision-B changes.
 
 #### `POST /graph/nodes/resolve` — trigger resolution for manually-created nodes
 
@@ -1384,7 +1381,7 @@ Response: `ResolveResponse`:
 
 ```python
 class ResolveResponse(BaseModel):
-    relationships_created: int
+    relationships_created: list[KBRelationship]
 ```
 
 **Validation:**
@@ -1431,9 +1428,9 @@ Captured per job/agent run:
 
 **`setup_mlflow(config: ObservabilityConfig) -> str`** — called once at worker startup. Sets the tracking URI, enables `mlflow.langchain.autolog()`, resolves the experiment by name, and returns the experiment ID. The caller is responsible for caching the returned experiment ID in-process.
 
-**`mlflow_run_url(tracking_uri, experiment_id, run_id) -> str`** — helper that builds the deep-link URL (`{tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`). Defined in `src/seshat/observability/mlflow_setup.py`; not yet called from the pipeline — wiring into the worker/Streamlit is deferred.
+**`mlflow_run_url(tracking_uri, experiment_id, run_id) -> str`** — helper that builds the deep-link URL (`{tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`). Defined in `src/seshat/app/platform/observability/mlflow_setup.py`.
 
-**`log_usage(run_id, stage, records)` / `log_cache_metrics(run_id, stage, ...)`** — helpers in `src/seshat/observability/usage_logger.py` that log `UsageRecord` token counts and prompt-cache metrics as MLflow metrics on the given run. Both resume the run via `mlflow.start_run(run_id=..., nested=True)` rather than creating new child runs. **Not yet wired into the pipeline** — the helper functions exist but are not called from any agent or pipeline stage. Wiring is deferred.
+**Token budget tracking** — `src/seshat/app/platform/observability/usage_tracker.py` provides `UsageTracker`, `TokenBudgetCallback`, `TrackingEmbeddings`, `TrackingTranscriber`, and the `@track_token_budget` decorator. The decorator is wired into orchestrator methods and tracks token spend per pipeline stage. `set_run_tracker` / `get_run_tracker` manage the per-run callback via a context variable. `UsageTracker` tracks: `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `embedding_tokens`, `transcription_seconds`, and `reranker_input_tokens` — the last accumulated by `CohereReranker` (from `response.meta.tokens.input_tokens`) and `VoyageReranker` (from `response.total_tokens`) via `get_run_tracker()`.
 
 **Streamlit integration:**
 - MVP: "View in MLflow" button deep-links to `{mlflow_tracking_uri}/#/experiments/{experiment_id}/runs/{run_id}`. `mlflow_run_id` comes from `JobResponse`; `experiment_id` is the return value of `setup_mlflow()`, cached at worker startup — not exposed on the API.
@@ -1472,11 +1469,11 @@ seshat-worker:abc1234
 No formal release process — for a local MVP, the SHA is sufficient to identify and reproduce any build.
 
 **In-flight jobs during deploy:** the MVP asyncio task queue is in-memory — in-flight jobs are lost on worker restart. Before deploying:
-1. Check for active jobs in `TRANSCRIBING`, `EXTRACTING`, or `WRITING` state.
+1. Check for active jobs in `TRANSCRIBING`, `IDENTIFYING`, `RESOLVING`, or `WRITING` state.
 2. Wait for them to complete or fail, or accept the loss — `recoverable=True` on most failure modes means users can retry via `POST /jobs/{id}/retry`.
 3. Jobs in `AWAITING_REVIEW` are safe to deploy through — the worker is idle for those jobs and no in-memory state is held.
 
-Jobs stranded in `WRITING` are handled automatically — the worker boot recovery procedure (see Section 8, Worker boot recovery) detects them on startup, cleans the partially-written KB state, and marks them `FAILED` with `recoverable=True`.
+Jobs stranded in `WRITING` are handled automatically — the worker boot recovery procedure (see Section 8, Worker boot recovery) detects them on startup and marks them `FAILED` with `recoverable=True`. Because KB and vector writes are a single Postgres transaction, no partial KB state can exist — only fully committed or fully rolled-back writes are possible, so no cleanup is needed.
 
 **Rollback:** redeploy the previous image tag:
 ```bash
@@ -1495,7 +1492,7 @@ src/seshat/
 │   ├── config/                  # Pydantic settings (SeshatConfig, LLMConfig, ExtractionConfig, …)
 │   └── utils/                   # Shared pure utilities (audio, retry, tokens, logging)
 ├── infra/                       # External system adapters — I/O only, no business logic
-│   ├── blob_store/              # S3 blob store abstraction (aioboto3)
+│   ├── blob_store/              # S3 blob store abstraction (aiobotocore)
 │   ├── vector_store/            # pgvector semantic search abstraction
 │   ├── knowledge_store/         # Postgres-backed KB node persistence
 │   ├── ops_store/               # Postgres-backed job/ops ledger
@@ -1515,7 +1512,7 @@ src/seshat/
 │       ├── worker/              # Async task queue and job worker
 │       └── observability/       # MLflow tracing, usage tracking, latency metrics
 ├── eval/                        # Eval harnesses and calibration meta-scorers (tooling, not runtime)
-└── cli/                         # CLI entry points (seshat eval, seshat init, …)
+└── cli/                         # CLI entry points (seshat eval, seshat api, seshat migrate; seshat init deferred to v2)
 
 tests/
   unit/          # Fast unit tests — mirrors src/seshat/ hierarchy
@@ -1689,20 +1686,25 @@ Each eval run writes to a configurable `EvalConfig.gate_path` (typically `data/e
 ### EvalConfig
 
 ```python
-class EvalConfig(BaseConfig):
-    corpus_base_dir: Path       # root — subdirs: identification/, resolution/, retrieval/
-    gate_path: Path             # full path including filename, e.g. data/eval_gate.json
-    observability: ObservabilityConfig = ObservabilityConfig(mlflow_experiment_name="seshat-eval")
+class EvalConfig(BaseSettings):  # inherits from BaseSettings, not BaseConfig
+    corpus_base_dir: Path = PROJECT_ROOT / "data/eval/corpora"
+    gate_path: Path = DEFAULT_EVAL_GATE_PATH   # validated: must end in .json; parent dir created if missing
+    observability: ObservabilityConfig = ObservabilityConfig()
     run_identification: bool = True
     run_resolution: bool = True
     run_retrieval: bool = True
-    nli_scorer_enabled: bool = False          # NLI model not yet available; stub only
+    run_grounding: bool = True
+    run_grouping: bool = True
+    max_concurrent_predictions: int = 10
     retrieval_score_thresholds: dict[SearchMode, float] = {}  # per-mode; absent = 0.0; set by RetrievalMetaScorer per mode
 
-    # Computed from corpus_base_dir:
+    # Computed fields (corpus dirs and cache dirs for all five eval passes):
     identification_corpus_dir: Path   # corpus_base_dir / "identification"
     resolution_corpus_dir: Path       # corpus_base_dir / "resolution"
     retrieval_corpus_dir: Path        # corpus_base_dir / "retrieval"
+    grounding_corpus_dir: Path        # corpus_base_dir / "grounding"
+    grouping_corpus_dir: Path         # corpus_base_dir / "grouping"
+    # Cache dirs live under PROJECT_ROOT / ".seshat" / "eval_cache" / <pass>
 ```
 
 `result_cache_enabled` does **not** exist in `ExtractionConfig` — every eval run makes full LLM calls. Intermediate prediction results are cached via `read_or_run` in `src/seshat/eval/cache.py` (keyed on corpus file hash) to avoid re-running the same example during iteration.
@@ -1770,10 +1772,10 @@ Any change to an agent system prompt, model, or confidence scoring logic must be
 | Speaker diarization (AssemblyAI) | Requires production audio samples to validate quality |
 | MLflow Plotly integration in Streamlit | Once pipeline is stable |
 | JWT authentication with external IdP | Overkill for MVP user base (~10 users); Postgres + API keys is sufficient; upgrade when SSO or multi-tenant access is needed |
-| Replace verification agent with ONNX NLI model | Textual entailment (does source quote support extracted claim?) is well-served by discriminative models (DeBERTa, MiniLM-NLI) via `onnxruntime` — no PyTorch needed. Evaluate once MVP eval data shows whether LLM accuracy is actually needed. |
+| Replace grounding agent with ONNX NLI model | Textual entailment (does source quote support extracted claim?) is well-served by discriminative models (DeBERTa, MiniLM-NLI) via `onnxruntime` — no PyTorch needed. Evaluate once MVP eval data shows whether LLM accuracy is actually needed. |
 | Replace same-type resolution with ONNX NLI model + embedding similarity | Node-to-node paraphrase/conflict detection is a constrained classification problem. Reuse retrieval-time embeddings for cosine similarity pre-filtering; ONNX NLI model for classification. Evaluate against LLM baseline using `seshat eval`. |
 | `AWAITING_REVIEW` timeout SLA (auto-reject stale pending nodes) | Requires a durable scheduled task (ARQ/Redis). The MVP asyncio queue is in-memory and does not survive worker restarts, so a 72h-ahead timer cannot be reliably fired. Ships together with the ARQ/Redis queue swap. |
 | Job state push notifications (webhook callbacks + SSE stream) | MVP has no inbound-HTTP consumer — Streamlit polls `GET /jobs/{id}`. Add `callback_url` + `POST` fan-out when an external consumer (CI, Teams bot, etc.) materialises, and `GET /jobs/{id}/stream` (SSE) when the UI matures enough to want low-latency progress. |
 | Post-approval node correction API (`PATCH /graph/{node_id}`) | Reviewers edit at approval time via `ApproveRequest.decisions[].edited_content`; already-approved nodes require a direct Postgres update + vector re-embed on MVP. The endpoint earns its keep once the KB moves to Notion/Neo4j. Ships with `NodeMetadata.last_edited_by` / `last_edited_at` at that point. |
-| Reranking (cross-encoder pass after vector search) | Skipped in MVP — vector search returns top-K directly and feeds graph traversal. Adopt a reranker only if the retrieval baseline (`seshat eval`) shows top-K-only recall@5 is insufficient. At that point, add `rerank_model: str | None` to `RAGConfig` and a second-stage `top_n` cut. |
+| Reranking (wiring into live pipeline) | `AbstractReranker`, `CohereReranker`, `VoyageReranker`, and `RerankerConfig` are implemented; `build_reranker()` factory exists. However, no reranker is passed to `NodeRetriever` in `bootstrap.py` — the wiring is deferred. Adopt once the retrieval baseline (`seshat eval`) shows top-K-only recall@5 is insufficient. The `Reranker` Protocol in `NodeRetriever` expects `list[SearchResult]`; the concrete `AbstractReranker` takes `list[KBNode]` — interface alignment is required before wiring. |
 | Transcript chunking (TextTiling / RecursiveCharacterTextSplitter) | Full transcript passed to agents in MVP — context window (200k tokens) is sufficient. Introduce chunking if per-call cost becomes a concern or transcripts regularly exceed context limits. When introduced, add `max_chunk_count` and `max_transcript_chunk_tokens` to `ExtractionConfig` and extend deduplication with the cosine-similarity fallback. |

@@ -13,7 +13,7 @@ from seshat.core.config.settings import (
 )
 from seshat.core.models.enums import LLMProvider, RelationshipType
 from seshat.core.models.nodes import KBNode, KBRelationship
-from tests.integration._env import _BEDROCK_PROFILE, _anthropic_reachable, _azure_available, _bedrock_available
+from tests.integration._probes import _BEDROCK_PROFILE, _anthropic_reachable, _azure_available, _bedrock_available
 
 _PROVIDER2CHEAP_MODEL_MAPPING: dict[LLMProvider, str] = {
     LLMProvider.BEDROCK_CONVERSE: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
