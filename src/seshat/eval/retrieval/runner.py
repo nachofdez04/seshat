@@ -113,10 +113,10 @@ class RetrievalEvalRunner:
                     self._rag_config.keyword_extraction_llm.model if self._rag_config.keyword_extraction_llm else "none"
                 ),
                 "retrieval.multi_query_model": (
-                    self._rag_config.multi_query.llm.model if self._rag_config.multi_query else "none"
+                    self._rag_config.multi_query.llm.model if self._rag_config.multi_query.llm else "none"
                 ),
                 "retrieval.multi_query_llm_provider": (
-                    self._rag_config.multi_query.llm.provider if self._rag_config.multi_query else "none"
+                    self._rag_config.multi_query.llm.provider if self._rag_config.multi_query.llm else "none"
                 ),
                 "retrieval.multi_query_num_variants": str(
                     self._rag_config.multi_query.num_variants if self._rag_config.multi_query else 0

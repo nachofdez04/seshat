@@ -82,9 +82,11 @@ def _voyage_reachable() -> bool:
         return False
 
     try:
-        response = httpx.get(
-            "https://api.voyageai.com/v1/models",
+        # Voyage has no lightweight reachability endpoint (no /models); use a minimal rerank call.
+        response = httpx.post(
+            "https://api.voyageai.com/v1/rerank",
             headers={"Authorization": f"Bearer {key}"},
+            json={"query": "ping", "documents": ["ping"], "model": "rerank-2"},
             timeout=5,
         )
         return response.status_code < 400

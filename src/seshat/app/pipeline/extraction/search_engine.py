@@ -116,7 +116,7 @@ class SearchEngine:
         )
         self._multi_query_agent = (
             _MultiQueryAgent(multi_query_llm, rag_config.multi_query.llm)
-            if multi_query_llm is not None and rag_config.multi_query is not None
+            if multi_query_llm is not None and rag_config.multi_query.llm is not None
             else None
         )
 
@@ -200,7 +200,7 @@ class SearchEngine:
             self._rag_config.keyword_extraction_llm.model if self._rag_config.keyword_extraction_llm else "none",
             (
                 f"{self._rag_config.multi_query.llm.model}:n{self._rag_config.multi_query.num_variants}"
-                if self._rag_config.multi_query
+                if self._rag_config.multi_query.llm
                 else "none"
             ),
             (

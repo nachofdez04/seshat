@@ -59,7 +59,7 @@ class _LLMConfig(BaseConfig):
 
 
 class MultiQueryConfig(BaseConfig):
-    llm: _LLMConfig = Field(description="LLM used to generate query variants.")
+    llm: _LLMConfig | None = Field(default=None, description="LLM used to generate query variants.")
     num_variants: int = Field(
         default=3,
         ge=1,
@@ -264,8 +264,8 @@ class RAGConfig(BaseConfig):
             "None disables LLM extraction (raw query passed directly)."
         ),
     )
-    multi_query: MultiQueryConfig | None = Field(
-        default=None,
+    multi_query: MultiQueryConfig = Field(
+        default_factory=MultiQueryConfig,
         description=(
             "When set, SearchEngine generates query variants via this LLM and fans them out in parallel "
             "before fusing results with RRF. Applies to SEMANTIC and HYBRID modes. None disables multi-query."
@@ -392,8 +392,9 @@ class APIConfig(BaseConfig):
     skip_eval_gate: bool = Field(
         default=False, description="Bypass the eval gate check at startup. Should never be used in production."
     )
-    skip_llm_ping: bool = Field(
-        default=False, description="Skip the LLM ping check at startup. Should never be used in production."
+    skip_external_provider_ping: bool = Field(
+        default=False,
+        description="Skip the external model provider ping check at startup. Should never be used in production.",
     )
     root_api_key_secret_key: str = Field(
         default="root-api-key", description="Secrets key for the root API key used to create new API keys."

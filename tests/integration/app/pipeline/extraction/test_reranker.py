@@ -40,6 +40,11 @@ class TestCohereReranker:
 
         assert len(result) == 2
 
+    async def test_ping_does_not_raise(self):
+        cfg = RerankerConfig(provider=RerankerProvider.COHERE, model="rerank-v3.5")
+        reranker = CohereReranker(cfg, os.environ["COHERE_API_KEY"])
+        await reranker.ping()
+
 
 @SKIP_IF_NO_VOYAGE_API
 class TestVoyageReranker:
@@ -59,3 +64,8 @@ class TestVoyageReranker:
         result = await reranker.rerank("Redis memory management", _redis_nodes())
 
         assert len(result) == 2
+
+    async def test_ping_does_not_raise(self):
+        cfg = RerankerConfig(provider=RerankerProvider.VOYAGE, model="rerank-2")
+        reranker = VoyageReranker(cfg, os.environ["VOYAGE_API_KEY"])
+        await reranker.ping()

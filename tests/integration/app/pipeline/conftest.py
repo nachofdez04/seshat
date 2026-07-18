@@ -12,7 +12,7 @@ async def kb_store(pg_test_url):
     await store.close()
 
 
-@pytest_asyncio.fixture(autouse=True, loop_scope="module")
+@pytest_asyncio.fixture(loop_scope="module")
 async def _truncate_kb_tables(kb_store):
     yield
     await kb_store.pool.execute(f"TRUNCATE {kb_store._schema}.kb_relationships, {kb_store._schema}.kb_nodes CASCADE")

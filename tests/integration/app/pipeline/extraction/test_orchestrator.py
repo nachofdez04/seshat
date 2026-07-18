@@ -30,6 +30,7 @@ from tests.integration.helpers import (
 pytestmark = [
     # module loop required: kb_store fixture is module-scoped and asyncpg pools are loop-bound
     pytest.mark.asyncio(loop_scope="module"),
+    pytest.mark.usefixtures("_truncate_kb_tables", "_reset_vector_store"),
     pytest.mark.integration,
     pytest.mark.llm,
     pytest.mark.agents,

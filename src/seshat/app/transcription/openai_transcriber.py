@@ -40,3 +40,6 @@ class OpenAITranscriber(AbstractTranscriber):
 
         segments = response.segments or []
         return "\n".join(seg.text.strip() for seg in segments)
+
+    async def ping(self) -> None:
+        await self._client.models.list()

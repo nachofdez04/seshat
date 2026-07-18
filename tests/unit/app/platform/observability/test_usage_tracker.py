@@ -258,3 +258,11 @@ class TestTrackingTranscriber:
         await transcriber.transcribe(b"\x00" * 64, extension="mp3")
 
         assert tracker.audio_seconds == 0
+
+    async def test_ping_delegates_to_inner_transcriber(self):
+        inner_transcriber = AsyncMock()
+        transcriber = TrackingTranscriber(inner_transcriber)
+
+        await transcriber.ping()
+
+        inner_transcriber.ping.assert_awaited_once()

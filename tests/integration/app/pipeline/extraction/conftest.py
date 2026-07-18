@@ -20,7 +20,7 @@ async def vector_store(pg_test_url):
     await store._store.adelete_collection()
 
 
-@pytest_asyncio.fixture(autouse=True, loop_scope="module")
+@pytest_asyncio.fixture(loop_scope="module")
 async def _reset_vector_store(vector_store):
     yield
     await vector_store._store.adelete_collection()

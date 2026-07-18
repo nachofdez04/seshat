@@ -81,7 +81,7 @@ def build_ingestion_orchestrator(config: SeshatConfig, blob_repo: BlobRepository
 
 def get_search_engine(config: SeshatConfig, vector_store: AbstractVectorStore) -> SearchEngine:
     keyword_llm = _build_llm(config.rag.keyword_extraction_llm, config) if config.rag.keyword_extraction_llm else None
-    multi_query_llm = _build_llm(config.rag.multi_query.llm, config) if config.rag.multi_query else None
+    multi_query_llm = _build_llm(config.rag.multi_query.llm, config) if config.rag.multi_query.llm else None
     return SearchEngine(
         rag_config=config.rag,
         vector_store=vector_store,

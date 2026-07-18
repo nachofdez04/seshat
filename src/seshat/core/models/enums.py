@@ -105,7 +105,7 @@ class VectorStoreProvider(StrEnum):
 class EmbeddingProvider(StrEnum):
     OPENAI = auto()
     AZURE_OPENAI = auto()
-    ANTHROPIC = auto()
+    COHERE = auto()
 
 
 class SecretsProvider(StrEnum):

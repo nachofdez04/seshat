@@ -22,6 +22,12 @@ class TestAssemblyAITranscriber:
         assert isinstance(result, str)
         assert len(result) > 0
 
+    @SKIP_IF_NO_ASSEMBLYAI_API
+    async def test_ping_does_not_raise(self):
+        config = TranscriptionConfig(provider=TranscriptionProvider.ASSEMBLYAI)
+        service = AssemblyAITranscriber(config, api_key=os.environ["ASSEMBLYAI_API_KEY"])
+        await service.ping()
+
 
 class TestOpenAITranscriber:
     @SKIP_IF_NO_OPENAI_TRANSCRIPTION_API
@@ -31,3 +37,9 @@ class TestOpenAITranscriber:
         result = await service.transcribe(audio_bytes=short_audio_bytes, extension=".mp3")
         assert isinstance(result, str)
         assert len(result) > 0
+
+    @SKIP_IF_NO_OPENAI_TRANSCRIPTION_API
+    async def test_ping_does_not_raise(self):
+        config = TranscriptionConfig(provider=TranscriptionProvider.OPENAI)
+        service = OpenAITranscriber(config, api_key=os.environ["OPENAI_API_KEY"])
+        await service.ping()

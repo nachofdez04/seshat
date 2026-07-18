@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from seshat.app.pipeline.extraction.reranker import AbstractReranker, CohereReranker, VoyageReranker, reranker_factory
 from seshat.app.platform.observability.usage_tracker import (
     TokenBudgetCallback,
@@ -16,6 +18,9 @@ from tests.helpers import make_node
 class _FakeReranker(AbstractReranker):
     async def _rerank(self, query, nodes):
         return nodes
+
+    async def ping(self):
+        pass
 
 
 def _nodes(*seeds: str):
@@ -91,6 +96,46 @@ class TestCohereRerankerUsageTracking:
             mock_cls.return_value = mock_client
             reranker = CohereReranker(cfg, "key")
             await reranker.rerank("query", nodes)  # should not raise
+
+
+class TestCohereRerankerPing:
+    async def test_reachable_does_not_raise(self):
+        cfg = RerankerConfig(provider=RerankerProvider.COHERE, model="rerank-v3.5")
+        with patch("cohere.AsyncClientV2") as mock_cls:
+            mock_cls.return_value.rerank = AsyncMock()
+            reranker = CohereReranker(cfg, "key")
+            await reranker.ping()  # must not raise
+        mock_cls.return_value.rerank.assert_awaited_once_with(
+            model="rerank-v3.5", query="ping", documents=["ping"], top_n=1
+        )
+
+    async def test_unreachable_raises(self):
+        cfg = RerankerConfig(provider=RerankerProvider.COHERE, model="rerank-v3.5")
+        with patch("cohere.AsyncClientV2") as mock_cls:
+            mock_cls.return_value.rerank = AsyncMock(side_effect=RuntimeError("unreachable"))
+            reranker = CohereReranker(cfg, "key")
+            with pytest.raises(RuntimeError, match="unreachable"):
+                await reranker.ping()
+
+
+class TestVoyageRerankerPing:
+    async def test_reachable_does_not_raise(self):
+        cfg = RerankerConfig(provider=RerankerProvider.VOYAGE, model="rerank-2")
+        with patch("voyageai.AsyncClient") as mock_cls:
+            mock_cls.return_value.rerank = AsyncMock()
+            reranker = VoyageReranker(cfg, "key")
+            await reranker.ping()  # must not raise
+        mock_cls.return_value.rerank.assert_awaited_once_with(
+            query="ping", documents=["ping"], model="rerank-2", top_k=1
+        )
+
+    async def test_unreachable_raises(self):
+        cfg = RerankerConfig(provider=RerankerProvider.VOYAGE, model="rerank-2")
+        with patch("voyageai.AsyncClient") as mock_cls:
+            mock_cls.return_value.rerank = AsyncMock(side_effect=RuntimeError("unreachable"))
+            reranker = VoyageReranker(cfg, "key")
+            with pytest.raises(RuntimeError, match="unreachable"):
+                await reranker.ping()
 
 
 class TestVoyageRerankerUsageTracking:

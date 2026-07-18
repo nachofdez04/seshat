@@ -95,7 +95,7 @@ services:
       # Observability
       OBSERVABILITY__MLFLOW_TRACKING_URI: http://mlflow:5000
       # API start-up flags
-      API__SKIP_LLM_PING: "true"
+      API__SKIP_EXTERNAL_PROVIDER_PING: "true"
       API__SKIP_EVAL_GATE: "true"
     ports:
       - "${API_PORT}:8000"

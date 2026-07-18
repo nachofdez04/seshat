@@ -30,6 +30,10 @@ class AbstractReranker(ABC):
     @abstractmethod
     async def _rerank(self, query: str, nodes: list[KBNode]) -> list[KBNode]: ...
 
+    @abstractmethod
+    async def ping(self) -> None:
+        """Verify connectivity to the reranking provider. Raises on failure."""
+
     async def rerank(self, query: str, nodes: list[KBNode]) -> list[KBNode]:
         nodes = await self._rerank(query, nodes)
         result = nodes[: self._config.top_n] if self._config.top_n is not None else nodes
@@ -68,6 +72,9 @@ class CohereReranker(AbstractReranker):
             return
         await callback.tracker.add(reranker_input_tokens=input_tokens)  # type: ignore
 
+    async def ping(self) -> None:
+        await self._client.rerank(model=self._config.model, query="ping", documents=["ping"], top_n=1)
+
 
 class VoyageReranker(AbstractReranker):
     def __init__(self, config: RerankerConfig, api_key: str) -> None:
@@ -93,6 +100,11 @@ class VoyageReranker(AbstractReranker):
             logger.warning("No active token budget tracker found in context; reranker tokens will not be tracked")
             return
         await callback.tracker.add(reranker_input_tokens=response.total_tokens)
+
+    async def ping(self) -> None:
+        # Voyage has no lightweight reachability endpoint (no /models, and embed/rerank
+        # both bill usage) — issue a minimal 1-document rerank instead.
+        await self._client.rerank(query="ping", documents=["ping"], model=self._config.model, top_k=1)
 
 
 def reranker_factory(config: RerankerConfig, api_key: str) -> AbstractReranker:

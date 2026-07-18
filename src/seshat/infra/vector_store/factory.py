@@ -33,6 +33,10 @@ def _build_embeddings(index: VectorIndexConfig, config: SeshatConfig) -> Embeddi
             from langchain_openai import AzureOpenAIEmbeddings
 
             raw = AzureOpenAIEmbeddings(azure_deployment=index.embedding_model, api_key=api_key)
+        case EmbeddingProvider.COHERE:
+            from seshat.infra.vector_store.cohere_embeddings import CohereEmbeddings
+
+            raw = CohereEmbeddings(model=index.embedding_model, api_key=api_key)
         case _:
             raise ValueError(f"Unsupported embedding provider: {index.embedding_provider!r}")
 

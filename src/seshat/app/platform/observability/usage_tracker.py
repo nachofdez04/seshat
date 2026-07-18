@@ -237,6 +237,9 @@ class TrackingTranscriber(AbstractTranscriber):
         await self._record_audio_duration(audio_bytes)
         return result
 
+    async def ping(self) -> None:
+        await self._transcriber.ping()
+
     async def _record_audio_duration(self, audio_bytes: bytes) -> None:
         callback = get_run_tracker()
         if callback is None:

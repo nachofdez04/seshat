@@ -22,8 +22,9 @@ class AssemblyAITranscriber(AbstractTranscriber):
             client_kwargs["http_timeout"] = config.timeout_seconds
         transcription_client_settings = aai.Settings(**client_kwargs)
 
+        self._client = aai.Client(settings=transcription_client_settings)
         self._transcriber = aai.Transcriber(
-            client=aai.Client(settings=transcription_client_settings),
+            client=self._client,
             config=aai.TranscriptionConfig(language_code=config.language, speaker_labels=True),
         )
         self._config = config
@@ -37,3 +38,7 @@ class AssemblyAITranscriber(AbstractTranscriber):
 
         utterances = transcript.utterances or []
         return "\n".join(utt.text for utt in utterances)
+
+    async def ping(self) -> None:
+        response = await run_in_thread(self._client.http_client.get, "/v2")
+        response.raise_for_status()
