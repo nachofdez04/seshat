@@ -273,7 +273,6 @@ class TestBootstrapResetsTraceProcessors:
         reset = MagicMock()
         monkeypatch.setattr(support, "configure_trace_processors", reset)
         monkeypatch.setattr(support, "load_dotenv", lambda: None)
-        monkeypatch.setattr(support, "_patch_httpx_ssl", lambda: None)
         monkeypatch.setattr(support, "_assert_reachable", lambda *a, **k: None)
         monkeypatch.setattr(support, "setup_mlflow", lambda *a, **k: "exp-1")
         monkeypatch.setattr(support, "configure_logging", lambda *a, **k: None)

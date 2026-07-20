@@ -16,6 +16,7 @@ from seshat.app.platform.api.state import build_app_state
 from seshat.app.platform.observability.mlflow_setup import setup_mlflow
 from seshat.app.transcription.factory import get_transcriber
 from seshat.core.config.settings import SeshatConfig, get_config
+from seshat.core.utils.http_patch import disable_httpx_ssl_verification
 from seshat.core.utils.log import configure_logging, get_logger, set_job_id
 from seshat.infra.vector_store.factory import _build_embeddings
 
@@ -53,6 +54,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     config = get_config()
     configure_logging(config.logging)
+
+    if config.disable_ssl_verification:
+        disable_httpx_ssl_verification()
 
     _emit_config_warnings(config)
     _check_eval_gate(config.api)

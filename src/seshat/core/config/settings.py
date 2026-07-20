@@ -420,6 +420,14 @@ class SeshatConfig(BaseSettings):
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     api: APIConfig = Field(default_factory=lambda: APIConfig())
 
+    disable_ssl_verification: bool = Field(
+        default=False,
+        description=(
+            "Disable httpx TLS certificate verification process-wide. INSECURE escape hatch for a "
+            "corporate proxy whose CA chain Python cannot see; never enable in production."
+        ),
+    )
+
     # only used for `seshat init`
     document_loader: DocumentLoaderConfig | None = None
     max_concurrent_init_runs: int = Field(default=1, gt=0)

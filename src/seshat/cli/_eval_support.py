@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from seshat.app.platform.observability.mlflow_setup import setup_mlflow
 from seshat.core.config.eval_settings import EvalConfig
 from seshat.core.config.settings import GroundingLLMConfig, ObservabilityConfig, SeshatConfig
+from seshat.core.utils.http_patch import disable_httpx_ssl_verification
 from seshat.core.utils.log import configure_logging, get_logger, set_job_id
 from seshat.eval.mlflow_logging import configure_trace_processors
 
@@ -32,7 +33,13 @@ CALIBRATION_TYPES = ["retrieval", "identification"]
 def bootstrap_eval(harness_type: str) -> tuple[EvalConfig, SeshatConfig, str]:
     """Set up MLflow and configs for an eval or calibration run."""
     load_dotenv()
-    _patch_httpx_ssl()
+
+    # Build config before anything makes an httpx call: the SSL opt-out must be applied first.
+    seshat_config = SeshatConfig()
+    configure_logging(seshat_config.logging)
+
+    if seshat_config.disable_ssl_verification:
+        disable_httpx_ssl_verification()
 
     job_id = f"seshat-eval-{harness_type}"
     run_name = f"seshat-eval-{harness_type}-{datetime.now(tz=UTC).isoformat(timespec='minutes')}"
@@ -48,9 +55,6 @@ def bootstrap_eval(harness_type: str) -> tuple[EvalConfig, SeshatConfig, str]:
     # Clear any span processor a prior harness registered globally (e.g. identification's
     # node slimmer) so it cannot fire on this harness's differently-shaped prediction spans.
     configure_trace_processors()
-
-    seshat_config = SeshatConfig()
-    configure_logging(seshat_config.logging)
 
     if harness_type == "grounding" and seshat_config.extraction.grounding is None:
         seshat_config = seshat_config._with(extraction=seshat_config.extraction._with(grounding=GroundingLLMConfig()))
@@ -87,18 +91,6 @@ def bound_mlflow_retries() -> None:
     os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "1")
     os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "15")
     os.environ.setdefault("MLFLOW_ASYNC_TRACE_LOGGING_RETRY_TIMEOUT", "20")
-
-
-def _patch_httpx_ssl() -> None:
-    import httpx
-
-    _orig = httpx.Client.__init__
-
-    def _no_verify(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        kwargs.setdefault("verify", False)
-        _orig(self, *args, **kwargs)
-
-    httpx.Client.__init__ = _no_verify  # type: ignore[method-assign]
 
 
 def _assert_reachable(uri: str, *, label: str, timeout: float = 2.0) -> None:
