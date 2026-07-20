@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from seshat.app.agents.grounding import GroundingRetryExhaustedError
-from seshat.app.agents.identification.base import IdentificationRetryExhaustedError
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator, _assemble_kb_hint, _deduplicate
 from seshat.app.pipeline.extraction.pending_node import _PendingNode
 from seshat.core.config.settings import ExtractionConfig, GroundingLLMConfig
@@ -57,10 +56,9 @@ def _make_orchestrator(
     )
 
     if extraction_registry is None:
-        agent = MagicMock()
-        agent.identify = AsyncMock(return_value=extraction_results or [])
+        types = concept_types or [ConceptType.DECISION]
         extraction_registry = MagicMock()
-        extraction_registry.get = MagicMock(return_value=agent)
+        extraction_registry.run_all = AsyncMock(return_value=({ct: extraction_results or [] for ct in types}, []))
 
     resolution_registry = MagicMock()
     resolution_registry.resolve_all = AsyncMock(return_value=(all_rels or [], []))
@@ -105,26 +103,15 @@ class TestExtractionOrchestrator:
 
         assert result.nodes == []
 
-    async def test_failed_extraction_tasks_land_in_failed_concept_types(self):
-        """Both generic exceptions and IdentificationRetryExhaustedError populate failed_concept_types."""
-        good_agent = MagicMock()
-        good_agent.identify = AsyncMock(return_value=[_make_concept("Use PostgreSQL")])
-        runtime_error_agent = MagicMock()
-        runtime_error_agent.identify = AsyncMock(side_effect=RuntimeError("LLM timeout"))
-        exhausted_agent = MagicMock()
-        exhausted_agent.identify = AsyncMock(
-            side_effect=IdentificationRetryExhaustedError("agent RISK exhausted 3 retries")
-        )
-
-        def _get_agent(ct):
-            if ct == ConceptType.DECISION:
-                return good_agent
-            if ct == ConceptType.ACTION_ITEM:
-                return runtime_error_agent
-            return exhausted_agent
-
+    async def test_failed_types_from_registry_thread_through_to_result(self):
+        """The registry's failed-type list is surfaced on IdentificationResult.failed_concept_types."""
         extraction_registry = MagicMock()
-        extraction_registry.get = MagicMock(side_effect=_get_agent)
+        extraction_registry.run_all = AsyncMock(
+            return_value=(
+                {ConceptType.DECISION: [_make_concept("Use PostgreSQL")]},
+                [ConceptType.ACTION_ITEM, ConceptType.RISK],
+            )
+        )
 
         orchestrator = _make_orchestrator(
             extraction_registry=extraction_registry,
@@ -138,14 +125,8 @@ class TestExtractionOrchestrator:
         assert ConceptType.RISK in result.failed_concept_types
 
     async def test_empty_extraction_result_not_counted_as_failure(self):
-        agent = MagicMock()
-        agent.identify = AsyncMock(return_value=[])
-
-        extraction_registry = MagicMock()
-        extraction_registry.get = MagicMock(return_value=agent)
-
         orchestrator = _make_orchestrator(
-            extraction_registry=extraction_registry,
+            extraction_results=[],
             concept_types=[ConceptType.DECISION],
         )
 
@@ -334,12 +315,10 @@ class TestJobTimeout:
     async def test_extraction_raises_timeout_when_exceeded(self):
         async def _slow(*_args, **_kwargs):
             await asyncio.sleep(10)
-            return []
+            return {}, []
 
-        agent = MagicMock()
-        agent.identify = _slow
         registry = MagicMock()
-        registry.get = MagicMock(return_value=agent)
+        registry.run_all = _slow
 
         orchestrator = _make_orchestrator(
             extraction_registry=registry,
@@ -384,11 +363,8 @@ class TestConfigOverride:
         assert result.nodes[0].status == NodeStatus.PENDING_REVIEW
 
     async def test_all_agents_failed_raises_runtime_error(self):
-        runtime_error_agent = MagicMock()
-        runtime_error_agent.identify = AsyncMock(side_effect=RuntimeError("LLM timeout"))
-
         extraction_registry = MagicMock()
-        extraction_registry.get = MagicMock(return_value=runtime_error_agent)
+        extraction_registry.run_all = AsyncMock(return_value=({}, [ConceptType.DECISION]))
 
         orchestrator = _make_orchestrator(
             extraction_registry=extraction_registry,
@@ -400,50 +376,43 @@ class TestConfigOverride:
 
 
 class TestKbHintIsolation:
-    """KB hint fetching happens in _run_identification, not inside _identify_concept_type."""
+    """KB hint fetching happens in _run_identification, before identification fans out."""
 
-    async def test_identify_concept_type_accepts_kb_hint_and_does_not_query_kb(self):
-        """_identify_concept_type takes kb_hint as a parameter and never calls the KB itself."""
-        concept = _make_concept("Use PostgreSQL", quote="use PostgreSQL")
-        agent = MagicMock()
-        agent.identify = AsyncMock(return_value=[concept])
+    async def test_prebuilt_hints_are_forwarded_to_run_all_without_querying_kb(self):
+        """When hints are supplied to _run_identification, they reach run_all and the KB is not queried."""
         registry = MagicMock()
-        registry.get = MagicMock(return_value=agent)
+        registry.run_all = AsyncMock(return_value=({ConceptType.DECISION: []}, []))
 
         orchestrator = _make_orchestrator(
             extraction_registry=registry,
             concept_types=[ConceptType.DECISION],
         )
 
-        await orchestrator._identify_concept_type(
+        await orchestrator._run_identification(
             TRANSCRIPT,
             "blob-key",
-            ConceptType.DECISION,
             "job-1",
-            kb_hint="prebuilt hint",
+            hints={ConceptType.DECISION: "prebuilt hint"},
             meeting_date=date(2026, 1, 1),
         )
 
         orchestrator._repo.paginated_query.assert_not_called()
-        args, _ = agent.identify.call_args
-        assert args[1] == "prebuilt hint"
+        assert registry.run_all.call_args.args[2] == {ConceptType.DECISION: "prebuilt hint"}
 
     async def test_run_identification_gathers_kb_hints_before_agent_calls(self):
-        """KB queries for all concept types are issued before any agent.identify call."""
+        """KB queries for all concept types are issued before any identification call."""
         call_log: list[str] = []
 
         async def tracking_query(_node_filter):
             call_log.append("kb_query")
             return []
 
-        async def tracking_identify(*args, **kwargs):
+        async def tracking_run_all(*args, **kwargs):
             call_log.append("identify")
-            return []
+            return {}, []
 
-        agent = MagicMock()
-        agent.identify = tracking_identify
         registry = MagicMock()
-        registry.get = MagicMock(return_value=agent)
+        registry.run_all = tracking_run_all
 
         orchestrator = _make_orchestrator(
             extraction_registry=registry,

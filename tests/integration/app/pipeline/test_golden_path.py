@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from seshat.app.agents.identification.registry import IdentificationAgentRegistry
+from seshat.app.agents.identification.registry import IdentificationRegistry
 from seshat.app.agents.resolution.registry import ResolutionRegistry
 from seshat.app.pipeline.extraction.node_retriever import NodeRetriever
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
@@ -87,7 +87,7 @@ def extraction_orch(kb_store, fake_vector_store, blob_store):
     retriever = NodeRetriever(rag_config=rag_config, node_repo=node_repo, search_engine=search_engine)
     return ExtractionOrchestrator(
         config=extraction_config,
-        identification_registry=IdentificationAgentRegistry(llm, extraction_config),
+        identification_registry=IdentificationRegistry(llm, extraction_config),
         resolution_registry=ResolutionRegistry(llm, extraction_config),
         node_retriever=retriever,
         node_repo=node_repo,

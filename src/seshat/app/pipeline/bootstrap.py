@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from seshat.app.agents.grounding import GroundingAgent
-from seshat.app.agents.identification.registry import IdentificationAgentRegistry
+from seshat.app.agents.identification.registry import IdentificationRegistry
 from seshat.app.agents.resolution.registry import ResolutionRegistry
 from seshat.app.pipeline.extraction.node_retriever import NodeRetriever
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
@@ -41,7 +41,7 @@ def build_extraction_orchestrator(
     if resolution_self_review_cfg.enabled and resolution_self_review_cfg.llm is not None:
         resolution_review_llm = _build_llm(resolution_self_review_cfg.llm, config)
 
-    identification_registry = IdentificationAgentRegistry(
+    identification_registry = IdentificationRegistry(
         llm=identification_llm, config=config.extraction, review_llm=review_llm
     )
     resolution_registry = ResolutionRegistry(

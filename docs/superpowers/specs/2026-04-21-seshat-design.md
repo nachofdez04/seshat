@@ -502,7 +502,7 @@ Cross-chunk assignment (e.g. "as we agreed earlier, you handle this") is handled
 
 ### Agent Registry
 
-Each `ConceptType` maps to a registered agent class with its own system prompt. Adding a new concept type = register a new agent + add the type to `ExtractionConfig.concept_types`. The orchestrator discovers agents from the registry at runtime.
+Each `ConceptType` maps to a registered agent class with its own system prompt. Adding a new concept type = register a new agent + add the type to `ExtractionConfig.concept_types`. The `IdentificationRegistry` fans out to the registered agents via `run_all` — one concurrent call per `ConceptType` (defaulting to all registered) — returning the raw per-type concepts plus any failed types, mirroring `ResolutionRegistry.resolve_all`. The orchestrator delegates the fan-out to it and handles only node-building and within-meeting dedup on the result.
 
 ### Reflective Agents
 

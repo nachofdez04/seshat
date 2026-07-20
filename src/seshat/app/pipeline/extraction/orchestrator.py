@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from seshat.app.agents.grounding import GroundingAgent
-    from seshat.app.agents.identification.registry import IdentificationAgentRegistry
+    from seshat.app.agents.identification.registry import IdentificationRegistry
     from seshat.app.agents.resolution.base import ResolvedRelationship
     from seshat.app.agents.resolution.registry import ResolutionRegistry
     from seshat.app.pipeline.extraction.node_retriever import NodeRetriever
@@ -43,7 +43,7 @@ class ExtractionOrchestrator:
     def __init__(
         self,
         config: ExtractionConfig,
-        identification_registry: IdentificationAgentRegistry,
+        identification_registry: IdentificationRegistry,
         resolution_registry: ResolutionRegistry,
         node_retriever: NodeRetriever,
         node_repo: NodeRepository,
@@ -227,27 +227,19 @@ class ExtractionOrchestrator:
         hints: dict[ConceptType, str],
         meeting_date: date | None = None,
     ) -> tuple[list[_PendingNode], list[ConceptType]]:
-        """Fan-out identification across all concept types, then deduplicate within the meeting."""
+        """Identify all concept types, build pending nodes, then deduplicate within the meeting."""
         t0 = time.perf_counter()
         logger.info("Identifying %d concept types concurrently", len(self.concept_types))
-        tasks = [
-            self._identify_concept_type(
-                transcript, blob_key, concept_type, job_id, hints.get(concept_type, ""), meeting_date=meeting_date
-            )
-            for concept_type in self.concept_types
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        raw_by_type, failed = await self._identification_registry.run_all(
+            transcript, blob_key, hints, concept_types=self.concept_types
+        )
 
         pending: list[_PendingNode] = []
-        failed: list[ConceptType] = []
-        for concept_type, result in zip(self.concept_types, results, strict=True):
-            if isinstance(result, Exception):
-                logger.error("Identification task failed for %s: %s", concept_type, result)
-                failed.append(concept_type)
-                continue
-
-            assert isinstance(result, list)
-            pending.extend(result)
+        for concept_type, raw in raw_by_type.items():
+            builder = PendingNodeBuilder(
+                concept_type, job_id, transcript, self._heuristics_scorer, meeting_date=meeting_date
+            )
+            pending.extend(builder.build_all(raw))
 
         deduped = _deduplicate(pending)
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
@@ -259,33 +251,6 @@ class ExtractionOrchestrator:
             extra={"elapsed_ms": elapsed_ms},
         )
         return deduped, failed
-
-    async def _identify_concept_type(
-        self,
-        transcript: str,
-        transcript_file: str,
-        concept_type: ConceptType,
-        job_id: str,
-        kb_hint: str = "",
-        meeting_date: date | None = None,
-    ) -> list[_PendingNode]:
-        t0 = time.perf_counter()
-        agent = self._identification_registry.get(concept_type)
-        raw = await agent.identify(transcript, kb_hint, transcript_file)
-
-        builder = PendingNodeBuilder(
-            concept_type, job_id, transcript, self._heuristics_scorer, meeting_date=meeting_date
-        )
-        pending = builder.build_all(raw)
-        elapsed_ms = round((time.perf_counter() - t0) * 1000)
-        logger.info(
-            "Identified %d %r node(s) (elapsed: %dms)",
-            len(pending),
-            concept_type.value,
-            elapsed_ms,
-            extra={"elapsed_ms": elapsed_ms, "concept_type": concept_type.value},
-        )
-        return pending
 
     async def _score_and_finalize(
         self,

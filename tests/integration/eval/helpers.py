@@ -4,7 +4,7 @@ from pathlib import Path
 
 from seshat.app.agents.grounding import GroundingAgent
 from seshat.app.agents.identification.grouping import GroupingAgent
-from seshat.app.agents.identification.registry import IdentificationAgentRegistry
+from seshat.app.agents.identification.registry import IdentificationRegistry
 from seshat.app.agents.resolution.registry import ResolutionRegistry
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
 from seshat.core.config.eval_settings import EvalConfig
@@ -27,7 +27,7 @@ def _make_eval_orchestrator(extraction_config: ExtractionConfig) -> ExtractionOr
     llm = make_cheap_llm()
     return ExtractionOrchestrator(
         config=extraction_config,
-        identification_registry=IdentificationAgentRegistry(llm, extraction_config),
+        identification_registry=IdentificationRegistry(llm, extraction_config),
         resolution_registry=ResolutionRegistry(llm, extraction_config),
         node_retriever=None,  # type: ignore[arg-type]
         node_repo=None,  # type: ignore[arg-type]

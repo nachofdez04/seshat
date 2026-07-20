@@ -15,7 +15,7 @@ agents/
 │   ├── risk.py                 # Risk model + RiskIdentificationAgent
 │   ├── grouping.py             # GroupingAgent (optional post-identification clustering)
 │   ├── reflective.py           # ReflectiveIdentificationAgent (extract→validate→filter wrapper)
-│   └── registry.py             # IdentificationAgentRegistry
+│   └── registry.py             # IdentificationRegistry
 ├── resolution/
 │   ├── base.py                 # _BaseResolutionAgent, BaseSameTypeResolutionAgent,
 │   │                           #   BaseCrossTypeResolutionAgent, ResolvedRelationship
