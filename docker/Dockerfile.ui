@@ -1,0 +1,9 @@
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+WORKDIR /app
+ENV PYTHONPATH=/app/src
+COPY src/seshat_ui/pyproject.toml src/seshat_ui/uv.lock ./
+RUN uv sync --frozen
+COPY src/seshat_ui/.streamlit/ .streamlit/
+COPY src/seshat_ui/ src/seshat_ui/
+EXPOSE 8501
+CMD ["uv", "run", "--no-sync", "streamlit", "run", "src/seshat_ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

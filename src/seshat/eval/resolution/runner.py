@@ -49,7 +49,7 @@ class ResolutionEvalRunner:
             self._kb_nodes[ex.corpus_id] = kb_nodes
             self._slug_maps[ex.corpus_id] = slug_map
 
-        result_cache, touched, agent_hashes = await self._run_all_predictions(examples)
+        result_cache, touched, agent_hashes, cache_hits = await self._run_all_predictions(examples)
 
         expected_relations_by_id = {ex.corpus_id: ex.expected_relations for ex in examples}
 
@@ -95,6 +95,8 @@ class ResolutionEvalRunner:
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(eval_result, examples, result_cache, self._slug_maps),
             tag_filter=tag_filter,
+            cache_hits=cache_hits,
+            total_predictions=len(examples),
         )
 
         corpus_ids = [ex.corpus_id for ex in examples]
@@ -111,10 +113,10 @@ class ResolutionEvalRunner:
     @track_eval_latency("resolution")
     async def _run_all_predictions(
         self, examples: list[ResolutionCorpusExample]
-    ) -> tuple[dict[str, ResolutionResult], set[Path], set[str]]:
+    ) -> tuple[dict[str, ResolutionResult], set[Path], set[str], int]:
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
 
-        async def _run_one(task_idx: int, ex: ResolutionCorpusExample) -> tuple[str, ResolutionResult, Path, str]:
+        async def _run_one(task_idx: int, ex: ResolutionCorpusExample) -> tuple[str, ResolutionResult, Path, str, bool]:
             set_task_num(task_idx)
             kb_nodes = self._kb_nodes[ex.corpus_id]
             source_nodes = [kb_nodes[n.id] for n in ex.source_nodes]
@@ -127,18 +129,19 @@ class ResolutionEvalRunner:
             cache_fp = build_cache_fp(self._config.resolution_cache_dir, ex, agent_hash=agent_hash)
 
             async with sem:
-                result, used = await read_or_run(
+                result, used, was_cached = await read_or_run(
                     cache_fp,
                     ResolutionResult,
                     self._orchestrator._run_resolution(source_nodes, per_source_targets, job_id=ex.corpus_id),
                 )
-            return ex.corpus_id, result, used, agent_hash
+            return ex.corpus_id, result, used, agent_hash, was_cached
 
-        quads = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
-        results = {corpus_id: result for corpus_id, result, _, _ in quads}
-        touched = {used for _, _, used, _ in quads}
-        agent_hashes = {h for _, _, _, h in quads}
-        return results, touched, agent_hashes
+        quints = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
+        results = {corpus_id: result for corpus_id, result, _, _, _ in quints}
+        touched = {used for _, _, used, _, _ in quints}
+        agent_hashes = {h for _, _, _, h, _ in quints}
+        cache_hits = sum(1 for _, _, _, _, was_cached in quints if was_cached)
+        return results, touched, agent_hashes, cache_hits
 
 
 def _slim_node(n: ResolutionCorpusNode) -> dict:

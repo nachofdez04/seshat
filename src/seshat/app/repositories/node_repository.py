@@ -97,21 +97,22 @@ class NodeRepository:
 
     # -- Batch -----------------------------------------------------------------
 
-    async def write_batch(self, result: ExtractionResult) -> int:
+    async def write_batch(self, result: ExtractionResult) -> tuple[int, int]:
         """Write an extraction result to KB and VS.
 
         Applies state transitions to superseded/amended existing nodes, writes
         approved nodes and their relationships within a KB transaction, then
-        upserts VS embeddings outside the transaction. Returns the count of
-        written nodes.
+        upserts VS embeddings outside the transaction. Returns (nodes_written, relationships_written).
         """
         async with self._kb.transaction() as conn:
             await self._apply_state_transitions(result.relationships, conn)
-            approved_ids = await self._write_nodes_and_relationships(result.nodes, result.relationships, conn)
+            approved_ids, rel_count = await self._write_nodes_and_relationships(
+                result.nodes, result.relationships, conn
+            )
 
         await self._upsert_vectors(result.nodes, approved_ids)
 
-        return len(approved_ids)
+        return len(approved_ids), rel_count
 
     async def _apply_state_transitions(self, relationships: list[KBRelationship], conn: _Conn) -> None:
         for rel in relationships:
@@ -138,7 +139,7 @@ class NodeRepository:
 
     async def _write_nodes_and_relationships(
         self, nodes: list[KBNode], relationships: list[KBRelationship], conn: _Conn
-    ) -> set[UUID]:
+    ) -> tuple[set[UUID], int]:
         all_ids: set[UUID] = {n.id for n in nodes}
         approved_ids: set[UUID] = set()
 
@@ -148,12 +149,14 @@ class NodeRepository:
             await self._kb.write_node(node, conn=conn)
             approved_ids.add(node.id)
 
+        rel_count = 0
         for rel in relationships:
             target_ok = rel.target_id in approved_ids or rel.target_id not in all_ids
             if rel.source_id in approved_ids and target_ok:
                 await self._kb.write_relationship(rel, conn=conn)
+                rel_count += 1
 
-        return approved_ids
+        return approved_ids, rel_count
 
     async def _upsert_vectors(self, nodes: list[KBNode], approved_ids: set[UUID]) -> None:
         for node in nodes:

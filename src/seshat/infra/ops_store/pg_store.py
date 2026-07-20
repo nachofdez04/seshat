@@ -141,11 +141,14 @@ class PostgresOpsStore:
     async def count_running_jobs(self) -> int:
         return await self.pool.fetchval(
             f"SELECT COUNT(*) FROM {self._schema}.jobs WHERE status = ANY($1::text[])",
-            [s.value for s in (JobStatus.TRANSCRIBING, JobStatus.EXTRACTING, JobStatus.WRITING)],
+            list(JobStatus.running_statuses()),
         )
 
     async def get_stranded_writing_jobs(self) -> list[str]:
-        rows = await self.pool.fetch(f"SELECT job_id FROM {self._schema}.jobs WHERE status='writing'")
+        rows = await self.pool.fetch(
+            f"SELECT job_id FROM {self._schema}.jobs WHERE status = ANY($1::text[])",
+            list(JobStatus.stranded_statuses()),
+        )
         return [row["job_id"] for row in rows]
 
     # -- Jobs: Update ----------------------------------------------------------

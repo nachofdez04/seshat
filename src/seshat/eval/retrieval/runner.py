@@ -63,7 +63,7 @@ class RetrievalEvalRunner:
             return upsert_gate(self._config.gate_path, run_id="retrieval-no-corpus")
 
         threshold = self._config.retrieval_score_thresholds.get(self._search_mode, 0.0)
-        result_cache, touched = await self._run_all_predictions(examples, threshold)
+        result_cache, touched, cache_hits = await self._run_all_predictions(examples, threshold)
 
         expected_by_id = {ex.corpus_id: ex.expected_relevant_ids for ex in examples}
 
@@ -97,6 +97,8 @@ class RetrievalEvalRunner:
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(eval_result, examples, result_cache),
             tag_filter=tag_filter,
+            cache_hits=cache_hits,
+            total_predictions=len(examples),
             extra_params={
                 "retrieval.search_mode": self._search_mode.value,
                 "retrieval.score_threshold": str(threshold),
@@ -117,17 +119,20 @@ class RetrievalEvalRunner:
         self,
         examples: list[RetrievalCorpusExample],
         threshold: float,
-    ) -> tuple[dict[str, list[str]], set[Path]]:
+    ) -> tuple[dict[str, list[str]], set[Path], int]:
         result_cache: dict[str, list[str]] = {}
         touched: set[Path] = set()
+        cache_hits = 0
         for task_idx, ex in enumerate(examples):
             set_task_num(task_idx)
             cache_fp = build_cache_fp(self._config.retrieval_cache_dir, ex, agent_hash=self._search_mode_hash)
-            scored, used = await read_or_run(cache_fp, RetrievalScoredResult, self._fetch_example(ex))
+            scored, used, was_cached = await read_or_run(cache_fp, RetrievalScoredResult, self._fetch_example(ex))
+            if was_cached:
+                cache_hits += 1
             retrieved_ids = [slug for slug, score in scored.results if score >= threshold]
             result_cache[ex.corpus_id] = retrieved_ids[:TOP_K]
             touched.add(used)
-        return result_cache, touched
+        return result_cache, touched, cache_hits
 
     async def _fetch_example(self, ex: RetrievalCorpusExample) -> RetrievalScoredResult:
         query_node, candidate_kb_nodes, slug_map = build_kb_nodes(ex)

@@ -53,27 +53,36 @@ class RelationshipSource(StrEnum):
 class JobStatus(StrEnum):
     PENDING = auto()
     TRANSCRIBING = auto()
-    EXTRACTING = auto()
+    IDENTIFYING = auto()
     AWAITING_REVIEW = auto()
+    RESOLVING = auto()
     WRITING = auto()
     DONE = auto()
     FAILED = auto()
 
-    @property
-    def terminal_statuses(self) -> tuple:
-        return (JobStatus.DONE, JobStatus.FAILED)
+    @classmethod
+    def terminal_statuses(cls) -> tuple:
+        return (cls.DONE, cls.FAILED)
 
     @property
     def is_terminal(self) -> bool:
-        return self in self.terminal_statuses
+        return self in self.__class__.terminal_statuses()
 
-    @property
-    def running_statuses(self) -> tuple:
-        return (JobStatus.TRANSCRIBING, JobStatus.EXTRACTING, JobStatus.WRITING)
+    @classmethod
+    def running_statuses(cls) -> tuple:
+        return (cls.TRANSCRIBING, cls.IDENTIFYING, cls.RESOLVING, cls.WRITING)
 
     @property
     def is_running(self) -> bool:
-        return self in self.running_statuses
+        return self in self.__class__.running_statuses()
+
+    @classmethod
+    def stranded_statuses(cls) -> tuple:
+        return (cls.RESOLVING, cls.WRITING)
+
+    @property
+    def is_stranded(self) -> bool:
+        return self in self.__class__.stranded_statuses()
 
 
 class LLMProvider(StrEnum):

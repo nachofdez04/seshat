@@ -65,11 +65,11 @@ class TestUpdateJobStatus:
         from seshat.core.models.enums import JobStatus
 
         await repo.create_job("job-2", "user-1", "text", None, datetime.now(UTC), meeting_date, submission, raw_key)
-        await repo.update_job_status("job-2", JobStatus.EXTRACTING)
+        await repo.update_job_status("job-2", JobStatus.IDENTIFYING)
 
         row = await repo.get_job("job-2")
         assert row is not None
-        assert row["status"] == "extracting"
+        assert row["status"] == "identifying"
 
 
 class TestFailJob:

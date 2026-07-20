@@ -44,15 +44,36 @@ class _EntryBase(BaseModel):
     source_id: str
     target_id: str
     rationale: str = Field(
-        description="One sentence explaining why this classification was chosen or why null was assigned"
+        description="Required non-null string. Always explain your reasoning — state why the relationship was chosen, or why no relationship applies when rel_type is null."
     )
     rel_type: str | None
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def coerce_null_rationale(cls, v: object) -> object:
+        # Defensive coercion: if the model returns JSON null despite the field being required,
+        # treat it as an absent rationale so the model validator can clear rel_type.
+        if v is None:
+            logger.warning("Resolution entry has null rationale — treating as abstention")
+            return "null"
+        return v
 
     @field_validator("rel_type", mode="before")
     @classmethod
     def coerce_null_string(cls, v: object) -> object:
-        # Some models return the string "null" instead of JSON null.
-        return None if v == "null" else v
+        # Defensive coercion: some models return the string "null" instead of JSON null.
+        if v == "null":
+            logger.warning("Resolution entry has rel_type='null' string — coercing to None")
+            return None
+        return v
+
+    @model_validator(mode="after")
+    def null_rationale_clears_rel_type(self) -> _EntryBase:
+        # A model that outputs rationale="null" failed to justify the relationship.
+        # Treat this as abstention so the entry is dropped downstream.
+        if self.rationale == "null" and self.rel_type is not None:
+            object.__setattr__(self, "rel_type", None)
+        return self
 
 
 class _SameTypeEntry(_EntryBase):

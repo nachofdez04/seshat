@@ -38,7 +38,7 @@ class ApproveRequest(BaseModel):
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> ApproveRequest:
-        if self.approve_above_threshold is None and not self.decisions:
+        if self.approve_above_threshold is None and self.decisions is None:
             raise ValueError("ApproveRequest must set approve_above_threshold, decisions, or both")
         return self
 

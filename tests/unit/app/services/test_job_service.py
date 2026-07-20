@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
 import pytest
 
+from seshat.app.platform.worker.queue import AsyncioTaskQueue
 from seshat.app.services.job import (
     ContentAlreadyIngestedError,
     JobNotFoundError,
@@ -42,7 +44,7 @@ def _make_service(
     extraction._config.auto_mode = False
 
     node_repo = MagicMock()
-    node_repo.write_batch = AsyncMock(return_value=len([n for n in nodes if n.status == NodeStatus.APPROVED]))
+    node_repo.write_batch = AsyncMock(return_value=(len([n for n in nodes if n.status == NodeStatus.APPROVED]), 0))
     node_repo.paginated_query = AsyncMock(return_value=[])
     node_repo.delete_node = AsyncMock()
 
@@ -97,7 +99,7 @@ class TestPreApproval:
         assert ident is not None
         assert "job-1" in svc._results
         ops.update_job_status.assert_any_await("job-1", JobStatus.TRANSCRIBING)
-        ops.update_job_status.assert_any_await("job-1", JobStatus.EXTRACTING)
+        ops.update_job_status.assert_any_await("job-1", JobStatus.IDENTIFYING)
         ops.update_job_status.assert_any_await("job-1", JobStatus.AWAITING_REVIEW)
 
     async def test_audio_job_calls_ingest_audio(self):
@@ -172,23 +174,31 @@ class TestPostApproval:
         assert "post_approval" in call_kwargs[0]
 
 
+def _make_service_real_queue(nodes=None):
+    """Like _make_service but with a real AsyncioTaskQueue so enqueued tasks actually run."""
+    svc, ingestion, extraction, node_repo, ops, blob = _make_service(nodes=nodes)
+    svc._queue = AsyncioTaskQueue()
+    return svc, ingestion, extraction, node_repo, ops, blob
+
+
 class TestAutoMode:
     async def test_auto_mode_field_promotes_pending_and_fires_post_approval(self):
         node = make_node(status=NodeStatus.PENDING_REVIEW)
-        svc, _, extraction, node_repo, ops, _ = _make_service(nodes=[node])
+        svc, _, extraction, node_repo, ops, _ = _make_service_real_queue(nodes=[node])
         ops.get_job = AsyncMock(return_value=_JOB_ROW)
 
         sub = _make_submission()
         sub.auto_mode = True
 
-        await svc._run("job-1", b"data", sub)
+        await svc._run_pre_approval("job-1", b"data", sub)
+        await asyncio.gather(*svc._queue._tasks.values())
 
         extraction.run_resolution.assert_called_once()
         node_repo.write_batch.assert_called_once()
 
     async def test_auto_mode_via_extraction_override_also_works(self):
         node = make_node(status=NodeStatus.PENDING_REVIEW)
-        svc, _, extraction, node_repo, ops, _ = _make_service(nodes=[node])
+        svc, _, extraction, node_repo, ops, _ = _make_service_real_queue(nodes=[node])
         ops.get_job = AsyncMock(return_value=_JOB_ROW)
 
         sub = _make_submission()
@@ -196,7 +206,8 @@ class TestAutoMode:
         sub.overrides.extraction = MagicMock()
         sub.overrides.extraction.auto_mode = True
 
-        await svc._run("job-1", b"data", sub)
+        await svc._run_pre_approval("job-1", b"data", sub)
+        await asyncio.gather(*svc._queue._tasks.values())
 
         extraction.run_resolution.assert_called_once()
         node_repo.write_batch.assert_called_once()
@@ -205,7 +216,7 @@ class TestAutoMode:
         node = make_node(status=NodeStatus.PENDING_REVIEW)
         svc, _, extraction, node_repo, _, _ = _make_service(nodes=[node])
 
-        await svc._run("job-1", b"data", _make_submission())
+        await svc._run_pre_approval("job-1", b"data", _make_submission())
 
         extraction.run_resolution.assert_not_called()
         node_repo.write_batch.assert_not_called()

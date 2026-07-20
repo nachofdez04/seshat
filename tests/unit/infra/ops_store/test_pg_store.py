@@ -36,10 +36,10 @@ class TestPostgresOpsStore:
 
     async def test_update_job_status_non_terminal(self):
         store, pool = _make_store()
-        await store.update_job_status("job-1", JobStatus.EXTRACTING)
+        await store.update_job_status("job-1", JobStatus.IDENTIFYING)
         call_args = pool.execute.call_args[0]
         assert "UPDATE ops.jobs" in call_args[0]
-        assert "extracting" in call_args
+        assert "identifying" in call_args
         assert None in call_args  # finished_at is NULL for non-terminal
 
     async def test_update_job_status_terminal_sets_finished_at(self):

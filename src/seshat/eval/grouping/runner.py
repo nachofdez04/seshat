@@ -51,7 +51,7 @@ class GroupingEvalRunner:
         if not examples:
             return upsert_gate(self._config.gate_path, run_id="grouping-no-corpus")
 
-        result_cache, touched = await self._run_all_predictions(examples)
+        result_cache, touched, cache_hits = await self._run_all_predictions(examples)
 
         expected_by_id = {ex.corpus_id: ex.expected_groups for ex in examples}
 
@@ -86,6 +86,8 @@ class GroupingEvalRunner:
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(eval_result, examples, result_cache),
             tag_filter=tag_filter,
+            cache_hits=cache_hits,
+            total_predictions=len(examples),
         )
 
         sweep_stale_entries(
@@ -99,21 +101,24 @@ class GroupingEvalRunner:
     @track_eval_latency("grouping")
     async def _run_all_predictions(
         self, examples: list[GroupingCorpusExample]
-    ) -> tuple[dict[str, _GroupingCacheEntry], set[Path]]:
+    ) -> tuple[dict[str, _GroupingCacheEntry], set[Path], int]:
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
         agent_hash = self._agent.fingerprint()
 
-        async def _run_one(task_idx: int, ex: GroupingCorpusExample) -> tuple[str, _GroupingCacheEntry, Path]:
+        async def _run_one(task_idx: int, ex: GroupingCorpusExample) -> tuple[str, _GroupingCacheEntry, Path, bool]:
             set_task_num(task_idx)
             cache_fp = build_cache_fp(self._config.grouping_cache_dir, ex, agent_hash=agent_hash)
             async with sem:
-                result, used = await read_or_run(cache_fp, _GroupingCacheEntry, _run_grouping(self._agent, ex))
-            return ex.corpus_id, result, used
+                result, used, was_cached = await read_or_run(
+                    cache_fp, _GroupingCacheEntry, _run_grouping(self._agent, ex)
+                )
+            return ex.corpus_id, result, used, was_cached
 
-        triples = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
-        results = {corpus_id: result for corpus_id, result, _ in triples}
-        touched = {used for _, _, used in triples}
-        return results, touched
+        quads = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
+        results = {corpus_id: result for corpus_id, result, _, _ in quads}
+        touched = {used for _, _, used, _ in quads}
+        cache_hits = sum(1 for _, _, _, was_cached in quads if was_cached)
+        return results, touched, cache_hits
 
 
 async def _run_grouping(agent: GroupingAgent, example: GroupingCorpusExample) -> _GroupingCacheEntry:

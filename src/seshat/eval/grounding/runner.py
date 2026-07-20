@@ -39,7 +39,7 @@ class GroundingEvalRunner:
         if not examples:
             return upsert_gate(self._config.gate_path, run_id="grounding-no-corpus")
 
-        result_cache, touched = await self._run_all_predictions(examples)
+        result_cache, touched, cache_hits = await self._run_all_predictions(examples)
 
         expected_by_key: dict[tuple[str, int], bool] = {
             (ex.corpus_id, i): node.expected_supported for ex in examples for i, node in enumerate(ex.nodes)
@@ -78,6 +78,8 @@ class GroundingEvalRunner:
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(examples, result_cache),
             tag_filter=tag_filter,
+            cache_hits=cache_hits,
+            total_predictions=sum(len(ex.nodes) for ex in examples),
         )
 
         sweep_stale_entries(
@@ -91,20 +93,20 @@ class GroundingEvalRunner:
     @track_eval_latency("grounding")
     async def _run_all_predictions(
         self, examples: list[GroundingCorpusExample]
-    ) -> tuple[dict[tuple[str, int], GroundingResult], set[Path]]:
+    ) -> tuple[dict[tuple[str, int], GroundingResult], set[Path], int]:
         # Pre-populate before mlflow.genai.evaluate (sync) to avoid event-loop boundary issues.
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
         agent_hash = self._agent.fingerprint()
 
         async def _run_one(
             task_idx: int, ex: GroundingCorpusExample, node_idx: int
-        ) -> tuple[tuple[str, int], GroundingResult, Path]:
+        ) -> tuple[tuple[str, int], GroundingResult, Path, bool]:
             set_task_num(task_idx)
             cache_fp = build_cache_fp(self._config.grounding_cache_dir, ex, agent_hash=agent_hash, index=node_idx)
             node = ex.nodes[node_idx]
 
             async with sem:
-                result, used = await read_or_run(
+                result, used, was_cached = await read_or_run(
                     cache_fp,
                     GroundingResult,
                     self._agent.verify(
@@ -114,14 +116,15 @@ class GroundingEvalRunner:
                         transcript=ex.transcript,
                     ),
                 )
-            return (ex.corpus_id, node_idx), result, used
+            return (ex.corpus_id, node_idx), result, used, was_cached
 
         flat = [(ex, node_idx) for ex in examples for node_idx in range(len(ex.nodes))]
         tasks = [_run_one(task_idx, ex, node_idx) for task_idx, (ex, node_idx) in enumerate(flat)]
-        triples = await asyncio.gather(*tasks)
-        results = {key: result for key, result, _ in triples}
-        touched = {used for _, _, used in triples}
-        return results, touched
+        quads = await asyncio.gather(*tasks)
+        results = {key: result for key, result, _, _ in quads}
+        touched = {used for _, _, used, _ in quads}
+        cache_hits = sum(1 for _, _, _, was_cached in quads if was_cached)
+        return results, touched, cache_hits
 
 
 def _build_dataframe(examples: list[GroundingCorpusExample]) -> pd.DataFrame:

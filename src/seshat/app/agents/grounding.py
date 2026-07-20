@@ -98,7 +98,7 @@ class GroundingAgent(_BaseAgent):
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000)
         logger.info(
-            "Verification result: supported=%s for %r (elapsed: %dms)",
+            "Grounding result: supported=%s for %r (elapsed: %dms)",
             result.supported,
             title,
             elapsed_ms,

@@ -41,6 +41,8 @@ coverage.xml
 .seshat/
 data/*
 !data/eval/
+!data/fixtures/audio
+!data/fixtures/text
 
 # Logs
 *.log

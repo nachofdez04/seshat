@@ -1,0 +1,11 @@
+[project]
+name = "seshat-ui"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28",
+    "networkx>=3.6.1",
+    "plotly>=6.8.0",
+    "streamlit>=1.58.0",
+]

@@ -1,0 +1,503 @@
+date: "2026-05-10"
+participants:
+  - Priya
+  - Arnav
+  - Luca
+content: |
+  Yeah I can hear you now. Was on mute for a second.
+
+  All good, all good. Are we waiting on anyone else?
+
+  I think Priya is still joining. She messaged saying two minutes.
+
+  Fair enough. How was the long weekend for everyone?
+
+  Quiet. I needed it. Took the kids to the coast, which sounds relaxing but is not remotely relaxing.
+
+  Ha. Yeah. I spent most of Saturday doing a post-mortem writeup in my head while pretending to watch a film.
+
+  That's the dream right there.
+
+  I did actually manage to go hiking. First time in months. Completely offline.
+
+  Ah, here she is.
+
+  Sorry, sorry — had a call that would not end. What did I miss?
+
+  Nothing, just started. We were debating whether offline time is physically possible.
+
+  Jury's still out. Okay, should we get going?
+
+  Let's do it.
+
+
+  Right, so I put together a rough agenda. First thing I want to do is deal with the ingestion service — there was an
+  incident Friday afternoon that we need to talk through. After that we've got the main session: storage layer decision,
+  the schema versioning question that's been open for two weeks, a few things that came out of the capacity review.
+  And then actions and owners at the end. Does that order work?
+
+  Works for me.
+
+  Yeah, let's do the incident first while it's fresh.
+
+  Agreed. Go ahead.
+
+  Okay, so Friday afternoon around quarter past three, the ingestion service started throwing 503s. Not all of them — it
+  was intermittent, maybe one in six requests failing. The on-call got paged, we started looking at it, and at first it
+  looked like a network blip. But it kept going. By four o'clock it was closer to one in three. Then around half four we
+  had a short window where it was basically down — maybe ten minutes where the error rate spiked to above ninety percent.
+  Then it started recovering on its own and by six it was back to normal.
+
+  What was the root cause?
+
+  So the short answer is traffic spike plus connection pool exhaustion. We had a client — one of the analytics teams —
+  that pushed a batch job on Friday afternoon that was way larger than anything we'd seen from them before. They were
+  re-ingesting about eighteen months of historical data in parallel. The ingestion service wasn't the bottleneck itself,
+  but it was opening a database connection per request and our pool limit was too low for that volume. Once the pool
+  filled up, requests started queuing, timeouts kicked in, and that cascaded into the 503s.
+
+  Why wasn't the pool sized higher to begin with?
+
+  Honestly, it was set during the initial deployment and nobody revisited it. The default was fine for normal traffic. We
+  just hadn't load-tested for burst scenarios.
+
+  Was there any alerting that would have caught this before it got to 503s?
+
+  There was a connection count metric but no alert on it. We had alerts on error rate and latency, but those only fired
+  once things were already degraded. So we were reactive rather than proactive.
+
+  Okay. What did we do in the moment?
+
+  Manually increased the pool limit and restarted the service. That's what triggered the recovery. It's a config change,
+  so it was fast once we identified it.
+
+  And what's the state right now?
+
+  It's stable. We bumped the pool limit as a hotfix, but that's not a permanent fix. There are a few things we need to do
+  properly.
+
+  Let's talk through them. What are you thinking?
+
+  Three things. One: add a proactive alert on connection pool utilisation — I'm thinking something like alert when we're
+  above seventy percent for more than two minutes. Two: we need to work with the client teams to enforce some kind of rate
+   limiting or batch job policy so a single client can't saturate the pool. Three: longer term, we should look at whether
+   per-request connection allocation is even the right pattern here — connection pooling at the application level is fine
+   but we might want to move to something like PgBouncer in front of the database so the pool is decoupled from the
+   service instance count.
+
+  The PgBouncer thing — is that something we'd want to do before we scale out to more ingestion service instances?
+
+  Yes, exactly. Because right now if you add more instances you just multiply the problem. Each instance has its own pool
+  and the database sees all of them. With PgBouncer you centralise that and the database sees a fixed connection count
+  regardless of how many application instances you're running.
+
+  That's a real risk then. We've got the scale-out work planned for next quarter.
+
+  Right. So we probably need to de-risk that before the scale-out lands.
+
+  Is PgBouncer a straightforward thing to stand up?
+
+  Operationally, yes. Configuration isn't trivial but it's well-understood. The bigger question is whether we want to
+  introduce another infrastructure component right now. It's another thing to operate.
+
+  What's the alternative?
+
+  We could try to manage it at the application layer — limit concurrency in the ingestion service itself, add circuit
+  breakers, tune the pool settings more carefully. It's more bespoke but avoids the extra hop.
+
+  I'd push back a bit on that. Application-level workarounds for a database connection management problem tend to
+  accumulate. You end up with logic spread across services that should live in one place.
+
+  That's fair. I think we should go with PgBouncer. It's the standard solution to this class of problem.
+
+  Can we agree that PgBouncer evaluation is the path forward and make it a tracked item?
+
+  Yes.
+
+  Agreed.
+
+  Okay, so to summarise the incident actions: alert on connection pool utilisation above seventy percent for two minutes
+  or more — that goes to Tariq. Rate limiting policy for batch clients — that's probably a conversation that needs to
+  happen with the platform team, and I think Priya you're the right person to drive that. And PgBouncer evaluation — I'd
+  say that's an architecture item, so let's put that on the backlog with a proper writeup before the scale-out work starts.
+
+  Works for me.
+
+  Yeah, I'll pick up the rate limiting conversation this week.
+
+  Good. Let's move on.
+
+
+  Okay, storage layer. This has been the big open question for the past month and I want us to actually land on something
+  today. The context: we're redesigning the storage architecture for the event stream. Right now we're writing everything
+  to Postgres, which worked fine when volume was low, but we're projecting a tenfold increase in event volume over the
+  next eighteen months and Postgres won't scale for that use case without significant work. We've evaluated three options.
+
+  Can you run through them quickly for anyone who hasn't been following the thread?
+
+  Sure. Option A is staying on Postgres but moving to a partitioned table design with aggressive archival. It's low
+  operational overhead and we know how to run it, but the write throughput ceiling is real and we'd probably be back in
+  this conversation in twelve months. Option B is Apache Kafka for the event stream, with Postgres staying as the
+  read-optimised store — so Kafka for ingest, consume into Postgres for queries. Option C is moving the event stream to
+  an object storage pattern, writing Parquet files to S3 and querying with something like Athena or a read replica. That
+  one optimises for cost and analytical query patterns but adds latency to anything that needs near-real-time reads.
+
+  And where did the evaluation land?
+
+  My read is that Option B is the right call. Kafka is the standard solution for this volume and pattern, we have team
+  members who've operated it before, and it cleanly separates concerns — the stream is for ingest, Postgres is for
+  queries. The operational overhead is real but manageable.
+
+  What's the confidence level on the Kafka expertise? Because I've seen Kafka deployments go badly when the team doesn't
+  have deep experience.
+
+  Arnav and I both have production Kafka experience. It's not zero-to-one. We'd still want to be careful about the initial
+   configuration — partition counts, retention policies, exactly-once semantics if we need them — but I don't think
+   expertise is the blocker.
+
+  What about Option C? The S3 pattern has been working well for the ML data pipelines.
+
+  The latency is the problem. We have some consumers that need to react within seconds of an event being written. The S3
+  pattern works if you can tolerate minute-level latency, but we can't for all consumers. We'd potentially end up
+  maintaining two paths — Kafka for the latency-sensitive consumers, S3 for the analytical ones — which is more
+  complexity than just going Kafka.
+
+  So Option C might be a component of the solution rather than the whole solution.
+
+  Possibly. For archival and long-term analytical access, yes. But for the primary stream, Option B.
+
+  Are there any risks with Kafka that we haven't talked about?
+
+  Operational complexity is the main one. Consumer group management, offset management, handling reprocessing scenarios —
+  these require operational discipline. If we're not careful about schema evolution we can also end up in a situation
+  where producers and consumers are coupled in ways that are hard to change.
+
+  That's why schema registry matters. If we're going Kafka we need to commit to using a schema registry from day one, not
+  bolt it on later.
+
+  Agreed. That should be part of the decision, not an afterthought.
+
+  Before we go further — are we talking self-hosted Kafka or a managed service? Because the operational picture is pretty
+  different.
+
+  I'd assumed self-hosted, but managed is on the table. Confluent Cloud, MSK — they take a lot of the ops burden off.
+
+  That depends on where we're actually running. We're on AWS, right?
+
+  Currently, yes.
+
+  I thought there was a cloud provider review going on.
+
+  There is. But nothing's decided. We're still on AWS.
+
+  So MSK would be the natural fit if we stay. But if we move to Azure, Event Hubs is the Kafka-compatible option — and
+  it's not quite the same thing. The API is compatible but the operational model is different and the schema registry
+  integration is less mature.
+
+  Confluent Cloud runs on any of the major clouds. That would insulate us from the cloud decision entirely.
+
+  I've heard mixed things about Confluent Cloud costs at scale. It's not cheap.
+
+  It's not, but you're trading cost for operational simplicity. Whether that trade-off is worth it depends on team
+  capacity.
+
+  Can we please separate these two decisions? The architecture decision is that we adopt Kafka as the event streaming
+  layer. Where it actually runs — MSK, Confluent Cloud, self-hosted on whatever cloud — is a deployment decision that
+  follows from wherever the cloud review lands. We shouldn't block one on the other.
+
+  That's the right framing. Kafka architecturally, deployment model as a follow-on.
+
+  Agreed. And for what it's worth, if the cloud review is going to take another quarter, I'd lean toward Confluent Cloud
+  as the default — it keeps the options open. We can always migrate to a cloud-native managed service once we know where
+  we're landing.
+
+  Let's note that as a preference but not a decision. The ADR commits to Kafka. Deployment model is TBD pending the cloud
+  review.
+
+  Fine by me.
+
+  Okay, I want to make sure we're capturing this properly. The decision is: we adopt Kafka as the event stream store,
+  Postgres remains the read store, and schema registry is a hard requirement from day one — not optional. Is that the call?
+
+  That's my recommendation, yes.
+
+  I'm aligned.
+
+  I'm good with that.
+
+  Any objections?
+
+  No.
+
+  Okay, that's the storage layer ADR. We'll need a written record of that. Arnav, can you own the writeup?
+
+  Sure, I'll have a draft by end of next week.
+
+  Good. Related to this — and I want to flag this now rather than at the end — the schema versioning question connects
+  directly to the Kafka decision. Once we have a schema registry we need a policy for how schema changes are handled. The
+  question that's been open is whether we go with forward compatibility, backward compatibility, or full compatibility as
+  our default.
+
+  What's been the blocker on that?
+
+  Mostly just time. And some uncertainty about what our consumers actually need. We have consumers we control and
+  consumers run by other teams, and those have different tolerance for schema changes.
+
+  I'd argue full compatibility is the safe default even if it's more constraining. The cost of a breaking change in a
+  shared event stream is high.
+
+  Full compatibility means you can never add a required field and never remove a field. That's pretty restrictive.
+
+  That's the point. If you want to make a breaking change you go through a proper deprecation cycle, not a hot swap.
+
+  I think full compatibility is the right default but we should explicitly carve out a process for planned breaking
+  changes. Deprecation period, communication to downstream consumers, versioned topic naming.
+
+  That's reasonable. Full compatibility as the default, with a defined migration path for intentional breaking changes.
+
+  Actually, I want to revisit the default choice. I was initially thinking full compatibility, but I've seen that cause
+  real pain when you have fast-moving schemas. Backward compatibility might be the right starting point — it's less
+  restrictive, it still protects consumers, and we can tighten it later if we need to.
+
+  Hmm. So backward compatibility means new producers can write fields old consumers don't know about, but old producers
+  can still write to the new schema. Is that the constraint?
+
+  Right. Old consumers can always read messages from new producers. The risk is if you try to roll back a producer — you
+  might write messages the consumers have already moved past.
+
+  We're not going to roll back producers often. And when we do, it's going to be deliberate. I think backward
+  compatibility is actually the more pragmatic call.
+
+  I can live with backward compatibility as the default. But I want the migration process for intentional breaking
+  changes to be explicit regardless of which we choose.
+
+  Agreed. So let's say: backward compatibility as the schema evolution default, with a documented migration process for
+  breaking changes.
+
+  That's different from what I said five minutes ago. Let's make sure we record the final position, not the intermediate one.
+
+  Noted — backward compatibility, not full. Final answer.
+
+  Good. Does the schema versioning decision need its own writeup or does it fold into the Kafka ADR?
+
+  I'd fold it in. It's part of the same decision.
+
+  Agreed.
+
+
+  Bit of a tangent, but since we're on schemas — has anyone looked at the new Confluent features in the latest release?
+  They added some stuff around data contracts that might be relevant.
+
+  I saw the announcement but haven't dug into it.
+
+  I spent about an hour with it last week. Honestly the data contracts feature is interesting but I think it's solving a
+  slightly different problem — it's more about enforcement at the broker level, which we don't necessarily need if we're
+  disciplined about the registry. Worth keeping an eye on but not something I'd block on.
+
+  Yeah, let's not let it become a rabbit hole. We can revisit when the Kafka implementation is closer.
+
+  Fair point.
+
+  There's also been some noise about Redpanda as a Kafka-compatible alternative. Supposedly simpler to operate.
+
+  I looked at Redpanda about six months ago. It's promising but the ecosystem is still maturing. Some of the tooling we'd
+  want — specifically around monitoring and the schema registry integration — was less polished than the Kafka
+  equivalents. I wouldn't switch horses at this point.
+
+  Yeah, I think we go with Kafka proper. We know what we're getting.
+
+  Okay, back on track.
+
+
+  Actually, before capacity review — I wanted to raise something that came up in the product sync on Thursday. There's a
+  request on the table to build an AI-powered anomaly detection product on top of the event stream. The idea is that
+  instead of static alert thresholds, you'd have a model that learns the normal pattern for each consumer's data and
+  surfaces deviations automatically. The product team is very excited about it. They want a rough timeline.
+
+  Is this greenfield or is there something we can build on?
+
+  Mostly greenfield. There's some experimental code from a hackathon a few months back but nothing production-ready.
+
+  What's the actual ask? Are we building the model, the serving infrastructure, or both?
+
+  Both, from what I understand. They want the full thing — data pipeline, model training, inference layer, alerting UI.
+
+  That's not a small project.
+
+  No. And there's a real question about whether we build it ourselves or use a managed service. There are platforms that
+  do most of this out of the box — Datadog's anomaly detection, some of the newer AI ops tools. You configure what to
+  monitor, they handle the modelling.
+
+  Have we evaluated any of those?
+
+  Not formally. The instinct from the product side is that managed services won't give us the customisation we need for
+  our specific data patterns, but that instinct hasn't been tested against any actual products.
+
+  What's the customisation argument? I'd want to understand that before assuming we need to build.
+
+  The concern is that generic anomaly detection tools are trained on common SaaS metrics patterns. Our event stream has
+  domain-specific seasonality and correlation structure that a generic model might not handle well. But again — that's an
+  assumption.
+
+  There's also the cloud question again. If we don't know where we're running in twelve months, building on a
+  cloud-native ML service like SageMaker or Azure ML is a risk. You build the training pipeline on one platform and then
+  you have to port it.
+
+  That's actually a point in favour of managed third-party tooling — something like Datadog or Arize is cloud-agnostic.
+
+  Or it's a point for not making this decision until the cloud review is done.
+
+  Honestly yes. I don't think we're in a position to make a good call here. We don't know our cloud future, we haven't
+  evaluated the managed options seriously, and we haven't scoped the build-it-ourselves effort.
+
+  I agree we shouldn't decide today. But the product team wants a timeline, which means they need something from us soon.
+
+  We can give them a timeline for the evaluation. Two weeks to look at two or three managed options seriously, benchmark
+  them against our data patterns if possible, and come back with a clearer picture of the build vs buy trade-off. That's
+  a reasonable thing to commit to.
+
+  That's fair. Though I'd note that "two weeks to evaluate" plus whatever the cloud review timeline is means the product
+  team is probably not seeing anything for at least a quarter.
+
+  They need to hear that. Better to set that expectation now than to underpromise and then be late on top of it.
+
+  Agreed. But let's leave the actual decision for when we have better information. No point debating build vs buy in the
+  abstract.
+
+  Fine. Let's put it on the agenda for the next session once we have the evaluation results.
+
+  Sounds right.
+
+  Okay, back on track.
+
+
+  Capacity review. I'll be quick because we've covered most of the interesting bits. The main thing that came out of the
+  review is that the ingestion service — which we just talked about — is not the only service that's going to hit scaling
+  limits. The transformation pipeline is also showing signs of stress under load. Nothing critical yet but the projection
+  is that if event volume doubles, we'll start seeing processing lag.
+
+  What kind of lag are we talking?
+
+  Right now the p99 end-to-end latency from event ingest to transformed record available for query is about four seconds.
+  If volume doubles without any changes, the projection is that goes to somewhere between fifteen and twenty-five seconds.
+
+  Is four seconds acceptable today?
+
+  For most consumers, yes. There are a couple that have expressed a preference for under two seconds but nothing's broken at four.
+
+  And fifteen to twenty-five would be a problem?
+
+  For the latency-sensitive consumers, yes. The near-real-time use cases would start to degrade.
+
+  What are the levers?
+
+  Two main ones. First, the transformation pipeline is currently single-threaded in how it processes the queue. We could
+  parallelise within the worker — that's probably the quickest win. Second, there's some redundant enrichment happening —
+  the pipeline is fetching the same reference data multiple times per event because there's no caching. That's low-hanging fruit.
+
+  Who knows that codebase well enough to make those changes safely?
+
+  That's mostly mine and Arnav's territory.
+
+  Okay. Let's not let this slip. Can the two of you put together a short proposal — just a page, outline of the changes,
+  estimated effort, and what we'd need to validate before shipping to prod?
+
+  Yeah, we can do that.
+
+  By when?
+
+  Is two weeks realistic?
+
+  That works. Let's say proposal by two weeks from today, and we can schedule a short review session if needed before we
+  start implementation.
+
+  Sounds good.
+
+  One more thing from the capacity review — and this is more of a risk flag than an action item — we're currently storing
+  all events indefinitely. There's no retention policy. As volume grows that's going to become a cost and compliance
+  problem. We don't have a regulatory requirement that I know of that says we have to delete data, but we also don't have
+  anything that says we have to keep it forever, and storage costs will compound.
+
+  That's a real risk. Is there anyone who can own clarifying the retention requirements? Because I don't want to set a
+  policy without knowing whether there are compliance or legal constraints we're not aware of.
+
+  That's a good point. That probably needs input from the data governance team.
+
+  Can someone pick that up and come back to us with a recommendation? It doesn't need to be a full proposal, just clarity
+  on what constraints exist.
+
+  I can reach out to data governance this week.
+
+  Great. So that's a risk item with Priya as the owner — clarify retention requirements before we set any retention policy.
+
+  Yes, I'll flag if there are surprises.
+
+  Good.
+
+
+  Before we do actions — any other items?
+
+  I just want to mention, unrelated to anything we've discussed, that I had a look at the observability stack last week
+  and the dashboard for the transformation pipeline is completely out of date. Half the panels are showing metrics that
+  don't exist anymore. It's not urgent but it's the kind of thing that will mislead someone at two in the morning during
+  an incident.
+
+  Noted. Is that something you can fix or does it need someone else?
+
+  I can fix most of it. There are a couple of panels I'm not sure about — I'd need Arnav to tell me what the right metric
+  names are now.
+
+  Arnav, can you give him fifteen minutes this week to walk through the metrics?
+
+  Sure, no problem.
+
+  Great. That's an informal action — no need to formally track it, just get it done.
+
+
+  Okay, let's do actions. I'll go through what I've got and tell me if I've missed anything.
+
+  Tariq: alert on connection pool utilisation above seventy percent for two minutes or more. This week.
+
+  Yep.
+
+  Priya: reach out to the platform team about a rate limiting policy for batch clients, specifically to prevent
+  single-client saturation of the connection pool.
+
+  Yes, I'll do that.
+
+  Arnav: Kafka storage layer ADR writeup, including schema evolution policy — backward compatibility default with a
+  defined migration process for breaking changes. Draft by end of next week.
+
+  Will do.
+
+  Arnav and the guy whose name I should know but am blanking on right now — sorry, long week — the transformation
+  pipeline parallelisation and caching proposal. Two weeks.
+
+  That's me, Luca.
+
+  Luca, apologies. Yes. Two weeks, short proposal, we'll review together.
+
+  No worries.
+
+  Priya again: clarify event retention requirements with data governance before we set any retention policy.
+  Flag any surprises back to the group.
+
+  Yes.
+
+  And Arnav: quick sync with Luca on updated metric names for the transformation pipeline dashboard.
+
+  Sure.
+
+  I think that's everything. Does anyone have anything else?
+
+  I'm good.
+
+  Nothing from me.
+
+  All good.
+
+  All right. Same time in two weeks. Thanks everyone.
+
+  Thanks.
+
+  Bye all.

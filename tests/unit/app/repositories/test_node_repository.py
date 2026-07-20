@@ -87,8 +87,8 @@ class TestWriteBatch:
         kb.update_node_state = AsyncMock(side_effect=KeyError("not found"))
 
         result = ExtractionResult(job_id="job-1", nodes=[new_node], relationships=[rel])
-        written = await repo.write_batch(result)
-        assert written == 1
+        written_nodes, _written_rels = await repo.write_batch(result)
+        assert written_nodes == 1
 
 
 class TestWriteNode:

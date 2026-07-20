@@ -125,7 +125,7 @@ class JobService:
         )
 
         await self._blob.put_by_key(raw_key, file_bytes)
-        await self._queue.enqueue(job_id, self._run, job_id, file_bytes, submission, user_id)
+        await self._enqueue(job_id, self._run_pre_approval, file_bytes, submission, user_id)
 
         return JobSubmitResponse(job_id=job_id)
 
@@ -149,10 +149,17 @@ class JobService:
         if approve_request.decisions:
             nodes = _apply_decisions(nodes, approve_request.decisions, user_id, now)
 
-        self._results[job_id] = result._with(nodes=nodes)
+        # Only update the cache if the pipeline is still holding the pre-approval result.
+        # If the entry was already popped by _run_post_approval (auto-mode race), writing
+        # it back would leave stale relationships=[] that get_result would serve instead
+        # of reading the final blob written after resolution completes.
+        if job_id in self._results:
+            self._results[job_id] = result._with(nodes=nodes)
+        else:
+            logger.warning("approve called after _run_post_approval already consumed results for job %s", job_id)
 
-        await self._ops.update_job_status(job_id, JobStatus.WRITING)
-        await self._queue.enqueue(job_id, self._run_post_approval, job_id)
+        await self._ops.update_job_status(job_id, JobStatus.RESOLVING)
+        await self._enqueue(job_id, self._run_post_approval)
 
         return JobActionResponse(status="accepted")
 
@@ -172,7 +179,7 @@ class JobService:
         submission = JobSubmissionRequest.model_validate_json(submission_json)
 
         await self._ops.reset_failed_job(job_id)
-        await self._queue.enqueue(job_id, self._run, job_id, file_bytes, submission)
+        await self._enqueue(job_id, self._run_pre_approval, file_bytes, submission)
 
         return JobActionResponse(status="accepted")
 
@@ -237,21 +244,6 @@ class JobService:
 
     # -- Private execution methods (enqueued as callbacks) --------------------
 
-    async def _run(
-        self,
-        job_id: str,
-        file_bytes: bytes,
-        submission: JobSubmissionRequest,
-        user_id: str | None = None,
-    ) -> None:
-        identification_result = await self._run_pre_approval(job_id, file_bytes, submission, user_id=user_id)
-        if identification_result is None:
-            return
-
-        has_pending = any(n.status == NodeStatus.PENDING_REVIEW for n in identification_result.nodes)
-        if not has_pending:
-            await self._run_post_approval(job_id)
-
     async def _run_pre_approval(
         self,
         job_id: str,
@@ -286,7 +278,7 @@ class JobService:
                     )
 
                 mlflow.set_tag("phase", "identification")
-                await self._ops.update_job_status(job_id, JobStatus.EXTRACTING)
+                await self._ops.update_job_status(job_id, JobStatus.IDENTIFYING)
                 config_override = submission.overrides.extraction if submission.overrides else None
                 identification_result = await self._extraction.run_identification(
                     doc, job_id, user_id=user_id, config_override=config_override
@@ -302,6 +294,10 @@ class JobService:
                 mlflow.log_metrics({f"nodes.{k}": v for k, v in node_counts.items()})
 
                 await self._ops.update_job_status(job_id, JobStatus.AWAITING_REVIEW)
+
+                has_pending = any(n.status == NodeStatus.PENDING_REVIEW for n in identification_result.nodes)
+                if not has_pending:
+                    await self._enqueue(job_id, self._run_post_approval)
 
                 return identification_result
 
@@ -334,24 +330,21 @@ class JobService:
                 self._results.pop(job_id, None)
 
                 approved = [n for n in result.nodes if n.status == NodeStatus.APPROVED]
-                resol = await self._extraction.run_resolution(job_id, approved=approved)
+                await self._ops.update_job_status(job_id, JobStatus.RESOLVING)
+                resolution_result = await self._extraction.run_resolution(job_id, approved=approved)
 
-                result = result._with(relationships=resol.relationships)
-                await self._blob.put_curated_extraction(row["meeting_date"], job_id, result.model_dump_json().encode())
-
+                # update the resolved relationships in the result before writing to the database
+                result = result._with(relationships=resolution_result.relationships)
                 await self._ops.update_job_status(job_id, JobStatus.WRITING)
-                written = await self._node_repo.write_batch(result)
+                written_nodes, written_rels = await self._node_repo.write_batch(result)
 
-                mlflow.log_metrics(
-                    {
-                        "nodes.written": written,
-                        "relationships.created": len(resol.relationships),
-                    }
-                )
-                mlflow.set_tag("phase", "finalized")
+                await self._blob.put_curated_extraction(row["meeting_date"], job_id, result.model_dump_json().encode())
+                mlflow.log_metrics({"nodes.written": written_nodes, "relationships.written": written_rels})
 
                 await self._ops.update_job_status(job_id, JobStatus.DONE)
-                logger.info("Job done: %d nodes written", written)
+                mlflow.set_tag("phase", "finalized")
+
+                logger.info("Job done: %d node(s) and %d relationship(s) written", written_nodes, written_rels)
 
             except Exception as exc:
                 mlflow.set_tag("error", str(exc)[:250])
@@ -359,6 +352,11 @@ class JobService:
                 await self._ops.fail_job(job_id, "post_approval", str(exc), recoverable=True)
 
     # -- Private helpers -------------------------------------------------------
+
+    async def _enqueue(self, job_id: str, fn: Any, *args: Any, **kwargs: Any) -> None:
+        # Convenience wrapper so callers don't repeat job_id: every pipeline method
+        # takes job_id as its first positional argument after self.
+        await self._queue.enqueue(job_id, fn, job_id, *args, **kwargs)
 
     async def _load_extraction_result(self, job_id: str, row: dict) -> ExtractionResult | None:
         result = self._results.get(job_id)

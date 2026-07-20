@@ -7,7 +7,19 @@ services:
   seshat-api:
     volumes:
       - ./src:/app/src
+      - ${USERPROFILE}/.aws:/root/.aws:ro
+    environment:
+      - AWS_PROFILE=ClaudeCode
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
     command: >
-      uv run --no-sync uvicorn seshat.app.platform.api.app:create_app
-      --factory --host 0.0.0.0 --port 8000
-      --no-access-log --reload
+      uv run --no-sync seshat api --reload
+
+  seshat-ui:
+    volumes:
+      - ./src/seshat_ui:/app/src/seshat_ui
+    command: >
+      uv run
+        --no-sync streamlit run src/seshat_ui/app.py
+        --server.port 8501
+        --server.address 0.0.0.0

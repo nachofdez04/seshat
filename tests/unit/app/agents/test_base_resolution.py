@@ -56,6 +56,24 @@ class TestToRelationships:
 
         assert result == []
 
+    def test_null_rationale_string_entry_is_dropped(self):
+        agent = _make_agent()
+        src, tgt = uuid4(), uuid4()
+        entries = [_EntryBase(source_id="0", target_id="1", rel_type="supersedes", rationale="null")]
+
+        result = agent._to_relationships(entries, _make_id_map(src, tgt))
+
+        assert result == []
+
+    def test_none_rationale_entry_is_dropped(self):
+        agent = _make_agent()
+        src, tgt = uuid4(), uuid4()
+        entries = [_EntryBase(source_id="0", target_id="1", rel_type="supersedes", rationale=None)]
+
+        result = agent._to_relationships(entries, _make_id_map(src, tgt))
+
+        assert result == []
+
     def test_mixed_entries_only_valid_ones_returned(self):
         agent = _make_agent()
         src, tgt = uuid4(), uuid4()

@@ -55,8 +55,8 @@ class TestOpsRepository:
 
     async def test_update_job_status_delegates(self):
         repo = _make_repo()
-        await repo.update_job_status("job-1", JobStatus.EXTRACTING)
-        repo._store.update_job_status.assert_called_once_with("job-1", JobStatus.EXTRACTING)
+        await repo.update_job_status("job-1", JobStatus.IDENTIFYING)
+        repo._store.update_job_status.assert_called_once_with("job-1", JobStatus.IDENTIFYING)
 
     async def test_fail_job_delegates(self):
         repo = _make_repo()

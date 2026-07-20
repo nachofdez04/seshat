@@ -115,6 +115,20 @@ services:
       retries: 10
       start_period: 30s
 
+  seshat-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    env_file: .env.docker
+    environment:
+      SESHAT_API_BASE: http://seshat-api:8000
+      MLFLOW_UI_URL: http://localhost:${MLFLOW_PORT}
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    depends_on:
+      seshat-api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   localstack_data:

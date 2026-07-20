@@ -84,7 +84,7 @@ class RetrievalMetaScorer:
 
         for ex in examples:
             cache_fp = build_cache_fp(self._config.retrieval_cache_dir, ex, agent_hash=self._search_mode_hash)
-            scored, used = await read_or_run(
+            scored, used, _cached = await read_or_run(
                 cache_fp,
                 RetrievalScoredResult,
                 runner._fetch_example(ex),

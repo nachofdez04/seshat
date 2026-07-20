@@ -21,7 +21,7 @@ async def _coro(value: int) -> _Dummy:
 class TestReadOrRun:
     async def test_returns_coroutine_result_and_writes_cache_fp(self, tmp_path: Path):
         cache_fp = tmp_path / "entry.json"
-        result, _ = await read_or_run(cache_fp, _Dummy, _coro(42))
+        result, _, _ = await read_or_run(cache_fp, _Dummy, _coro(42))
         assert result.value == 42
         assert cache_fp.exists()
 
@@ -36,15 +36,15 @@ class TestReadOrRun:
             called = True
             return _Dummy(value=0)
 
-        result, _ = await read_or_run(cache_fp, _Dummy, _never_called())
+        result, _, _ = await read_or_run(cache_fp, _Dummy, _never_called())
         assert result.value == 99
         assert not called
 
     async def test_returns_path_on_both_miss_and_hit(self, tmp_path: Path):
         cache_fp = tmp_path / "entry.json"
-        _, used_miss = await read_or_run(cache_fp, _Dummy, _coro(1))
+        _, used_miss, _ = await read_or_run(cache_fp, _Dummy, _coro(1))
         assert used_miss == cache_fp
-        _, used_hit = await read_or_run(cache_fp, _Dummy, _coro(0))
+        _, used_hit, _ = await read_or_run(cache_fp, _Dummy, _coro(0))
         assert used_hit == cache_fp
 
 

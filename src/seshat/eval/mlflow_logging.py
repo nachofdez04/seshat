@@ -87,6 +87,8 @@ def log_eval_run_metadata(
     breakdown_artifact: dict | None = None,
     tag_filter: CorpusTagFilter | None = None,
     extra_params: dict[str, str] | None = None,
+    cache_hits: int | None = None,
+    total_predictions: int | None = None,
 ) -> None:
     """Log standard eval run params, metrics, tags and artifacts to the MLflow run.
 
@@ -99,6 +101,9 @@ def log_eval_run_metadata(
     }
     if tag_filter:
         params.update({f"corpus.tag_filter.{k}": str(v) for k, v in tag_filter.items()})
+    if cache_hits is not None:
+        params["cache.hits"] = str(cache_hits)
+        params["cache.total"] = str(total_predictions)
     if extra_params:
         params.update(extra_params)
     mlflow.log_params(params, run_id=run_id)
@@ -109,7 +114,10 @@ def log_eval_run_metadata(
         _log_breakdown_artifact(breakdown_artifact, run_id)
 
     tag_summary = corpus_tag_summary(corpus_examples)
-    mlflow.set_tags({"harness": harness, "gate.passed": str(gate_passed).lower(), **tag_summary})
+    tags = {"harness": harness, "gate.passed": str(gate_passed).lower(), **tag_summary}
+    if cache_hits is not None and total_predictions is not None:
+        tags["cached"] = "true" if cache_hits == total_predictions else "false"
+    mlflow.set_tags(tags)
 
 
 def _set_active_model_with_params(model_name: str, params: dict[str, str]) -> ActiveModel:

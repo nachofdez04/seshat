@@ -10,6 +10,7 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-added-large-files
+        exclude: ^data/fixtures/audio/
       - id: check-json
       - id: check-toml
       - id: check-yaml

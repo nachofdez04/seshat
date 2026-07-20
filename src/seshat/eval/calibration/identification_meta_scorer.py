@@ -105,7 +105,7 @@ class IdentificationMetaScorer:
         async def _run_one(ex: IdentificationCorpusExample) -> tuple[IdentificationResult, Path]:
             cache_fp = build_cache_fp(self._config.identification_cache_dir, ex, agent_hash=agent_hash)
             async with sem:
-                result, used = await read_or_run(
+                result, used, _cached = await read_or_run(
                     cache_fp,
                     IdentificationResult,
                     self._orchestrator._run_identification(ex.transcript, ex.corpus_id, job_id=ex.corpus_id, hints={}),

@@ -1,0 +1,42 @@
+date: "2026-05-20"
+participants:
+  - Liam
+  - Joseff
+  - Anika
+  - Riley
+content: |
+  Quick follow-up from Monday. Joseff, any news from infra about staging?
+
+  Yes — they patched it this morning. Staging is back up and stable.
+
+  Good timing. I finished the schema migrations. Everything validated in staging without issues.
+
+  Great. So we can close the migration risk. Riley, we deferred the caching layer last time — do we have load numbers now?
+
+  We do. Peak is around 8,000 requests per second. Memcached can't handle the data structures we need for session state.
+  Redis is the right call.
+
+  Agreed. I'll update the architecture doc with Redis as the caching layer decision.
+
+  One more thing — we need to size the Postgres connection pool before we deploy next week.
+
+  I'll open a ticket and have a sizing recommendation ready by Thursday, based on the benchmark numbers.
+
+  Speaking of Postgres — we haven't pinned a version yet. We need MERGE for the upsert patterns in the ingestion layer,
+  so minimum 15. But I don't want to go to 16 or 17 yet — too new for something this critical.
+
+  Postgres 15 is fine, it's been in production everywhere for over a year. I'll check in AWS which versions are available
+  for RDS and confirm 15 is supported before we commit.
+
+  Also, given that Postgres is a deviation from the SQL Server policy, we need architecture board sign-off before we go
+  to production. I'll prepare a short proposal and present it at the next board session.
+
+  I hope you are a good seller; without that approval we can't ship.
+
+  Also, we should talk about how we're provisioning the Redis infrastructure —
+
+  Sorry, I need to jump to another call in two minutes. Can we handle that one async?
+
+  Oh, crap! I have to run too. Let's pick it up over Slack.
+
+  Sure, let's finish there. Talk later everyone.

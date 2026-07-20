@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,9 @@ DEFAULT_EVAL_GATE_PATH: Path = PROJECT_ROOT / "eval_gate.json"
 
 class BaseConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
+
+    def _with(self, **kwargs: Any) -> Self:
+        return self.model_copy(update=kwargs)
 
     def _set_on_frozen_model(self, field: str, value: object) -> None:
         # Pydantic v2: only valid inside model_validator(mode="after"); bypasses the frozen guard.
@@ -352,6 +356,9 @@ class APIConfig(BaseConfig):
 
 class SeshatConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter="__", extra="ignore")
+
+    def _with(self, **kwargs: Any) -> "SeshatConfig":
+        return self.model_copy(update=kwargs)
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)

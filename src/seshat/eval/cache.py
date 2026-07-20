@@ -43,10 +43,11 @@ async def read_or_run(
     cache_fp: Path,
     model_cls: type[M],
     coro: Coroutine[Any, Any, M],
-) -> tuple[M, Path]:
+) -> tuple[M, Path, bool]:
     """Return a cached result if available, otherwise await the coroutine and persist the result.
 
-    Returns the result and the cache file path that was used (for mark-and-sweep tracking).
+    Returns (result, cache_path, was_cached). cache_path is for mark-and-sweep tracking;
+    was_cached is True when the result came from disk rather than a live LLM call.
     The cache directory must exist before calling this function.
     """
     # Cache files are small local JSON blobs; the blocking time is negligible compared to
@@ -54,12 +55,12 @@ async def read_or_run(
     if cache_fp.exists():  # noqa: ASYNC240
         coro.close()
         logger.debug("Cache hit in %r call: using result from %s", coro.__name__, cache_fp)
-        return model_cls.model_validate_json(cache_fp.read_text()), cache_fp  # noqa: ASYNC240
+        return model_cls.model_validate_json(cache_fp.read_text()), cache_fp, True  # noqa: ASYNC240
 
     logger.debug("Cache miss in %r call: running coroutine and caching result to %s", coro.__name__, cache_fp)
     result = await coro
     cache_fp.write_text(result.model_dump_json())  # noqa: ASYNC240
-    return result, cache_fp
+    return result, cache_fp, False
 
 
 def sweep_stale_entries(

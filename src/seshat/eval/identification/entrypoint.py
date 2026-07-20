@@ -16,6 +16,9 @@ logger = get_logger(__name__)
 
 
 async def run(eval_config: EvalConfig, seshat_config: SeshatConfig, tag_filter: CorpusTagFilter | None = None) -> None:
+    # Grounding is a production scoring gate — it is not what identification eval measures.
+    # Disable it so the harness only tests the identification agent itself.
+    seshat_config = seshat_config._with(extraction=seshat_config.extraction._with(grounding=None))
     async with build_extraction_orchestrator(seshat_config) as orchestrator:
         llm_cfg = seshat_config.extraction.identification
         self_review_cfg = seshat_config.extraction.identification_self_review

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 from typing import TYPE_CHECKING
 
 import mlflow
@@ -39,7 +40,7 @@ class IdentificationEvalRunner:
     async def run(self, tag_filter: CorpusTagFilter | None = None, model_id: str | None = None) -> GateResult:
         examples = load_corpus(self._config.identification_corpus_dir, tag_filter=tag_filter)
         agent_hash = self._orchestrator._identification_registry.fingerprint()
-        result_cache, touched = await self._run_all_predictions(examples, agent_hash=agent_hash)
+        result_cache, touched, cache_hits = await self._run_all_predictions(examples, agent_hash=agent_hash)
 
         expected_by_id = {ex.corpus_id: ex.expected_nodes for ex in examples}
 
@@ -74,6 +75,8 @@ class IdentificationEvalRunner:
             corpus_examples=examples,
             breakdown_artifact=_build_breakdown(eval_result, examples, result_cache),
             tag_filter=tag_filter,
+            cache_hits=cache_hits,
+            total_predictions=len(examples),
         )
 
         sweep_stale_entries(
@@ -88,27 +91,33 @@ class IdentificationEvalRunner:
     @track_eval_latency("identification")
     async def _run_all_predictions(
         self, examples: list[IdentificationCorpusExample], agent_hash: str
-    ) -> tuple[dict[str, IdentificationResult], set[Path]]:
+    ) -> tuple[dict[str, IdentificationResult], set[Path], int]:
         # Pre-populate before mlflow.genai.evaluate (sync). Calling the orchestrator
         # inside _predict would cross event-loop boundaries — LangChain clients are
         # bound to the loop that created them and fail silently from a new thread.
         sem = asyncio.Semaphore(self._config.max_concurrent_predictions)
 
-        async def _run_one(task_idx: int, ex: IdentificationCorpusExample) -> tuple[str, IdentificationResult, Path]:
+        async def _run_one(
+            task_idx: int, ex: IdentificationCorpusExample
+        ) -> tuple[str, IdentificationResult, Path, bool]:
             set_task_num(task_idx)
             cache_fp = build_cache_fp(self._config.identification_cache_dir, ex, agent_hash=agent_hash)
             async with sem:
-                result, used = await read_or_run(
+                result, used, was_cached = await read_or_run(
                     cache_fp,
                     IdentificationResult,
-                    self._orchestrator._run_identification(ex.transcript, ex.corpus_id, job_id=ex.corpus_id, hints={}),
+                    # meeting_date is required by PendingNodeBuilder but irrelevant to identification logic
+                    self._orchestrator._run_identification(
+                        ex.transcript, ex.corpus_id, job_id=ex.corpus_id, hints={}, meeting_date=date(2024, 1, 1)
+                    ),
                 )
-            return ex.corpus_id, result, used
+            return ex.corpus_id, result, used, was_cached
 
-        triples = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
-        results = {corpus_id: result for corpus_id, result, _ in triples}
-        touched = {used for _, _, used in triples}
-        return results, touched
+        quads = await asyncio.gather(*(_run_one(i, ex) for i, ex in enumerate(examples)))
+        results = {corpus_id: result for corpus_id, result, _, _ in quads}
+        touched = {used for _, _, used, _ in quads}
+        cache_hits = sum(1 for _, _, _, was_cached in quads if was_cached)
+        return results, touched, cache_hits
 
 
 def _slim_node(n: dict) -> dict:
