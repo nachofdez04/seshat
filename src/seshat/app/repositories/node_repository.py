@@ -270,4 +270,4 @@ class NodeRepository:
 
 def _get_vector_store_metadata(node: KBNode) -> dict:
     """Return a dict of metadata to store in the vector store for a given node."""
-    return node.metadata.model_dump(mode="json") | {"state": node.state}
+    return node.metadata.model_dump(mode="json") | {"state": node.state, "node_type": node.type}

@@ -14,11 +14,10 @@ from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
 from seshat.app.pipeline.extraction.search_engine import SearchEngine
 from seshat.app.pipeline.ingestion.orchestrator import IngestionOrchestrator
 from seshat.app.repositories.node_repository import NodeRepository
-from seshat.core.config.settings import ExtractionConfig, KBStoreConfig, RAGConfig, TranscriptionConfig
+from seshat.core.config.settings import ExtractionConfig, RAGConfig, TranscriptionConfig
 from seshat.core.models.api_graph import NodeFilter
 from seshat.core.models.enums import ConceptType, IngestionSource, NodeState, NodeStatus, RelationshipType
 from seshat.core.models.nodes import ExtractionResult, KBNode, KBRelationship, NodeMetadata
-from seshat.infra.knowledge_store.pg_store import PostgresKBStore
 from tests.integration.conftest import (
     SKIP_IF_NO_LLM_API,
     SKIP_IF_NO_LOCALSTACK,
@@ -56,20 +55,13 @@ _TRANSCRIPT_YAML = yaml.dump(
 
 
 @pytest.fixture
-async def kb_store(pg_test_url):
-    store = PostgresKBStore(KBStoreConfig(), pg_test_url)
-    await store.connect()
-    yield store
-    await store.pool.execute(f"TRUNCATE {store._schema}.kb_relationships, {store._schema}.kb_nodes CASCADE")
-    await store.close()
-
-
-@pytest.fixture
 def fake_vector_store():
     vs = MagicMock()
     vs.upsert = AsyncMock()
     vs.delete = AsyncMock()
-    vs.search = AsyncMock(return_value=[])
+    vs.update_metadata = AsyncMock()
+    vs.search_dense = AsyncMock(return_value=[])
+    vs.search_sparse = AsyncMock(return_value=[])
     return vs
 
 

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-from seshat_ui.utils import enrich_relationships, job_label
+from seshat_ui.utils import enrich_relationships, job_label, show_api_error
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -86,9 +86,7 @@ def render(client: ApiClient, mlflow_ui_base: str = "") -> None:
                 st.rerun()
             else:
                 st.error(f"Retry failed: {resp.text}")
-        if st.button("Start new job"):
-            st.session_state.pop("job_id", None)
-            st.rerun()
+        _render_back_to_jobs_button(key="back_failed")
 
 
 def _render_submit(client: ApiClient) -> None:
@@ -166,7 +164,7 @@ def _render_submit(client: ApiClient) -> None:
             data = resp.json()
             st.warning(f"Already ingested as job `{data.get('existing_job_id')}`. Use `force=true` to re-ingest.")
         else:
-            st.error(f"Submission failed ({resp.status_code}): {resp.text}")
+            show_api_error(resp, prefix="Submission failed")
 
 
 def _render_summary(client: ApiClient, job_id: str, mlflow_ui_base: str = "") -> None:
@@ -218,11 +216,11 @@ def _render_summary(client: ApiClient, job_id: str, mlflow_ui_base: str = "") ->
     st.divider()
 
     col1, col2, _ = st.columns([1, 1, 4])
-    if col1.button("View KB →"):
+    with col1:
+        _render_back_to_jobs_button(key="back_done")
+
+    if col2.button("View KB →"):
         st.session_state["screen"] = "graph"
-        st.rerun()
-    if col2.button("Submit another job"):
-        st.session_state.pop("job_id", None)
         st.rerun()
 
 
@@ -318,6 +316,8 @@ def _render_progress(client: ApiClient, job_id: str) -> None:
     elapsed = job.get("elapsed_seconds")
     if elapsed is not None:
         st.caption(f"Elapsed: {elapsed:.1f}s")
+
+    _render_back_to_jobs_button(key="back_progress")
 
 
 @st.fragment
@@ -456,6 +456,12 @@ def _render_review(client: ApiClient, job: dict) -> None:
             st.rerun(scope="app")
         else:
             st.error(f"Failed: {resp.text}")
+
+
+def _render_back_to_jobs_button(*, key: str) -> None:
+    if st.button("← Back to Jobs", key=key):
+        st.session_state.pop("job_id", None)
+        st.rerun(scope="app")
 
 
 def _type_breakdown(types: Iterable[str]) -> str:

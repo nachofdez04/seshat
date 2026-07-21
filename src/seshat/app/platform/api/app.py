@@ -4,6 +4,18 @@ import json
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+from seshat.core.config.settings import SeshatConfig, get_config
+from seshat.core.utils.http_patch import inject_os_truststore
+from seshat.core.utils.log import configure_logging, get_logger, set_job_id
+
+# truststore.inject_into_ssl() must run before boto3/botocore is imported anywhere in the
+# process — botocore.httpsession binds ssl.SSLContext into its own namespace at import time,
+# and patching the name afterwards causes infinite recursion in ssl.SSLContext.options.
+# Everything below transitively imports boto3/aiobotocore, so it must stay below this guard —
+# no new top-level import may be added above this line unless it is confirmed boto3-free.
+if get_config().use_os_truststore:
+    inject_os_truststore()
+
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -15,9 +27,6 @@ from seshat.app.platform.api.routers import admin, graph, health, identity, jobs
 from seshat.app.platform.api.state import build_app_state
 from seshat.app.platform.observability.mlflow_setup import setup_mlflow
 from seshat.app.transcription.factory import get_transcriber
-from seshat.core.config.settings import SeshatConfig, get_config
-from seshat.core.utils.http_patch import inject_os_truststore
-from seshat.core.utils.log import configure_logging, get_logger, set_job_id
 from seshat.infra.vector_store.factory import _build_embeddings
 
 if TYPE_CHECKING:
@@ -54,9 +63,6 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     config = get_config()
     configure_logging(config.logging)
-
-    if config.use_os_truststore:
-        inject_os_truststore()
 
     _emit_config_warnings(config)
     _check_eval_gate(config.api)

@@ -73,11 +73,12 @@ class TestHealthServiceCheckBlob:
 
 class TestCheckHttp:
     async def test_returns_ok_on_success(self):
-
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
         with patch("seshat.app.services.health.httpx.AsyncClient", return_value=mock_client):
             result = await _check_http("http://example.com/health")
         assert result == HealthStatus.OK
