@@ -20,6 +20,7 @@ def _make_app_state(*, pg_ok: bool = True, mlflow_ok: bool = True, blob_ok: bool
         health_service=health_service,
         graph_service=MagicMock(),
         job_service=MagicMock(),
+        document_service=MagicMock(),
     )
 
 

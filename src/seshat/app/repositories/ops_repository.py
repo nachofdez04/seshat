@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import date, datetime
+    from uuid import UUID
 
+    from seshat.core.models.documents import GeneratedDocument
     from seshat.core.models.enums import JobStatus, UserRole
     from seshat.infra.ops_store.pg_store import PostgresOpsStore
 
@@ -100,6 +102,25 @@ class OpsRepository:
         raw_blob_key: str,
     ) -> None:
         await self._store.set_job_submission(job_id, meeting_date, submission_json, raw_blob_key)
+
+    # -- Generated documents ---------------------------------------------------
+
+    async def upsert_document(self, document: GeneratedDocument) -> dict:
+        return await self._store.upsert_document(
+            document.id,
+            document.job_id,
+            document.kind.value,
+            document.filename,
+            document.markdown_content,
+            document.content_revision,
+            document.created_at,
+        )
+
+    async def get_documents_for_job(self, job_id: str) -> list[dict]:
+        return await self._store.get_documents_for_job(job_id)
+
+    async def get_document(self, document_id: UUID) -> dict | None:
+        return await self._store.get_document(document_id)
 
     # -- API Keys: Create ------------------------------------------------------
 
