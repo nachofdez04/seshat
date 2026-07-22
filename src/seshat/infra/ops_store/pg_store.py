@@ -323,6 +323,39 @@ class PostgresOpsStore:
         )
         return self._to_dict(row)
 
+    # -- Publish results -------------------------------------------------------
+
+    async def insert_publish_result(
+        self,
+        job_id: str,
+        branch: str,
+        commit_sha: str,
+        pr_url: str,
+        compare_url: str,
+        files: list[str],
+        published_at: datetime,
+    ) -> None:
+        logger.debug("Inserting publish result for job_id=%s branch=%s", job_id, branch)
+        await self.pool.execute(
+            f"INSERT INTO {self._schema}.publish_results "
+            "(job_id, branch, commit_sha, pr_url, compare_url, files, published_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            job_id,
+            branch,
+            commit_sha,
+            pr_url,
+            compare_url,
+            files,
+            published_at,
+        )
+
+    async def get_latest_publish_result(self, job_id: str) -> dict | None:
+        row = await self.pool.fetchrow(
+            f"SELECT * FROM {self._schema}.publish_results WHERE job_id=$1 ORDER BY published_at DESC, id DESC LIMIT 1",
+            job_id,
+        )
+        return self._to_dict(row)
+
     # -- API Keys: Create ------------------------------------------------------
 
     async def create_api_key(self, key_hash: str, user_id: str, role: UserRole, now: datetime) -> None:

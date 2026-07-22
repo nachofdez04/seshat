@@ -64,6 +64,7 @@ def app_state(graph_svc):
         graph_service=graph_svc,
         job_service=MagicMock(),
         document_service=MagicMock(),
+        publishing_service=MagicMock(),
     )
 
 

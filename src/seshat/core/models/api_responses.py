@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, computed_field
 from seshat.core.models.documents import DocumentKind, DocumentValidationStatus
 from seshat.core.models.enums import HealthStatus, UserRole
 from seshat.core.models.nodes import KBNode, KBRelationship
+from seshat.core.models.publishing import PublishResult
 
 
 class HealthResponse(BaseModel):
@@ -96,6 +97,14 @@ class GeneratedDocumentMeta(BaseModel):
     validated_at: datetime | None
     auto_approved: bool
     approved_revision: str | None
+
+
+class PublishResponse(BaseModel):
+    """Outcome of a publish request; `nothing_to_publish` marks the benign no-changes case."""
+
+    nothing_to_publish: bool = False
+    detail: str | None = None
+    result: PublishResult | None = None
 
 
 class NodeSearchResult(BaseModel):
