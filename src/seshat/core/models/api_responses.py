@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
-from pydantic import BaseModel, StringConstraints, computed_field
+from pydantic import BaseModel, ConfigDict, StringConstraints, computed_field
 
+from seshat.core.models.documents import DocumentKind
 from seshat.core.models.enums import HealthStatus, UserRole
 from seshat.core.models.nodes import KBNode, KBRelationship
 
@@ -74,6 +76,19 @@ class TranscriptExcerptResponse(BaseModel):
     text: str
     char_start: int
     char_end: int
+
+
+class GeneratedDocumentMeta(BaseModel):
+    """Document metadata without markdown_content, for list endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    job_id: str
+    kind: DocumentKind
+    filename: str
+    content_revision: str
+    created_at: datetime
 
 
 class NodeSearchResult(BaseModel):

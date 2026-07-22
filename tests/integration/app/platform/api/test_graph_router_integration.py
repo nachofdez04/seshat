@@ -63,6 +63,7 @@ def app_state(graph_svc):
         health_service=MagicMock(),
         graph_service=graph_svc,
         job_service=MagicMock(),
+        document_service=MagicMock(),
     )
 
 

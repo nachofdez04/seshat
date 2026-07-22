@@ -13,6 +13,7 @@ from seshat.app.repositories.blob_repository import BlobRepository
 from seshat.app.repositories.node_repository import NodeRepository
 from seshat.app.repositories.ops_repository import OpsRepository
 from seshat.app.services.admin import AdminService
+from seshat.app.services.document import DocumentService
 from seshat.app.services.graph import GraphService
 from seshat.app.services.health import HealthService
 from seshat.app.services.job import JobService
@@ -34,6 +35,7 @@ class AppState:
     health_service: HealthService
     graph_service: GraphService
     job_service: JobService
+    document_service: DocumentService
 
 
 @asynccontextmanager
@@ -72,12 +74,14 @@ async def build_app_state(config: SeshatConfig) -> AsyncIterator[AppState]:
             ingestion_orchestrator,
             queue,
         )
+        document_service = DocumentService(ops_repo, blob_repo, node_repo)
         yield AppState(
             config=config,
             admin_service=admin_service,
             health_service=health_service,
             graph_service=graph_service,
             job_service=job_service,
+            document_service=document_service,
         )
     finally:
         await kb_store.close()

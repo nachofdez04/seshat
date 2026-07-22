@@ -23,7 +23,7 @@ from langchain_core.messages import HumanMessage
 
 from seshat.app.pipeline.bootstrap import _get_reranker
 from seshat.app.pipeline.llm_factory import _build_llm
-from seshat.app.platform.api.routers import admin, graph, health, identity, jobs
+from seshat.app.platform.api.routers import admin, documents, graph, health, identity, jobs
 from seshat.app.platform.api.state import build_app_state
 from seshat.app.platform.observability.mlflow_setup import setup_mlflow
 from seshat.app.transcription.factory import get_transcriber
@@ -44,6 +44,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(health.router)
     v1_router.include_router(identity.router)
     v1_router.include_router(jobs.router)
+    v1_router.include_router(documents.router)
     v1_router.include_router(graph.router)
     v1_router.include_router(admin.router)
 

@@ -4,13 +4,16 @@ import asyncio
 import json
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import asyncpg
 import pytest
 
 from seshat.app.repositories.ops_repository import ApiKeyAlreadyRevokedError, ApiKeyNotFoundError, OpsRepository
 from seshat.core.config.settings import OpsStoreConfig
+from seshat.core.models.documents import DocumentKind, GeneratedDocument
 from seshat.core.models.enums import JobStatus, UserRole
+from seshat.core.utils.hashing import sha256_text
 from seshat.infra.ops_store.pg_store import PostgresOpsStore
 from tests.integration.conftest import SKIP_IF_NO_POSTGRES
 
@@ -25,7 +28,7 @@ async def repo(pg_test_url: str) -> AsyncGenerator[OpsRepository]:
     store = PostgresOpsStore(OpsStoreConfig(schema_name="ops"), pg_test_url)
     await store.connect()
     yield OpsRepository(store)
-    await store.pool.execute("TRUNCATE ops.api_keys, ops.jobs CASCADE")
+    await store.pool.execute("TRUNCATE ops.api_keys, ops.jobs, ops.generated_documents CASCADE")
     await store.close()
 
 
@@ -341,6 +344,56 @@ class TestFinishedAt:
         row = await repo.get_job("job-fin-2")
         assert row is not None
         assert row["finished_at"] is None
+
+
+def _make_document(job_id: str = "job-doc-1", markdown: str = "# Meeting Summary\n") -> GeneratedDocument:
+    return GeneratedDocument(
+        job_id=job_id,
+        kind=DocumentKind.MEETING_SUMMARY,
+        filename="meeting_summary.md",
+        markdown_content=markdown,
+        content_revision=sha256_text(markdown),
+        created_at=datetime.now(UTC),
+    )
+
+
+class TestGeneratedDocuments:
+    async def test_upsert_and_get_document(self, repo: OpsRepository):
+        document = _make_document()
+        stored = await repo.upsert_document(document)
+
+        assert stored["id"] == document.id
+        row = await repo.get_document(document.id)
+        assert row is not None
+        assert row["job_id"] == "job-doc-1"
+        assert row["kind"] == "meeting_summary"
+        assert row["markdown_content"] == document.markdown_content
+        assert row["content_revision"] == document.content_revision
+
+    async def test_upsert_overwrites_same_job_and_kind(self, repo: OpsRepository):
+        first = _make_document(markdown="# v1\n")
+        await repo.upsert_document(first)
+
+        second = _make_document(markdown="# v2\n")
+        stored = await repo.upsert_document(second)
+
+        # The original row (and its id) survives; content and revision are replaced.
+        assert stored["id"] == first.id
+        assert stored["markdown_content"] == "# v2\n"
+        assert stored["content_revision"] == sha256_text("# v2\n")
+        rows = await repo.get_documents_for_job("job-doc-1")
+        assert len(rows) == 1
+
+    async def test_get_documents_for_job_filters_by_job(self, repo: OpsRepository):
+        await repo.upsert_document(_make_document(job_id="job-doc-a"))
+        await repo.upsert_document(_make_document(job_id="job-doc-b"))
+
+        rows = await repo.get_documents_for_job("job-doc-a")
+
+        assert [r["job_id"] for r in rows] == ["job-doc-a"]
+
+    async def test_get_document_returns_none_for_unknown_id(self, repo: OpsRepository):
+        assert await repo.get_document(uuid4()) is None
 
 
 class TestCountRunningJobs:

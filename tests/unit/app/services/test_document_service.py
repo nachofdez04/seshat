@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+
+from seshat.app.services.document import DocumentService
+from seshat.app.services.job import JobNotFoundError, JobStateError, TranscriptNotFoundError
+from seshat.core.models.documents import DocumentKind, GeneratedDocument
+from seshat.core.models.enums import NodeStatus
+from seshat.core.utils.hashing import sha256_text
+from tests.helpers import make_node
+
+_TRANSCRIPT = "We agreed to ship v2 in March."
+
+
+def _make_service(
+    job_row: dict | None = None,
+    transcript: bytes | None = _TRANSCRIPT.encode(),
+) -> tuple[DocumentService, MagicMock, MagicMock, MagicMock]:
+    ops = MagicMock()
+    ops.get_job = AsyncMock(return_value=job_row)
+    ops.upsert_document = AsyncMock(side_effect=lambda doc: doc.model_dump())
+    ops.get_documents_for_job = AsyncMock(return_value=[])
+    ops.get_document = AsyncMock(return_value=None)
+
+    blob = MagicMock()
+    blob.get_raw_transcript = AsyncMock(return_value=transcript)
+
+    node_repo = MagicMock()
+    nodes = [make_node(quote=_TRANSCRIPT, transcript=_TRANSCRIPT)]
+    node_repo.query = AsyncMock(return_value=nodes)
+    node_repo.paginated_query = AsyncMock(return_value=nodes)
+
+    return DocumentService(ops, blob, node_repo), ops, blob, node_repo
+
+
+def _done_job_row() -> dict:
+    return {"job_id": "job-1", "status": "done", "meeting_date": date(2026, 4, 21)}
+
+
+def _document_row(job_id: str = "job-1") -> dict:
+    markdown = "# Meeting Summary\n"
+    return {
+        "id": uuid4(),
+        "job_id": job_id,
+        "kind": "meeting_summary",
+        "filename": "meeting_summary.md",
+        "markdown_content": markdown,
+        "content_revision": sha256_text(markdown),
+        "created_at": datetime.now(UTC),
+    }
+
+
+class TestGenerateForJob:
+    async def test_unknown_job_raises_not_found(self):
+        svc, _, _, _ = _make_service(job_row=None)
+        with pytest.raises(JobNotFoundError):
+            await svc.generate_for_job("missing")
+
+    async def test_non_done_job_raises_state_error(self):
+        svc, _, _, _ = _make_service(job_row={"job_id": "job-1", "status": "awaiting_review"})
+        with pytest.raises(JobStateError):
+            await svc.generate_for_job("job-1")
+
+    async def test_missing_transcript_raises(self):
+        svc, _, _, _ = _make_service(job_row=_done_job_row(), transcript=None)
+        with pytest.raises(TranscriptNotFoundError):
+            await svc.generate_for_job("job-1")
+
+    async def test_generates_and_upserts_document(self):
+        svc, ops, blob, node_repo = _make_service(job_row=_done_job_row())
+
+        document = await svc.generate_for_job("job-1")
+
+        node_filter = node_repo.paginated_query.call_args.args[0]
+        assert node_filter.job_id == "job-1"
+        assert node_filter.status == NodeStatus.APPROVED
+        blob.get_raw_transcript.assert_awaited_once_with(date(2026, 4, 21), "job-1")
+        ops.upsert_document.assert_awaited_once()
+        assert document.kind == DocumentKind.MEETING_SUMMARY
+        assert document.filename == "meeting_summary.md"
+        assert "Use PostgreSQL" in document.markdown_content
+        assert document.content_revision == sha256_text(document.markdown_content)
+
+    async def test_fetches_all_approved_nodes_with_paginated_query(self):
+        svc, _, _, node_repo = _make_service(job_row=_done_job_row())
+        first = make_node("n1", title="First decision", quote=_TRANSCRIPT, transcript=_TRANSCRIPT)
+        second = make_node("n2", title="Decision beyond first page", quote=_TRANSCRIPT, transcript=_TRANSCRIPT)
+        node_repo.query = AsyncMock(return_value=[first])
+        node_repo.paginated_query = AsyncMock(return_value=[first, second])
+
+        document = await svc.generate_for_job("job-1")
+
+        assert "First decision" in document.markdown_content
+        assert "Decision beyond first page" in document.markdown_content
+        node_repo.paginated_query.assert_awaited_once()
+
+
+class TestListForJob:
+    async def test_unknown_job_raises_not_found(self):
+        svc, _, _, _ = _make_service(job_row=None)
+        with pytest.raises(JobNotFoundError):
+            await svc.list_for_job("missing")
+
+    async def test_maps_rows_to_models(self):
+        svc, ops, _, _ = _make_service(job_row=_done_job_row())
+        ops.get_documents_for_job = AsyncMock(return_value=[_document_row()])
+
+        documents = await svc.list_for_job("job-1")
+
+        assert len(documents) == 1
+        assert isinstance(documents[0], GeneratedDocument)
+        assert documents[0].kind == DocumentKind.MEETING_SUMMARY
+
+
+class TestGet:
+    async def test_returns_none_when_missing(self):
+        svc, _, _, _ = _make_service()
+        assert await svc.get(uuid4()) is None
+
+    async def test_returns_model_when_found(self):
+        svc, ops, _, _ = _make_service()
+        row = _document_row()
+        ops.get_document = AsyncMock(return_value=row)
+
+        document = await svc.get(row["id"])
+
+        assert document is not None
+        assert document.id == row["id"]
+        assert document.markdown_content == row["markdown_content"]

@@ -95,6 +95,12 @@ Streamlit UI → FastAPI → Pipeline Worker → Storage Layer
 - `GET /jobs/{id}` — return job status and timestamps (`created_at`, `updated_at`, `finished_at`).
 - `POST /jobs/{id}/approve` — accept `bulk_rules` (applied first) and explicit per-node decisions (applied second); transition job state (`AWAITING_REVIEW → WRITING → DONE`).
 
+**Document API**
+
+- `POST /jobs/{id}/documents` — operator-only; generate (or regenerate) the Markdown meeting summary for a `DONE` job from its approved nodes, with footnote citations anchored to the transcript. Upserts one document per `(job_id, kind)`.
+- `GET /jobs/{id}/documents` — list document metadata (no content).
+- `GET /documents/{document_id}` — full document including Markdown content and `content_revision` (sha256).
+
 **Admin API** (`/admin`, root-key authenticated)
 
 - `GET /admin/api-keys` — list all API keys with revocation status.
@@ -107,16 +113,17 @@ Uses a task queue abstraction: `enqueue(fn, *args, **kwargs) → job_id`, `get_s
 
 **Service layer**
 
-Business logic is encapsulated in four services, one per router:
+Business logic is encapsulated in five services, one per router:
 
 - `AdminService` — API key lifecycle (create, list, revoke); wraps `OpsRepository`.
 - `HealthService` — component health probes (`check_postgres`, `check_mlflow`, `check_blob`); returns `HealthStatus` directly.
 - `GraphService` — all graph read and write operations (query, node detail, impact traversal, CRUD, bulk ops, resolution); wraps `NodeRepository` and `ExtractionOrchestrator`.
 - `JobService` — job submission, approval, retry, and recovery; coordinates `OpsRepository`, `BlobRepository`, `NodeRepository`, and the task queue.
+- `DocumentService` — deterministic Markdown document generation with footnote citations for done jobs; coordinates `OpsRepository`, `BlobRepository`, and `NodeRepository` (see `docs/superpowers/specs/2026-07-22-document-generation-citations.md`).
 
 Routers are pure HTTP translation: they validate inputs, call the relevant service method, map domain exceptions to HTTP status codes, and return responses. No business logic lives in routers.
 
-`AppState` holds exactly five fields: `config`, `admin_service`, `health_service`, `graph_service`, `job_service`. It is constructed by `build_app_state()` in `api/state.py`, which owns all store lifecycle (connect/close).
+`AppState` holds exactly six fields: `config`, `admin_service`, `health_service`, `graph_service`, `job_service`, `document_service`. It is constructed by `build_app_state()` in `api/state.py`, which owns all store lifecycle (connect/close).
 
 **Boundaries**
 

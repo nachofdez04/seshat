@@ -10,6 +10,8 @@ import asyncpg
 from seshat.core.models.enums import JobStatus, UserRole
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from seshat.core.config.settings import OpsStoreConfig
 
 logger = logging.getLogger(__name__)
@@ -219,6 +221,51 @@ class PostgresOpsStore:
             datetime.now(UTC),
             job_id,
         )
+
+    # -- Generated documents ---------------------------------------------------
+
+    async def upsert_document(
+        self,
+        document_id: UUID,
+        job_id: str,
+        kind: str,
+        filename: str,
+        markdown_content: str,
+        content_revision: str,
+        created_at: datetime,
+    ) -> dict:
+        logger.debug("Upserting document kind=%s for job_id=%s", kind, job_id)
+        row = await self.pool.fetchrow(
+            f"INSERT INTO {self._schema}.generated_documents "
+            "(id, job_id, kind, filename, markdown_content, content_revision, created_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7) "
+            "ON CONFLICT (job_id, kind) DO UPDATE SET "
+            "filename=EXCLUDED.filename, markdown_content=EXCLUDED.markdown_content, "
+            "content_revision=EXCLUDED.content_revision, created_at=EXCLUDED.created_at "
+            "RETURNING *",
+            document_id,
+            job_id,
+            kind,
+            filename,
+            markdown_content,
+            content_revision,
+            created_at,
+        )
+        return dict(row)
+
+    async def get_documents_for_job(self, job_id: str) -> list[dict]:
+        rows = await self.pool.fetch(
+            f"SELECT * FROM {self._schema}.generated_documents WHERE job_id=$1 ORDER BY created_at DESC",
+            job_id,
+        )
+        return self._to_dicts(rows)
+
+    async def get_document(self, document_id: UUID) -> dict | None:
+        row = await self.pool.fetchrow(
+            f"SELECT * FROM {self._schema}.generated_documents WHERE id=$1",
+            document_id,
+        )
+        return self._to_dict(row)
 
     # -- API Keys: Create ------------------------------------------------------
 
