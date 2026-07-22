@@ -74,7 +74,7 @@ async def build_app_state(config: SeshatConfig) -> AsyncIterator[AppState]:
             ingestion_orchestrator,
             queue,
         )
-        document_service = DocumentService(ops_repo, blob_repo, node_repo)
+        document_service = DocumentService(ops_repo, blob_repo, node_repo, config.documents)
         yield AppState(
             config=config,
             admin_service=admin_service,

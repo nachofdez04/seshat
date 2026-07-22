@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, computed_field
 
-from seshat.core.models.documents import DocumentKind
+from seshat.core.models.documents import DocumentKind, DocumentValidationStatus
 from seshat.core.models.enums import HealthStatus, UserRole
 from seshat.core.models.nodes import KBNode, KBRelationship
 
@@ -79,7 +79,7 @@ class TranscriptExcerptResponse(BaseModel):
 
 
 class GeneratedDocumentMeta(BaseModel):
-    """Document metadata without markdown_content, for list endpoints."""
+    """Document metadata without content (markdown or edited), for list endpoints."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -89,6 +89,13 @@ class GeneratedDocumentMeta(BaseModel):
     filename: str
     content_revision: str
     created_at: datetime
+    validation_status: DocumentValidationStatus
+    validation_revision: int
+    rejection_reason: str | None
+    validated_by: str | None
+    validated_at: datetime | None
+    auto_approved: bool
+    approved_revision: str | None
 
 
 class NodeSearchResult(BaseModel):

@@ -17,6 +17,7 @@ if get_config().use_os_truststore:
     inject_os_truststore()
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
@@ -53,7 +54,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        # jsonable_encoder: model_validator errors carry the raw ValueError in ctx, which
+        # JSONResponse cannot serialize on its own.
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
     return app
 

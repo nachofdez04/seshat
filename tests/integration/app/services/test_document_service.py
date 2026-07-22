@@ -2,15 +2,20 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from seshat.app.repositories.blob_repository import BlobRepository
 from seshat.app.repositories.ops_repository import OpsRepository
-from seshat.app.services.document import DocumentService
+from seshat.app.services.document import DocumentRevisionConflictError, DocumentService
 from seshat.app.services.job import JobStateError
 from seshat.core.config.settings import BlobStoreConfig, OpsStoreConfig
+from seshat.core.models.documents import (
+    DocumentReviewRequest,
+    DocumentValidationStatus,
+    document_is_publishable,
+)
 from seshat.core.models.enums import JobStatus
 from seshat.core.utils.hashing import sha256_text
 from seshat.infra.blob_store.s3_store import S3BlobStore
@@ -120,3 +125,163 @@ class TestDocumentServiceIntegration:
 
         with pytest.raises(JobStateError):
             await svc.generate_for_job("job-docsvc-3")
+
+
+async def _generate(ops_repo, blob_repo, job_id: str):
+    await _seed_job(ops_repo, job_id, JobStatus.DONE)
+    await blob_repo.put_raw_transcript(_MEETING_DATE, job_id, _TRANSCRIPT.encode())
+    svc = _make_service(ops_repo, blob_repo)
+    document = await svc.generate_for_job(job_id)
+    return svc, document
+
+
+class TestReviewIntegration:
+    async def test_approve_makes_document_publishable(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-approve")
+        request = DocumentReviewRequest(
+            action="approve",
+            expected_revision=document.content_revision,
+            expected_validation_revision=document.validation_revision,
+        )
+
+        reviewed = await svc.review(document.id, request, "rachel")
+
+        assert reviewed.validation_status == DocumentValidationStatus.APPROVED
+        assert reviewed.validation_revision == document.validation_revision + 1
+        assert reviewed.validated_by == "rachel"
+        assert reviewed.auto_approved is False
+        assert reviewed.approved_revision == document.content_revision
+        assert document_is_publishable(reviewed)
+
+    async def test_approve_with_edits_hashes_the_edit(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-edit")
+        edited = "# Reviewer-corrected summary\n"
+        request = DocumentReviewRequest(
+            action="approve",
+            expected_revision=document.content_revision,
+            expected_validation_revision=document.validation_revision,
+            edited_content=edited,
+        )
+
+        reviewed = await svc.review(document.id, request, "rachel")
+
+        assert reviewed.validation_status == DocumentValidationStatus.EDITED
+        assert reviewed.edited_content == edited
+        assert reviewed.approved_revision == sha256_text(edited)
+        assert document_is_publishable(reviewed)
+
+    async def test_reject_stores_reason_and_blocks_publishing(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-reject")
+        request = DocumentReviewRequest(
+            action="reject",
+            expected_revision=document.content_revision,
+            expected_validation_revision=document.validation_revision,
+            reason="hallucinated decision",
+        )
+
+        reviewed = await svc.review(document.id, request, "rachel")
+
+        assert reviewed.validation_status == DocumentValidationStatus.REJECTED
+        assert reviewed.rejection_reason == "hallucinated decision"
+        assert reviewed.approved_revision is None
+        assert not document_is_publishable(reviewed)
+
+    async def test_stale_revision_raises_conflict(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-stale")
+        request = DocumentReviewRequest(
+            action="approve",
+            expected_revision="stale-revision",
+            expected_validation_revision=document.validation_revision,
+        )
+
+        with pytest.raises(DocumentRevisionConflictError):
+            await svc.review(document.id, request, "rachel")
+
+    async def test_second_reviewer_with_same_snapshot_raises_conflict(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-review-race")
+        first_request = DocumentReviewRequest(
+            action="approve",
+            expected_revision=document.content_revision,
+            expected_validation_revision=0,
+        )
+        stale_request = DocumentReviewRequest(
+            action="reject",
+            expected_revision=document.content_revision,
+            expected_validation_revision=0,
+            reason="conflicting decision",
+        )
+
+        await svc.review(document.id, first_request, "rachel")
+
+        with pytest.raises(DocumentRevisionConflictError):
+            await svc.review(document.id, stale_request, "sam")
+
+        row = await ops_repo.get_document(document.id)
+        assert row["validation_status"] == "approved"
+        assert row["validated_by"] == "rachel"
+
+    async def test_same_content_regeneration_invalidates_review_snapshot(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-same-content")
+        stale_request = DocumentReviewRequest(
+            action="approve",
+            expected_revision=document.content_revision,
+            expected_validation_revision=0,
+        )
+
+        regenerated = await svc.generate_for_job("job-rev-same-content")
+        assert regenerated.content_revision == document.content_revision
+
+        with pytest.raises(DocumentRevisionConflictError):
+            await svc.review(document.id, stale_request, "rachel")
+
+    async def test_regeneration_resets_approval_to_pending(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-regen")
+        request = DocumentReviewRequest(
+            action="approve",
+            expected_revision=document.content_revision,
+            expected_validation_revision=document.validation_revision,
+        )
+        await svc.review(document.id, request, "rachel")
+
+        regenerated = await svc.generate_for_job("job-rev-regen")
+
+        assert regenerated.id == document.id
+        assert regenerated.validation_status == DocumentValidationStatus.PENDING
+        assert regenerated.validated_by is None
+        assert regenerated.validated_at is None
+        assert regenerated.approved_revision is None
+        assert regenerated.validation_revision == document.validation_revision + 2
+        assert not document_is_publishable(regenerated)
+
+    async def test_regeneration_between_load_and_write_raises_conflict(self, ops_repo, blob_repo):
+        svc, document = await _generate(ops_repo, blob_repo, "job-rev-race")
+        stale_row = await ops_repo.get_document(document.id)
+
+        # Simulate a regeneration with different content landing after the reviewer's load:
+        # the service sees the stale row, but the conditional UPDATE must catch the change.
+        svc._node_repo.paginated_query = AsyncMock(
+            return_value=[
+                make_node(
+                    "n2",
+                    title="Different decision",
+                    description="Changed content after review load.",
+                    quote="Alice will own the rollout plan.",
+                    transcript=_TRANSCRIPT,
+                )
+            ]
+        )
+        regenerated = await svc.generate_for_job("job-rev-race")
+        assert regenerated.content_revision != document.content_revision
+
+        with patch.object(ops_repo, "get_document", AsyncMock(return_value=stale_row)):
+            request = DocumentReviewRequest(
+                action="approve",
+                expected_revision=document.content_revision,
+                expected_validation_revision=document.validation_revision,
+            )
+            with pytest.raises(DocumentRevisionConflictError):
+                await svc.review(document.id, request, "rachel")
+
+        row = await ops_repo.get_document(document.id)
+        assert row["validation_status"] == "pending"
+        assert row["validated_by"] is None

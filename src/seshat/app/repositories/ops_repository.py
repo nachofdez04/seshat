@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime
     from uuid import UUID
 
-    from seshat.core.models.documents import GeneratedDocument
+    from seshat.core.models.documents import DocumentValidationStatus, GeneratedDocument
     from seshat.core.models.enums import JobStatus, UserRole
     from seshat.infra.ops_store.pg_store import PostgresOpsStore
 
@@ -114,6 +114,37 @@ class OpsRepository:
             document.markdown_content,
             document.content_revision,
             document.created_at,
+            document.validation_status.value,
+            document.edited_content,
+            document.rejection_reason,
+            document.validated_by,
+            document.validated_at,
+            document.auto_approved,
+            document.approved_revision,
+        )
+
+    async def review_document(
+        self,
+        document_id: UUID,
+        expected_revision: str,
+        expected_validation_revision: int,
+        validation_status: DocumentValidationStatus,
+        edited_content: str | None,
+        rejection_reason: str | None,
+        validated_by: str,
+        validated_at: datetime,
+        approved_revision: str | None,
+    ) -> dict | None:
+        return await self._store.review_document(
+            document_id,
+            expected_revision,
+            expected_validation_revision,
+            validation_status.value,
+            edited_content,
+            rejection_reason,
+            validated_by,
+            validated_at,
+            approved_revision,
         )
 
     async def get_documents_for_job(self, job_id: str) -> list[dict]:
