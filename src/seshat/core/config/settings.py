@@ -19,6 +19,7 @@ from seshat.core.models.enums import (
     VectorStoreProvider,
 )
 from seshat.core.utils.log import get_logger
+from seshat.core.utils.paths import safe_relative_subdir
 
 logger = get_logger(__name__)
 
@@ -409,6 +410,29 @@ class DocumentsConfig(BaseConfig):
     )
 
 
+class GitPublishingConfig(BaseConfig):
+    enabled: bool = Field(default=False, description="Master switch for publishing approved documents to a git repo.")
+    target_repo_path: Path | None = Field(
+        default=None, description="Local working copy of the target docs repository."
+    )
+    target_remote: str | None = Field(
+        default=None, description="Clone URL used when target_repo_path does not exist yet."
+    )
+    base_branch: str = Field(default="main", description="Branch that work branches start from and PRs target.")
+    branch_prefix: str = Field(default="seshat/meeting", description="Prefix for generated work branch names.")
+    docs_subdir: str = Field(
+        default="meetings",
+        description="Repo-relative subdirectory that receives published documents; safe relative segments only.",
+    )
+    gh_executable: str = Field(default="gh", description="GitHub CLI executable used to open pull requests.")
+    pr_draft: bool = Field(default=False, description="Create pull requests as drafts.")
+
+    @model_validator(mode="after")
+    def _validate_docs_subdir(self) -> Self:
+        self._set_on_frozen_model("docs_subdir", safe_relative_subdir(self.docs_subdir, "docs_subdir"))
+        return self
+
+
 class SeshatConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter="__", extra="ignore")
 
@@ -428,6 +452,7 @@ class SeshatConfig(BaseSettings):
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     api: APIConfig = Field(default_factory=lambda: APIConfig())
     documents: DocumentsConfig = Field(default_factory=DocumentsConfig)
+    git_publishing: GitPublishingConfig = Field(default_factory=GitPublishingConfig)
 
     use_os_truststore: bool = Field(
         default=False,

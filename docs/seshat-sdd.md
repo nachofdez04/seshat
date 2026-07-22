@@ -101,6 +101,11 @@ Streamlit UI → FastAPI → Pipeline Worker → Storage Layer
 - `GET /jobs/{id}/documents` — list document metadata (no content).
 - `GET /documents/{document_id}` — full document including Markdown content and `content_revision` (sha256).
 
+**Publishing API**
+
+- `POST /jobs/{id}/publish` — operator-only; publish the approved documents of a `DONE` job to the configured target git repository as branch + commit + PR. Returns `nothing_to_publish: true` (200) when the approved content already matches the repo; 409 when the feature is disabled/unconfigured, the job is not done, or no document passes the revision-guarded approval check; 500 with detail on git failures. Feature-gated by `GitPublishingConfig` (disabled by default).
+- `GET /jobs/{id}/publish` — latest `PublishResult` for the job (branch, commit SHA, PR/compare URL, published files), or 404 if never published. Full history is kept in `ops.publish_results` as an audit trail.
+
 **Admin API** (`/admin`, root-key authenticated)
 
 - `GET /admin/api-keys` — list all API keys with revocation status.
@@ -113,17 +118,18 @@ Uses a task queue abstraction: `enqueue(fn, *args, **kwargs) → job_id`, `get_s
 
 **Service layer**
 
-Business logic is encapsulated in five services, one per router:
+Business logic is encapsulated in six services, one per router:
 
 - `AdminService` — API key lifecycle (create, list, revoke); wraps `OpsRepository`.
 - `HealthService` — component health probes (`check_postgres`, `check_mlflow`, `check_blob`); returns `HealthStatus` directly.
 - `GraphService` — all graph read and write operations (query, node detail, impact traversal, CRUD, bulk ops, resolution); wraps `NodeRepository` and `ExtractionOrchestrator`.
 - `JobService` — job submission, approval, retry, and recovery; coordinates `OpsRepository`, `BlobRepository`, `NodeRepository`, and the task queue.
 - `DocumentService` — deterministic Markdown document generation with footnote citations for done jobs; coordinates `OpsRepository`, `BlobRepository`, and `NodeRepository` (see `docs/superpowers/specs/2026-07-22-document-generation-citations.md`).
+- `PublishingService` — publishes the approved documents of a done job to a target git repository (branch + commit + PR via `gh`, with a compare-URL fallback); single-flight per process via an `asyncio.Lock`, git subprocesses offloaded with `asyncio.to_thread` to the `infra/git_publisher` adapter (see `docs/superpowers/specs/2026-07-22-git-publishing.md`).
 
 Routers are pure HTTP translation: they validate inputs, call the relevant service method, map domain exceptions to HTTP status codes, and return responses. No business logic lives in routers.
 
-`AppState` holds exactly six fields: `config`, `admin_service`, `health_service`, `graph_service`, `job_service`, `document_service`. It is constructed by `build_app_state()` in `api/state.py`, which owns all store lifecycle (connect/close).
+`AppState` holds exactly seven fields: `config`, `admin_service`, `health_service`, `graph_service`, `job_service`, `document_service`, `publishing_service`. It is constructed by `build_app_state()` in `api/state.py`, which owns all store lifecycle (connect/close).
 
 **Boundaries**
 

@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
     from seshat.core.models.documents import DocumentValidationStatus, GeneratedDocument
     from seshat.core.models.enums import JobStatus, UserRole
+    from seshat.core.models.publishing import PublishResult
     from seshat.infra.ops_store.pg_store import PostgresOpsStore
 
 
@@ -152,6 +153,22 @@ class OpsRepository:
 
     async def get_document(self, document_id: UUID) -> dict | None:
         return await self._store.get_document(document_id)
+
+    # -- Publish results -------------------------------------------------------
+
+    async def insert_publish_result(self, result: PublishResult) -> None:
+        await self._store.insert_publish_result(
+            result.job_id,
+            result.branch,
+            result.commit_sha,
+            result.pr_url,
+            result.compare_url,
+            result.files,
+            result.published_at,
+        )
+
+    async def get_latest_publish_result(self, job_id: str) -> dict | None:
+        return await self._store.get_latest_publish_result(job_id)
 
     # -- API Keys: Create ------------------------------------------------------
 

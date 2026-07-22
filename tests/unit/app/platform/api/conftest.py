@@ -25,6 +25,7 @@ def make_app_state(**overrides) -> AppState:
         "graph_service": MagicMock(),
         "job_service": MagicMock(),
         "document_service": MagicMock(),
+        "publishing_service": MagicMock(),
     }
     fields.update(overrides)
     return AppState(**fields)

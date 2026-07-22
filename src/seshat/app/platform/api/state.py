@@ -17,6 +17,7 @@ from seshat.app.services.document import DocumentService
 from seshat.app.services.graph import GraphService
 from seshat.app.services.health import HealthService
 from seshat.app.services.job import JobService
+from seshat.app.services.publishing import PublishingService
 from seshat.infra.blob_store.factory import get_blob_store
 from seshat.infra.knowledge_store.factory import get_kb_store
 from seshat.infra.ops_store.factory import get_ops_store
@@ -36,6 +37,7 @@ class AppState:
     graph_service: GraphService
     job_service: JobService
     document_service: DocumentService
+    publishing_service: PublishingService
 
 
 @asynccontextmanager
@@ -75,6 +77,7 @@ async def build_app_state(config: SeshatConfig) -> AsyncIterator[AppState]:
             queue,
         )
         document_service = DocumentService(ops_repo, blob_repo, node_repo, config.documents)
+        publishing_service = PublishingService(ops_repo, config.git_publishing)
         yield AppState(
             config=config,
             admin_service=admin_service,
@@ -82,6 +85,7 @@ async def build_app_state(config: SeshatConfig) -> AsyncIterator[AppState]:
             graph_service=graph_service,
             job_service=job_service,
             document_service=document_service,
+            publishing_service=publishing_service,
         )
     finally:
         await kb_store.close()

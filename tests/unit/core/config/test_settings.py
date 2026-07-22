@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from seshat.core.config.settings import (
     APIConfig,
     ExtractionConfig,
+    GitPublishingConfig,
     GroundingLLMConfig,
     IdentificationLLMConfig,
     ReflectiveLLMConfig,
@@ -37,6 +38,17 @@ class TestGroundingModelValidator:
                     model="claude-haiku-4-5-20251001",
                 ),
             )
+
+
+class TestGitPublishingConfig:
+    def test_docs_subdir_is_normalized(self):
+        cfg = GitPublishingConfig(docs_subdir="docs\\meetings")
+        assert cfg.docs_subdir == "docs/meetings"
+
+    @pytest.mark.parametrize("value", ["/absolute", "C:\\temp", "a/../b", "a/.git/b", "CON"])
+    def test_unsafe_docs_subdir_rejected(self, value: str):
+        with pytest.raises(ValidationError, match="docs_subdir"):
+            GitPublishingConfig(docs_subdir=value)
 
 
 class TestGetRequestSettings:

@@ -13,6 +13,7 @@ from seshat.app.repositories.ops_repository import ApiKeyAlreadyRevokedError, Ap
 from seshat.core.config.settings import OpsStoreConfig
 from seshat.core.models.documents import DocumentKind, DocumentValidationStatus, GeneratedDocument
 from seshat.core.models.enums import JobStatus, UserRole
+from seshat.core.models.publishing import PublishResult
 from seshat.core.utils.hashing import sha256_text
 from seshat.infra.ops_store.pg_store import PostgresOpsStore
 from tests.integration.conftest import SKIP_IF_NO_POSTGRES
@@ -28,7 +29,7 @@ async def repo(pg_test_url: str) -> AsyncGenerator[OpsRepository]:
     store = PostgresOpsStore(OpsStoreConfig(schema_name="ops"), pg_test_url)
     await store.connect()
     yield OpsRepository(store)
-    await store.pool.execute("TRUNCATE ops.api_keys, ops.jobs, ops.generated_documents CASCADE")
+    await store.pool.execute("TRUNCATE ops.api_keys, ops.jobs, ops.generated_documents, ops.publish_results CASCADE")
     await store.close()
 
 
@@ -465,6 +466,45 @@ class TestReviewDocument:
         assert stored["validated_by"] is None
         assert stored["validated_at"] is None
         assert stored["approved_revision"] is None
+
+
+class TestPublishResults:
+    @staticmethod
+    def _make_result(job_id: str, commit_sha: str, published_at: datetime) -> PublishResult:
+        return PublishResult(
+            job_id=job_id,
+            branch=f"seshat/meeting/{job_id}",
+            commit_sha=commit_sha,
+            pr_url="",
+            compare_url="",
+            files=[f"meetings/{job_id}/meeting_summary/meeting_summary.md"],
+            published_at=published_at,
+        )
+
+    async def test_round_trip(self, repo: OpsRepository):
+        result = self._make_result("job-pub-1", "abc1234", datetime.now(UTC))
+        await repo.insert_publish_result(result)
+
+        row = await repo.get_latest_publish_result("job-pub-1")
+
+        assert row is not None
+        assert PublishResult.model_validate(row) == result
+
+    async def test_latest_wins_and_history_is_kept(self, repo: OpsRepository):
+        older = self._make_result("job-pub-2", "old1234", datetime(2026, 7, 21, tzinfo=UTC))
+        newer = self._make_result("job-pub-2", "new5678", datetime(2026, 7, 22, tzinfo=UTC))
+        await repo.insert_publish_result(older)
+        await repo.insert_publish_result(newer)
+
+        row = await repo.get_latest_publish_result("job-pub-2")
+
+        assert row is not None
+        assert row["commit_sha"] == "new5678"
+        count = await repo._store.pool.fetchval("SELECT COUNT(*) FROM ops.publish_results WHERE job_id='job-pub-2'")
+        assert count == 2
+
+    async def test_unknown_job_returns_none(self, repo: OpsRepository):
+        assert await repo.get_latest_publish_result("job-missing") is None
 
 
 class TestCountRunningJobs:

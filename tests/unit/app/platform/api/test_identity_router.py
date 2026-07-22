@@ -17,6 +17,7 @@ def _make_app_state() -> AppState:
         graph_service=MagicMock(),
         job_service=MagicMock(),
         document_service=MagicMock(),
+        publishing_service=MagicMock(),
     )
 
 
