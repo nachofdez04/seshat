@@ -233,15 +233,31 @@ class PostgresOpsStore:
         markdown_content: str,
         content_revision: str,
         created_at: datetime,
+        validation_status: str,
+        edited_content: str | None,
+        rejection_reason: str | None,
+        validated_by: str | None,
+        validated_at: datetime | None,
+        auto_approved: bool,
+        approved_revision: str | None,
     ) -> dict:
         logger.debug("Upserting document kind=%s for job_id=%s", kind, job_id)
+        # Validation state is reset and its revision incremented in the same statement,
+        # so regeneration cannot leave a stale decision or review token attached.
         row = await self.pool.fetchrow(
-            f"INSERT INTO {self._schema}.generated_documents "
-            "(id, job_id, kind, filename, markdown_content, content_revision, created_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7) "
+            f"INSERT INTO {self._schema}.generated_documents AS stored "
+            "(id, job_id, kind, filename, markdown_content, content_revision, created_at, "
+            "validation_status, edited_content, rejection_reason, validated_by, validated_at, "
+            "auto_approved, approved_revision) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) "
             "ON CONFLICT (job_id, kind) DO UPDATE SET "
             "filename=EXCLUDED.filename, markdown_content=EXCLUDED.markdown_content, "
-            "content_revision=EXCLUDED.content_revision, created_at=EXCLUDED.created_at "
+            "content_revision=EXCLUDED.content_revision, created_at=EXCLUDED.created_at, "
+            "validation_status=EXCLUDED.validation_status, edited_content=EXCLUDED.edited_content, "
+            "rejection_reason=EXCLUDED.rejection_reason, validated_by=EXCLUDED.validated_by, "
+            "validated_at=EXCLUDED.validated_at, auto_approved=EXCLUDED.auto_approved, "
+            "approved_revision=EXCLUDED.approved_revision, "
+            "validation_revision=stored.validation_revision + 1 "
             "RETURNING *",
             document_id,
             job_id,
@@ -250,8 +266,48 @@ class PostgresOpsStore:
             markdown_content,
             content_revision,
             created_at,
+            validation_status,
+            edited_content,
+            rejection_reason,
+            validated_by,
+            validated_at,
+            auto_approved,
+            approved_revision,
         )
         return dict(row)
+
+    async def review_document(
+        self,
+        document_id: UUID,
+        expected_revision: str,
+        expected_validation_revision: int,
+        validation_status: str,
+        edited_content: str | None,
+        rejection_reason: str | None,
+        validated_by: str,
+        validated_at: datetime,
+        approved_revision: str | None,
+    ) -> dict | None:
+        """Apply a review guarded by both content and validation revisions."""
+        logger.debug("Reviewing document id=%s status=%s", document_id, validation_status)
+        row = await self.pool.fetchrow(
+            f"UPDATE {self._schema}.generated_documents SET "
+            "validation_status=$1, edited_content=$2, rejection_reason=$3, "
+            "validated_by=$4, validated_at=$5, auto_approved=FALSE, approved_revision=$6, "
+            "validation_revision=validation_revision + 1 "
+            "WHERE id=$7 AND content_revision=$8 AND validation_revision=$9 "
+            "RETURNING *",
+            validation_status,
+            edited_content,
+            rejection_reason,
+            validated_by,
+            validated_at,
+            approved_revision,
+            document_id,
+            expected_revision,
+            expected_validation_revision,
+        )
+        return self._to_dict(row)
 
     async def get_documents_for_job(self, job_id: str) -> list[dict]:
         rows = await self.pool.fetch(

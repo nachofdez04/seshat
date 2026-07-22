@@ -98,8 +98,10 @@ Streamlit UI → FastAPI → Pipeline Worker → Storage Layer
 **Document API**
 
 - `POST /jobs/{id}/documents` — operator-only; generate (or regenerate) the Markdown meeting summary for a `DONE` job from its approved nodes, with footnote citations anchored to the transcript. Upserts one document per `(job_id, kind)`.
-- `GET /jobs/{id}/documents` — list document metadata (no content).
-- `GET /documents/{document_id}` — full document including Markdown content and `content_revision` (sha256).
+- `GET /jobs/{id}/documents` — list document metadata (no content), including the content and validation revisions plus the current validation status.
+- `GET /documents/{document_id}` — full document including Markdown content, optional reviewer edit, `content_revision` (sha256), and validation audit fields.
+- `POST /documents/{document_id}/review` — reviewer-only; approve, approve with edited content, or reject a document. Requires the content and validation revisions observed by the reviewer and returns 409 when either token is stale.
+- A document is publishable only when its status is approved or edited, `content_revision == sha256(markdown_content)`, and `approved_revision == sha256(effective_content)`.
 
 **Admin API** (`/admin`, root-key authenticated)
 
@@ -119,7 +121,7 @@ Business logic is encapsulated in five services, one per router:
 - `HealthService` — component health probes (`check_postgres`, `check_mlflow`, `check_blob`); returns `HealthStatus` directly.
 - `GraphService` — all graph read and write operations (query, node detail, impact traversal, CRUD, bulk ops, resolution); wraps `NodeRepository` and `ExtractionOrchestrator`.
 - `JobService` — job submission, approval, retry, and recovery; coordinates `OpsRepository`, `BlobRepository`, `NodeRepository`, and the task queue.
-- `DocumentService` — deterministic Markdown document generation with footnote citations for done jobs; coordinates `OpsRepository`, `BlobRepository`, and `NodeRepository` (see `docs/superpowers/specs/2026-07-22-document-generation-citations.md`).
+- `DocumentService` — deterministic Markdown document generation with footnote citations for done jobs plus revision-guarded document review and optional config-driven auto-approval; coordinates `OpsRepository`, `BlobRepository`, and `NodeRepository` (see `docs/superpowers/specs/2026-07-22-document-generation-citations.md` and `docs/superpowers/specs/2026-07-22-document-validation.md`).
 
 Routers are pure HTTP translation: they validate inputs, call the relevant service method, map domain exceptions to HTTP status codes, and return responses. No business logic lives in routers.
 

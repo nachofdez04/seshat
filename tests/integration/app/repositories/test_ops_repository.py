@@ -11,7 +11,7 @@ import pytest
 
 from seshat.app.repositories.ops_repository import ApiKeyAlreadyRevokedError, ApiKeyNotFoundError, OpsRepository
 from seshat.core.config.settings import OpsStoreConfig
-from seshat.core.models.documents import DocumentKind, GeneratedDocument
+from seshat.core.models.documents import DocumentKind, DocumentValidationStatus, GeneratedDocument
 from seshat.core.models.enums import JobStatus, UserRole
 from seshat.core.utils.hashing import sha256_text
 from seshat.infra.ops_store.pg_store import PostgresOpsStore
@@ -394,6 +394,77 @@ class TestGeneratedDocuments:
 
     async def test_get_document_returns_none_for_unknown_id(self, repo: OpsRepository):
         assert await repo.get_document(uuid4()) is None
+
+    async def test_upsert_row_has_pending_validation_defaults(self, repo: OpsRepository):
+        document = _make_document(job_id="job-doc-val")
+        stored = await repo.upsert_document(document)
+
+        assert stored["validation_status"] == "pending"
+        assert stored["validation_revision"] == 0
+        assert stored["auto_approved"] is False
+        assert stored["approved_revision"] is None
+
+
+class TestReviewDocument:
+    async def _approve(self, repo: OpsRepository, document: GeneratedDocument) -> dict | None:
+        return await repo.review_document(
+            document.id,
+            document.content_revision,
+            document.validation_revision,
+            DocumentValidationStatus.APPROVED,
+            None,
+            None,
+            "rachel",
+            datetime.now(UTC),
+            document.content_revision,
+        )
+
+    async def test_matching_revision_applies_decision(self, repo: OpsRepository):
+        document = _make_document(job_id="job-rev-1")
+        await repo.upsert_document(document)
+
+        updated = await self._approve(repo, document)
+
+        assert updated is not None
+        assert updated["validation_status"] == "approved"
+        assert updated["validation_revision"] == 1
+        assert updated["validated_by"] == "rachel"
+        assert updated["approved_revision"] == document.content_revision
+
+    async def test_mismatched_revision_updates_nothing(self, repo: OpsRepository):
+        document = _make_document(job_id="job-rev-2")
+        await repo.upsert_document(document)
+
+        updated = await repo.review_document(
+            document.id,
+            "stale-revision",
+            document.validation_revision,
+            DocumentValidationStatus.APPROVED,
+            None,
+            None,
+            "rachel",
+            datetime.now(UTC),
+            "stale-revision",
+        )
+
+        assert updated is None
+        row = await repo.get_document(document.id)
+        assert row["validation_status"] == "pending"
+        assert row["validated_by"] is None
+
+    async def test_upsert_resets_prior_decision(self, repo: OpsRepository):
+        document = _make_document(job_id="job-rev-3")
+        await repo.upsert_document(document)
+        await self._approve(repo, document)
+
+        regenerated = _make_document(job_id="job-rev-3", markdown="# v2\n")
+        stored = await repo.upsert_document(regenerated)
+
+        assert stored["validation_status"] == "pending"
+        assert stored["validation_revision"] == 2
+        assert stored["validated_by"] is None
+        assert stored["validated_at"] is None
+        assert stored["approved_revision"] is None
 
 
 class TestCountRunningJobs:

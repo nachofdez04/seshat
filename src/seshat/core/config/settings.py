@@ -5,6 +5,7 @@ from typing import Any, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from seshat.core.models.documents import DocumentKind
 from seshat.core.models.enums import (
     ConceptType,
     DocumentLoaderProvider,
@@ -401,6 +402,13 @@ class APIConfig(BaseConfig):
     )
 
 
+class DocumentsConfig(BaseConfig):
+    auto_approve_kinds: list[DocumentKind] = Field(
+        default_factory=list,
+        description="Document kinds approved automatically at generation time, skipping human review.",
+    )
+
+
 class SeshatConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter="__", extra="ignore")
 
@@ -419,6 +427,7 @@ class SeshatConfig(BaseSettings):
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     api: APIConfig = Field(default_factory=lambda: APIConfig())
+    documents: DocumentsConfig = Field(default_factory=DocumentsConfig)
 
     use_os_truststore: bool = Field(
         default=False,
