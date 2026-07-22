@@ -39,6 +39,7 @@ coverage.xml
 
 # Local data — KB, Chroma, MLflow artifacts (per spec)
 .seshat/
+mlruns/
 data/*
 !data/eval/
 !data/fixtures/audio
