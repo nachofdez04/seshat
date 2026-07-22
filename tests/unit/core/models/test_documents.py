@@ -101,6 +101,17 @@ def test_document_is_publishable_false_for_tampered_content():
     assert not document_is_publishable(doc)
 
 
+def test_document_is_publishable_false_for_stale_source_revision_after_edit():
+    doc = _make_document(
+        markdown_content="# Regenerated source\n",
+        content_revision=sha256_text("# Original source\n"),
+        validation_status=DocumentValidationStatus.EDITED,
+        edited_content="# Approved edit\n",
+        approved_revision=sha256_text("# Approved edit\n"),
+    )
+    assert not document_is_publishable(doc)
+
+
 def test_document_is_publishable_false_without_approved_revision():
     doc = _make_document(validation_status=DocumentValidationStatus.APPROVED)
     assert not document_is_publishable(doc)
