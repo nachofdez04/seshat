@@ -72,5 +72,7 @@ def document_is_publishable(doc: GeneratedDocument) -> bool:
     """Return True only if the document is approved and the approval still matches its effective content."""
     if doc.validation_status not in (DocumentValidationStatus.APPROVED, DocumentValidationStatus.EDITED):
         return False
+    if doc.content_revision != sha256_text(doc.markdown_content):
+        return False
 
     return doc.approved_revision == sha256_text(effective_content(doc))
