@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
 
-from seshat.app.platform.observability.mlflow_metrics import log_latency_metrics
+from seshat.app.platform.observability.mlflow_run_logging import log_latency_metrics
 from seshat.core.utils.log import get_logger
 
 if TYPE_CHECKING:

@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any, Literal
 import asyncpg
 import mlflow
 
+from seshat.app.platform.observability.mlflow_run_logging import (
+    log_identification_failures,
+    log_resolution_failures,
+    set_error_tag,
+    set_phase_tag,
+)
 from seshat.core.models.api_graph import NodeFilter
 from seshat.core.models.api_responses import JobActionResponse, JobSubmitResponse
 from seshat.core.models.enums import ApprovalMethod, JobStatus, NodeStatus
@@ -272,7 +278,7 @@ class JobService:
             tags={"job_id": job_id, "phase": "starting", "source": "pipeline"},
         ) as run:
             await self._ops.set_job_mlflow_run_id(job_id, run.info.run_id)
-            mlflow.set_tag("phase", "ingestion")
+            set_phase_tag("ingestion")
 
             try:
                 set_job_id(job_id)
@@ -293,7 +299,7 @@ class JobService:
                         "input.yaml",
                     )
 
-                mlflow.set_tag("phase", "identification")
+                set_phase_tag("identification")
                 await self._ops.update_job_status(job_id, JobStatus.IDENTIFYING)
                 config_override = submission.overrides.extraction if submission.overrides else None
                 identification_result = await self._extraction.run_identification(
@@ -308,6 +314,7 @@ class JobService:
                 node_counts = _count_by_status(identification_result.nodes)
                 mlflow.log_params({"job_id": job_id, "source_type": submission.source_type})
                 mlflow.log_metrics({f"nodes.{k}": v for k, v in node_counts.items()})
+                log_identification_failures(identification_result.failed_concept_types)
 
                 await self._ops.update_job_status(job_id, JobStatus.AWAITING_REVIEW)
 
@@ -318,7 +325,7 @@ class JobService:
                 return identification_result
 
             except Exception as exc:
-                mlflow.set_tag("error", str(exc)[:250])
+                set_error_tag(exc)
                 logger.exception("Job failed (pre-approval): %s", exc)
                 await self._ops.fail_job(job_id, "pre_approval", str(exc), recoverable=True)
                 return None
@@ -336,7 +343,7 @@ class JobService:
             active_run = mlflow.start_run(run_name=job_id, tags={"job_id": job_id, "source": "pipeline"})
 
         with active_run:
-            mlflow.set_tag("phase", "resolution")
+            set_phase_tag("resolution")
 
             try:
                 set_job_id(job_id)
@@ -356,14 +363,15 @@ class JobService:
 
                 await self._blob.put_curated_extraction(row["meeting_date"], job_id, result.model_dump_json().encode())
                 mlflow.log_metrics({"nodes.written": written_nodes, "relationships.written": written_rels})
+                log_resolution_failures(resolution_result.failed_sources)
 
                 await self._ops.update_job_status(job_id, JobStatus.DONE)
-                mlflow.set_tag("phase", "finalized")
+                set_phase_tag("finalized")
 
                 logger.info("Job done: %d node(s) and %d relationship(s) written", written_nodes, written_rels)
 
             except Exception as exc:
-                mlflow.set_tag("error", str(exc)[:250])
+                set_error_tag(exc)
                 logger.exception("Job failed (post-approval): %s", exc)
                 await self._ops.fail_job(job_id, "post_approval", str(exc), recoverable=True)
 

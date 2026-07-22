@@ -11,7 +11,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from seshat.app.platform.observability.mlflow_metrics import log_token_metrics
+from seshat.app.platform.observability.mlflow_run_logging import log_token_metrics
 from seshat.app.transcription.base import AbstractTranscriber
 from seshat.core.utils.audio import audio_duration_seconds_ceil
 from seshat.core.utils.log import get_logger

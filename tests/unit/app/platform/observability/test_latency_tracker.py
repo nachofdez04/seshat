@@ -14,7 +14,7 @@ from seshat.app.platform.observability.latency_tracker import (
     track_eval_latency,
     track_latency_profile,
 )
-from seshat.app.platform.observability.mlflow_metrics import log_latency_metrics
+from seshat.app.platform.observability.mlflow_run_logging import log_latency_metrics
 
 
 def _make_llm_result() -> LLMResult:
