@@ -290,7 +290,7 @@ precisión y \textit{recall}.
   \label{tab:eval-grounding}
 \end{table}
 
-El resultado perfecto debe leerse con cautela: el corpus de \textit{grounding} es el más pequeño
+El resultado perfecto debe leerse con cautela: el corpus de \textit{grounding} es de los más pequeños
 de los cinco (12 casos), de modo que el 1.000 significa «sin fallos observados en 12 casos», no una
 garantía de perfección; un único caso adicional podría desplazar la métrica de forma apreciable.
 
@@ -358,7 +358,7 @@ resolución suponiendo una recuperación perfecta, no la calidad de principio a 
     \textbf{Tipo de origen} & \textbf{Precisión} & \textbf{Recall} \\
     \midrule
     \texttt{decision}       & 0.910 & 0.962 \\
-    \texttt{risk}           & 0.850 & 1.000 \\
+    \texttt{risk}           & 0.944 & 1.000 \\
     \texttt{action\_item}   & 0.889 & 1.000 \\
     \texttt{open\_question} & 1.000 & 1.000 \\
     \bottomrule
@@ -372,15 +372,45 @@ Los cuatro tipos de origen superan con holgura el umbral, pero conviene leer est
 del supuesto anterior: miden la calidad de la decisión de resolución en condiciones ideales de
 recuperación, un límite superior que el rendimiento de principio a fin no necesariamente alcanza.
 
-La tabla desglosa el resultado por tipo de concepto origen, pero no es el único corte posible. Las
-dos familias de agentes de resolución —mismo tipo y tipo cruzado (sección~\ref{sec:agentes-resolucion})—
-tienen fronteras semánticas distintas, y separarlas permitiría atribuir un fallo a una u otra en
-lugar de diluirlo en un promedio conjunto. El corpus etiqueta cada caso con esa distinción, pero la
-etiqueta sólo ofrece un corte aproximado: una parte de los casos es deliberadamente \textit{mixed} y
-contiene relaciones de ambos tipos, de modo que un filtrado por etiqueta clasificaría mal esas
-relaciones o las descartaría. Un desglose fiel exigiría puntuar a nivel de relación individual
-—según los tipos de su nodo origen y destino— reprocesando los resultados cacheados del arnés; queda
-como análisis pendiente.
+La tabla anterior desglosa el resultado por tipo de concepto origen, pero no es el único corte
+posible: los registros agentes de mismo tipo y tipo cruzado (sección~\ref{sec:agentes-resolucion})
+son independientes, cada uno con su propio conjunto de \textit{prompts}: mejorar uno no afecta
+al otro, así que separar sus resultados permite atribuir un fallo a la familia responsable en lugar
+de diluirlo en un promedio conjunto. Un mismo caso del corpus puede combinar relaciones resueltas
+por ambos registros, de modo que la tabla~\ref{tab:eval-resolution-same-cross} puntúa a nivel de
+relación individual, reprocesando los resultados cacheados del arnés.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{llcc}
+    \toprule
+    \textbf{Tipo de origen} & \textbf{Familia} & \textbf{Precisión} & \textbf{Recall} \\
+    \midrule
+    \multirow{2}{*}{\texttt{decision}}       & Mismo tipo   & 0.857 & 0.967 \\
+                                              & Tipo cruzado & 0.875 & 0.875 \\
+    \multirow{2}{*}{\texttt{risk}}           & Mismo tipo   & 0.917 & 1.000 \\
+                                              & Tipo cruzado & 1.000 & 1.000 \\
+    \multirow{2}{*}{\texttt{action\_item}}   & Mismo tipo   & 0.879 & 1.000 \\
+                                              & Tipo cruzado & 0.667 & 1.000 \\
+    \multirow{2}{*}{\texttt{open\_question}} & Mismo tipo   & 1.000 & 1.000 \\
+                                              & Tipo cruzado & 1.000 & 1.000 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Precisión y recall de resolución por tipo de concepto origen y familia de agente,
+           puntuados a nivel de relación individual según los tipos de concepto de su nodo origen
+           y destino.}
+  \label{tab:eval-resolution-same-cross}
+\end{table}
+
+El desglose confirma que la resolución de tipo cruzado no es intrínsecamente más difícil que la de
+mismo tipo pese a tener más pares origen-destino posibles: en tres de los cuatro tipos de origen
+—\texttt{risk}, \texttt{action\_item} y \texttt{open\_question}— el recall de tipo cruzado iguala o
+supera al de mismo tipo. La única caída notable de recall es \texttt{decision}, que pierde 9~puntos
+al pasar de mismo a tipo cruzado. El caso opuesto —\texttt{action\_item} en tipo cruzado, con la
+precisión más baja de toda la tabla (0.667) pero recall perfecto— corresponde a muy pocas relaciones
+(3~casos): el agente no omite ninguna relación esperada, pero inventa alguna adicional, un patrón
+distinto al de \texttt{decision} y consistente con la limitación de la coincidencia exacta de terna
+señalada en la sección~\ref{sec:analisis-errores}.
 
 \section{Calibración de umbrales}
 
@@ -495,13 +525,14 @@ arnés:
         como válida una cita que en realidad pertenece a una frase distinta pero suficientemente
         parecida; además, sólo se puntúan los campos estructurados de cada nodo, no la calidad
         semántica de su título y su descripción.
+
   \item \textbf{Resolución}: dos limitaciones ya señaladas se combinan —la coincidencia exacta de
-        terna no distingue un error grave de uno leve, y el supuesto de recuperación perfecta oculta
-        los fallos que sólo surgirían con un conjunto de candidatos imperfecto, el caso real en
-        producción—, por lo que sus cifras son un límite superior optimista.
-  \item \textbf{Recuperación}: sólo evalúa la recuperación basada en \textit{embeddings}; el
-        efecto del \textit{reranking} posterior y de la expansión por vecinos del grafo no se
-        mide aquí, sino de forma indirecta en el arnés de resolución.
+        terna no distingue un error grave de uno leve, y el supuesto de recuperación perfecta—, por
+        lo que sus cifras son un límite superior optimista.
+
+  \item \textbf{Recuperación}: sólo evalúa la recuperación basada en \textit{embeddings}, pero no el
+        efecto del \textit{reranking} posterior y de la expansión por vecinos del grafo.
+
   \item \textbf{Agrupación y \textit{grounding}}: con 8 y 12 casos son los corpus más pequeños de
         los cinco, lo que limita la confianza estadística de sus métricas frente a los de
         identificación, resolución y recuperación.

@@ -20,7 +20,7 @@ producción; y \texttt{cli/} expone la línea de comandos.
   .4 resolution/.
   .3 pipeline/.
   .4 extraction/ \dtc{dos pasadas: identificación → RAG + resolución}.
-  .4 ingestion/ \dtc{validación de audio/texto y subida a blob storage}.
+  .4 ingestion/ \dtc{validación de audio/texto y normalización}.
   .3 platform/.
   .4 api/ \dtc{routers, autenticación, arranque}.
   .4 observability/ \dtc{trazas MLflow, latencia, presupuesto de tokens}.
@@ -168,22 +168,21 @@ describe en el anexo~\ref{anx:tecnico}.
 \subsection{Puntuación de confianza y estado de aprobación}
 \label{sec:confidence-scoring}
 
-Cada nodo recibe una puntuación de confianza antes de pasar a revisión. La señal continua
-proviene exclusivamente de heurísticas basadas en reglas implementadas con spaCy\footnote{%
-  Se emplea el modelo \texttt{en\_core\_web\_sm}, la variante inglesa pequeña de spaCy, que
-  proporciona etiquetado morfosintáctico, análisis de dependencias y reconocimiento de entidades
-  nombradas con una huella de recursos mínima, suficiente para las señales léxicas y sintácticas
-  que requieren estas heurísticas.%
-}:
+Cada nodo recibe, antes de pasar a revisión, una puntuación de confianza en $[0,1]$: una señal
+continua, resultado de la media ponderada de tres métricas heurísticas. Cada métrica aplica
+reglas léxico-sintácticas sobre el análisis morfológico, de dependencias y de entidades que
+produce el modelo \texttt{en\_core\_web\_sm} de \texttt{spaCy}:
 
 \begin{equation}
   \text{confianza} = 0{,}3 \cdot s_{\text{cita}} + 0{,}3 \cdot s_{\text{título}} + 0{,}4 \cdot s_{\text{descripción}}
 \end{equation}
 
-donde $s_{\text{cita}}$ es una señal en $[0,1]$ que satura a las 35 palabras de cita fuente;
-$s_{\text{título}}$ mide la especificidad del título mediante presencia de entidades nombradas
-(NER de spaCy), calificadores y longitud; y $s_{\text{descripción}}$ penaliza multiplicativamente
-el lenguaje de cobertura, la voz pasiva y el tiempo futuro.
+donde $s_{\text{cita}}$ es una señal que satura a las 35 palabras de cita fuente. $s_{\text{título}}$ mide
+la especificidad del título combinando tres señales —presencia de entidades nombradas, calificadores y
+longitud, en ese orden de peso— que reflejan la importancia relativa de estas señales para distinguir
+enunciados específicos de generales~\cite{louis2011specificity}. $s_{\text{descripción}}$ penaliza
+multiplicativamente el lenguaje de cobertura, la voz pasiva y el tiempo futuro; los dos primeros son
+marcadores léxicos de incertidumbre ya empleados en la detección de \textit{hedging}~\cite{farkas2010conll}.
 
 Opcionalmente, el \texttt{GroundingAgent} actúa como compuerta binaria independiente: un modelo
 ligero de un proveedor distinto al de los agentes de identificación —la configuración lo exige
@@ -322,7 +321,7 @@ registra sin interrumpir el trabajo.
 \label{sec:orquestacion}
 
 Las dos pasadas de extracción descritas hasta aquí no se invocan directamente: son etapas de un
-\textit{pipeline} que la \ac{API} recibe y un \textit{worker} asíncrono ejecuta. Cada \textit{pipeline}
+\textit{pipeline} que la \ac{API} encola y un \textit{worker} asíncrono ejecuta. Cada \textit{pipeline}
 avanza por la máquina de estados descrita en la figura~\ref{fig:job-lifecycle}, desde su recepción
 hasta la persistencia de los resultados.
 

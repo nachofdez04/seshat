@@ -113,6 +113,15 @@ que la demostración arranca sin exigir una ejecución previa de los arneses ni 
 proveedores estén disponibles. En un despliegue real ambas se dejan activas: se ejecuta antes
 \texttt{seshat eval} para producir una puerta favorable y sólo entonces se permite servir tráfico.
 
+Una comprobación adicional, ajena al \textit{gate} pero también resuelta por configuración, es la
+verificación TLS de las llamadas salientes a proveedores externos. En una red corporativa cuyo proxy
+inyecta un certificado raíz propio, ese certificado suele estar provisionado en el almacén de
+confianza del sistema operativo pero no en el que Python empaqueta por defecto, lo que hace fallar
+la verificación aun cuando el tráfico es legítimo. La variable de entorno \texttt{USE\_OS\_TRUSTSTORE}
+resuelve esto sin desactivar la verificación: activada, hace que el módulo \texttt{ssl} de Python
+delegue en el almacén de confianza del sistema operativo en lugar del suyo propio, de modo que las
+llamadas a través de ese proxy quedan verificadas igual que las demás.
+
 Una vez sanos todos los servicios, la interfaz web queda accesible en \texttt{localhost:8501}, la
 \ac{API} en \texttt{localhost:8000} y la interfaz de MLflow en \texttt{localhost:5000}. Fuera de los
 contenedores, los mismos dos pasos se ejecutan a mano con la línea de comandos: \texttt{seshat
@@ -134,7 +143,7 @@ la clave raíz, provisiona las claves de \ac{API} y sus roles.
 Dos guías de usuario, mantenidas junto al código para que evolucionen con él, cubren el detalle de
 cada superficie. El recorrido completo de la interfaz, con un escenario de ejemplo de principio a
 fin, está en
-\href{https://github.com/josepmafe/seshat/blob/main/docs/ui-testing-guide.md}{\texttt{docs/ui-testing-guide.md}};
+\href{https://github.com/josepmafe/seshat/blob/main/docs/user-guide.md}{\texttt{docs/user-guide.md}};
 la operación de los arneses de evaluación —ejecutarlos, leer los resultados en MLflow y calibrar los
 umbrales— se recoge en
 \href{https://github.com/josepmafe/seshat/blob/main/docs/eval-user-guide.md}{\texttt{docs/eval-user-guide.md}}.

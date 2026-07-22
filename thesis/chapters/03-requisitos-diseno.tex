@@ -32,9 +32,9 @@ del usuario y del operador.
         heurísticas basadas en reglas y, opcionalmente, un agente de verificación independiente.
 
   \item \textbf{Revisión y corrección humana.} Los nodos con puntuación inferior al umbral
-        configurado deben quedar en estado de revisión pendiente. Un revisor debe poder aprobar,
-        rechazar o editar cada nodo antes de que éste entre en la base de conocimiento. Debe
-        existir también un mecanismo de aprobación masiva por umbral.
+        configurado deben quedar en estado de revisión pendiente. Un revisor humano debe poder
+        aprobar, rechazar o editar cada nodo antes de que éste entre en la base de conocimiento.
+        Debe existir también un mecanismo de aprobación masiva por umbral.
 
   \item \textbf{Base de conocimiento consultable.} Los nodos aprobados deben persistir en una
         base de conocimiento con forma de grafo, consultable por tipo, estado, equipo, proyecto,
@@ -122,10 +122,10 @@ Cada capa tiene una responsabilidad delimitada, que se describe a continuación:
 generativa. Las principales dependencias son:
 
 \begin{itemize}
-  \item \textbf{FastAPI} — API REST asíncrona con validación de esquemas y documentación OpenAPI autogenerada.
-  \item \textbf{LangChain} — orquestación de agentes LLM con soporte para múltiples proveedores; integra pgvector como almacén vectorial mediante \texttt{langchain-postgres}.
-  \item \textbf{MLflow} — observabilidad: registro automático de trazas, uso de tokens, latencia y métricas de evaluación.
-  \item \textbf{Pydantic} — validación de modelos de datos y configuración centralizada desde variables de entorno.
+  \item \textbf{FastAPI}: API REST asíncrona con validación de esquemas y documentación OpenAPI autogenerada.
+  \item \textbf{LangChain}: orquestación de agentes LLM con soporte para múltiples proveedores; integra pgvector como almacén vectorial mediante \texttt{langchain-postgres}.
+  \item \textbf{MLflow}: observabilidad: registro automático de trazas, uso de tokens, latencia y métricas de evaluación.
+  \item \textbf{Pydantic}: validación de modelos de datos y configuración centralizada desde variables de entorno.
 \end{itemize}
 
 \subsection{Proveedores de modelos externos}
@@ -254,8 +254,8 @@ los estados terminales \texttt{DONE} y \texttt{FAILED}. Las dos fases de trabajo
 LLM —identificación de nodos y resolución de relaciones— están separadas por la revisión humana
 opcional (\textit{Human-in-the-Loop}, HITL): si hay nodos pendientes de aprobación y el modo
 automático no está activo, el \textit{pipeline} se detiene en \texttt{AWAITING\_REVIEW} hasta
-que el operador interviene. Los fallos recuperables permiten reintentar el trabajo mediante la
-\ac{API}; los fatales requieren un nuevo envío.
+que el operador interviene. Los fallos recuperables permiten reintentar el trabajo; los fatales
+requieren un nuevo envío.
 
 La figura~\ref{fig:job-lifecycle} muestra las transiciones posibles.
 

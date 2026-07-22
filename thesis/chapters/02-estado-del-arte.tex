@@ -7,9 +7,9 @@
 
 Hasta 2017, los modelos dominantes en procesamiento del lenguaje natural eran las redes
 recurrentes, que procesan el texto token a token acumulando el contexto en un vector de estado
-oculto. El problema es estructural: esa cadena de multiplicaciones hace que los gradientes se
-desvanezcan o exploten durante el entrenamiento, dificultando el aprendizaje de dependencias entre
-palabras lejanas\footnote{%
+oculto. No obstante, esa cadena de multiplicaciones hace que los gradientes se desvanezcan o
+exploten durante el entrenamiento, dificultando el aprendizaje de dependencias entre palabras
+lejanas\footnote{%
   El problema del gradiente desvaneciente fue estudiado por Hochreiter~(1991) y formalizado por
   Bengio et al.~(1994). LSTM y GRU paliaron el síntoma introduciendo compuertas, pero no
   eliminaron la causalidad secuencial.%
@@ -93,8 +93,8 @@ respalda cada nodo antes de describirlo, reduciendo la alucinación; las compuer
 codifican condiciones de inclusión y exclusión que el modelo debe evaluar explícitamente; y los
 contraejemplos etiquetados delimitan fronteras semánticas entre categorías próximas. La salida
 estructurada forzada mediante esquemas Pydantic elimina la ambigüedad de formato y habilita
-reintentos automáticos ante violaciones de tipo. \textbf{Seshat} opta por este enfoque; las
-técnicas concretas se describen en el anexo~\ref{anx:tecnicas-prompts}.
+reintentos automáticos ante violaciones de tipo. \textbf{Seshat} opta por este segundo enfoque;
+las técnicas concretas se describen en el anexo~\ref{anx:tecnicas-prompts}.
 
 \section{Recuperación aumentada por generación}
 
@@ -107,10 +107,10 @@ conocimiento del sistema puede actualizarse sin re-entrenar el modelo.
 
 La pieza central del módulo de recuperación son los \textit{embeddings}: representaciones
 vectoriales densas que codifican el significado semántico de un texto en un espacio de alta
-dimensión, de modo que textos con significado similar queden cerca en ese espacio. La similitud
-entre vectores, medida típicamente mediante coseno, permite identificar los fragmentos más
-relevantes para una consulta dada. Bases de datos vectoriales como pgvector proporcionan la
-infraestructura de indexación y búsqueda eficiente sobre estas representaciones.
+dimensión, de modo que textos con significado similar queden cerca en ese espacio. La semejanza
+entre vectores, medida típicamente mediante similitud coseno, permite identificar los fragmentos
+más relevantes para una consulta dada. Bases de datos vectoriales como \texttt{pgvector}
+proporcionan la infraestructura de indexación y búsqueda eficiente sobre estas representaciones.
 
 El paradigma ha evolucionado más allá de la búsqueda plana. Para mejorar la cobertura, se han
 propuesto estrategias de expansión de consulta: en lugar de buscar con la pregunta original,
@@ -152,7 +152,11 @@ La síntesis de voz (\textit{Text-to-Speech}, TTS) siguió un arco similar. Los 
 producían voz inteligible pero perceptiblemente artificial. WaveNet~\cite{oord2016wavenet} fue el
 primer modelo neuronal capaz de generar formas de onda con naturalidad comparable a la voz humana,
 aunque con un coste computacional prohibitivo para tiempo real. Los modelos posteriores separaron
-la generación del espectrograma de mel de la síntesis de la forma de onda, reduciendo la latencia.
+la generación del espectrograma de mel\footnote{%
+  Un espectrograma de mel representa cómo varía en el tiempo la energía de una señal de audio en
+  distintas bandas de frecuencia, con una escala (\textit{mel}) que espacia esas bandas de forma
+  similar a como el oído humano percibe el tono, en lugar de linealmente en Hz.%
+} de la síntesis de la forma de onda, reduciendo la latencia.
 VITS~\cite{kim2021vits} unificó ambas etapas: combina un  autocodificador variacional con un modelo
 de flujo normalizado y entrenamiento adversarial para generar audio de alta calidad en una sola pasada.
 
