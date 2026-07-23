@@ -7,12 +7,15 @@ from seshat.app.agents.identification.grouping import GroupingAgent
 from seshat.app.agents.identification.registry import IdentificationRegistry
 from seshat.app.agents.resolution.registry import ResolutionRegistry
 from seshat.app.pipeline.extraction.orchestrator import ExtractionOrchestrator
+from seshat.app.transcription.factory import get_transcriber
 from seshat.core.config.eval_settings import EvalConfig
-from seshat.core.config.settings import ExtractionConfig
+from seshat.core.config.settings import ExtractionConfig, SeshatConfig, TranscriptionConfig
+from seshat.core.models.enums import TranscriptionProvider
 from seshat.eval.grounding.runner import GroundingEvalRunner
 from seshat.eval.grouping.runner import GroupingEvalRunner
 from seshat.eval.identification.runner import IdentificationEvalRunner
 from seshat.eval.resolution.runner import ResolutionEvalRunner
+from seshat.eval.transcription.runner import TranscriptionEvalRunner
 from tests.integration.helpers import (
     cheap_grounding_config,
     cheap_identification_config,
@@ -62,6 +65,15 @@ def make_grouping_runner(config: EvalConfig) -> GroupingEvalRunner:
     id_config = cheap_identification_config()
     agent = GroupingAgent(llm=make_cheap_llm(), config=id_config)
     return GroupingEvalRunner(agent=agent, config=config)
+
+
+def make_transcription_runner(config: EvalConfig) -> TranscriptionEvalRunner:
+    transcription_config = TranscriptionConfig(provider=TranscriptionProvider.ASSEMBLYAI)
+    return TranscriptionEvalRunner(
+        transcriber=get_transcriber(SeshatConfig(transcription=transcription_config)),
+        transcription_config=transcription_config,
+        config=config,
+    )
 
 
 def make_identification_meta_scorer(config: EvalConfig):

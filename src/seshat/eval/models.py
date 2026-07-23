@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
+from seshat.core.config.settings import PROJECT_ROOT
 from seshat.core.models.enums import ConceptType, RelationshipType
 
 # ── Identification corpus ────────────────────────────────────────────────────
@@ -85,6 +87,32 @@ class RetrievalScoredResult(BaseModel):
     results: list[tuple[str, float]]  # (slug, score) pairs, sorted desc by score
 
 
+# ── Transcription corpus ─────────────────────────────────────────────────────
+
+
+class TranscriptionCorpusExample(BaseModel):
+    corpus_id: str
+    audio_file: Path  # repo-relative, resolved against PROJECT_ROOT
+    reference: str  # spoken text only — no speaker labels, no comment lines
+    # sha256 of the audio bytes, filled in by the corpus loader. It rides in the cache
+    # fingerprint so regenerating a fixture invalidates its cached hypothesis.
+    audio_sha256: str
+    tags: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def resolved_audio_path(self) -> Path:
+        return PROJECT_ROOT / self.audio_file
+
+
+# ── Transcription result ─────────────────────────────────────────────────────
+
+
+class TranscriptionPrediction(BaseModel):
+    """A provider's hypothesis for one corpus example."""
+
+    text: str
+
+
 # ── Gate result ──────────────────────────────────────────────────────────────
 
 
@@ -115,6 +143,8 @@ class GateResult(BaseModel):
     grounding_metrics: dict[str, MetricEntry] | None = None
     # keys: "group_hit_rate" (gated), "exact_match" (logged, not gated)
     grouping_metrics: dict[str, MetricEntry] | None = None
+    # keys: "wer" (gated, lower-is-better), "wer_macro" (logged, not gated)
+    transcription_metrics: dict[str, MetricEntry] | None = None
     validation_hash: str = ""
 
     @computed_field  # type: ignore[prop-decorator]
@@ -126,6 +156,7 @@ class GateResult(BaseModel):
             self.retrieval_metrics,
             self.grounding_metrics,
             self.grouping_metrics,
+            self.transcription_metrics,
         ]
         if all(metric is None for metric in all_metrics):
             return False
@@ -155,5 +186,9 @@ class GateResult(BaseModel):
 
     def _compute_hash(self) -> str:
         payload = self.model_dump(exclude={"passed", "validation_hash"})
+        return self.compute_validation_hash(payload)
+
+    @staticmethod
+    def compute_validation_hash(payload: dict[str, Any]) -> str:
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode()).hexdigest()[:16]

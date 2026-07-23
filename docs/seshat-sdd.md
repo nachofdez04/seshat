@@ -340,7 +340,7 @@ At minimum, the following metrics should be emitted:
 
 ### Release Gate & Evaluation Harness
 
-The eval harness runs five independent passes, each with its own corpus under `data/eval/corpus/<pass>/`, runner, scorer, and gate targets. Passes are togglable via `EvalConfig` and can be run individually; `upsert_gate` carries over blocks from the existing file so a partial run only updates what it ran.
+The eval harness runs six independent passes, each with its own corpus under `data/eval/corpora/<pass>/`, runner, scorer, and gate targets. Passes are togglable via `EvalConfig` and can be run individually; `upsert_gate` carries over blocks from the existing file so a partial run only updates what it ran.
 
 **Identification pass** — extraction quality. Per-concept-type precision, recall, spurious rate against quote-anchored ground truth. Additional field-level accuracy scores (assignee, due, rationale, risk type) are logged to MLflow as observability signals but are not gated.
 
@@ -352,9 +352,11 @@ The eval harness runs five independent passes, each with its own corpus under `d
 
 **Grouping pass** — grouping agent quality. Group hit rate (gated) and exact match (logged).
 
-**Gate file** (`data/eval_gate.json`) — `GateResult` with five metric blocks (`identification_metrics`, `resolution_metrics`, `retrieval_metrics`, `verification_metrics`, `grouping_metrics`) plus a computed `passed` field. A `None` block means the pass was not run and is not a failure; `passed` is `false` if all blocks are `None`. The worker refuses to accept jobs at startup unless the gate file is present and `passed=true`.
+**Transcription pass** — transcription provider quality. Word Error Rate against reference transcripts, after normalizing both sides (NFKC, casefold, punctuation stripped) so the metric measures recognition rather than a provider's punctuation and casing conventions. Pooled, length-weighted WER is gated as an upper bound (the only lower-is-better gated metric); the macro mean is logged. `--provider` repeats the run per provider for side-by-side comparison, and only the configured default provider updates the gate.
 
-**Regression gate:** any change to agent system prompts, model provider/version, or confidence scoring heuristics must be accompanied by a passing eval run (at minimum the affected passes) that updates `data/eval_gate.json`. Gate thresholds are centralised in `src/seshat/eval/thresholds.py`.
+**Gate file** (`eval_gate.json`) — `GateResult` with six metric blocks (`identification_metrics`, `resolution_metrics`, `retrieval_metrics`, `grounding_metrics`, `grouping_metrics`, `transcription_metrics`) plus a computed `passed` field. A `None` block means the pass was not run and is not a failure; `passed` is `false` if all blocks are `None`. The worker refuses to accept jobs at startup unless the gate file is present and `passed=true`.
+
+**Regression gate:** any change to agent system prompts, model provider/version, or confidence scoring heuristics must be accompanied by a passing eval run (at minimum the affected passes) that updates `eval_gate.json`. Gate thresholds are centralised in `src/seshat/eval/thresholds.py`.
 
 ## Known Limitations
 

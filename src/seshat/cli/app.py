@@ -18,6 +18,7 @@ from seshat.cli._eval_support import (
     parse_tags,
 )
 from seshat.core.config.eval_settings import EvalConfig
+from seshat.core.models.enums import TranscriptionProvider
 from seshat.core.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -54,18 +55,35 @@ def eval_cmd(
         bool,
         typer.Option("--all", help="Run every harness whose EVAL__RUN_<harness> flag is enabled."),
     ] = False,
+    providers: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "Transcription harness only: compare these providers side by side, one MLflow run each. "
+                "Repeatable. Only the configured default provider updates the gate file."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run one evaluation harness, or every enabled harness with --all."""
     if harness is not None and run_all:
         typer.echo("Pass either a harness name or --all, not both.", err=True)
         raise typer.Exit(code=1)
 
+    if providers and harness != "transcription":
+        typer.echo("--provider is only supported by the transcription harness.", err=True)
+        raise typer.Exit(code=1)
+
+    # Parsed here rather than in the harness so a typo fails before MLflow is contacted.
+    parsed_providers = _parse_providers(providers)
+
     # Single named harness: the simple case — run it, and let any failure propagate (fail-hard).
     if harness is not None:
         if clear_cache:
             _clear_cache(harness)
 
-        _run_single_harness(harness, tags)
+        _run_single_harness(harness, tags, parsed_providers)
         return
 
     if not run_all:
@@ -98,13 +116,16 @@ def eval_cmd(
     typer.echo(f"\nAll {len(harnesses)} harnesses completed: {', '.join(harnesses)}")
 
 
-def _run_single_harness(harness: str, tags: list[str] | None) -> None:
+def _run_single_harness(
+    harness: str, tags: list[str] | None, providers: list[TranscriptionProvider] | None = None
+) -> None:
     """Bootstrap MLflow and run a single named harness against the labelled corpus."""
     import mlflow
 
     async def _run() -> None:
         eval_config, seshat_config, run_name = bootstrap_eval(harness)
 
+        extra_kwargs: dict[str, Any] = {}
         match harness:
             case "grouping":
                 from seshat.eval.grouping.entrypoint import run
@@ -116,15 +137,31 @@ def _run_single_harness(harness: str, tags: list[str] | None) -> None:
                 from seshat.eval.retrieval.entrypoint import run
             case "grounding":
                 from seshat.eval.grounding.entrypoint import run
+            case "transcription":
+                from seshat.eval.transcription.entrypoint import run
+
+                extra_kwargs["providers"] = providers
             case _:
                 typer.echo(f"Unknown harness '{harness}'. Choose from: {', '.join(HARNESS_TYPES)}", err=True)
                 raise typer.Exit(code=1)
 
         tag_filter = parse_tags(tags) if tags is not None else None
         with mlflow.start_run(run_name=run_name):
-            await run(eval_config, seshat_config, tag_filter=tag_filter)
+            await run(eval_config, seshat_config, tag_filter=tag_filter, **extra_kwargs)
 
     _run_async(_run())
+
+
+def _parse_providers(providers: list[str] | None) -> list[TranscriptionProvider] | None:
+    if not providers:
+        return None
+
+    try:
+        return [TranscriptionProvider(p) for p in providers]
+    except ValueError as exc:
+        valid = ", ".join(p.value for p in TranscriptionProvider)
+        typer.echo(f"{exc}. Choose from: {valid}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @eval_app.command("clear-cache")

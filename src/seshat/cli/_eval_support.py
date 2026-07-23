@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-HARNESS_TYPES = ["grounding", "grouping", "identification", "resolution", "retrieval"]
+HARNESS_TYPES = ["grounding", "grouping", "identification", "resolution", "retrieval", "transcription"]
 CALIBRATION_TYPES = ["retrieval", "identification"]
 
 

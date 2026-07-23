@@ -62,6 +62,13 @@ class EvalConfig(BaseSettings):
             "check if the grouping agent correctly clusters extracted items into thematic groups."
         ),
     )
+    run_transcription: bool = Field(
+        default=True,
+        description=(
+            "Run the transcription eval pass, i.e., "
+            "measure the Word Error Rate of the configured transcription provider against reference transcripts."
+        ),
+    )
     max_concurrent_predictions: int = Field(
         default=10,
         gt=0,
@@ -81,6 +88,7 @@ class EvalConfig(BaseSettings):
     _retrieval_subdir: ClassVar[str] = "retrieval"
     _grounding_subdir: ClassVar[str] = "grounding"
     _grouping_subdir: ClassVar[str] = "grouping"
+    _transcription_subdir: ClassVar[str] = "transcription"
     # a hidden folder in the project root for caching intermediate results during eval runs; not intended for manual use
     _cache_dir: ClassVar[Path] = PROJECT_ROOT / ".seshat" / "eval_cache"
 
@@ -112,6 +120,10 @@ class EvalConfig(BaseSettings):
     def retrieval_corpus_dir(self) -> Path:
         return self.corpus_dir_for("retrieval")
 
+    @property
+    def transcription_corpus_dir(self) -> Path:
+        return self.corpus_dir_for("transcription")
+
     @classmethod
     def cache_dir_for(cls, harness: str) -> Path:
         """Return the cache directory for a harness name, without constructing an instance."""
@@ -142,6 +154,10 @@ class EvalConfig(BaseSettings):
         return self.cache_dir_for("retrieval")
 
     @property
+    def transcription_cache_dir(self) -> Path:
+        return self.cache_dir_for("transcription")
+
+    @property
     def enabled_harnesses(self) -> list[str]:
         """Harness names whose run_<harness> flag is enabled, in canonical order."""
         flags = [
@@ -150,6 +166,7 @@ class EvalConfig(BaseSettings):
             (self.run_retrieval, "retrieval"),
             (self.run_grounding, "grounding"),
             (self.run_grouping, "grouping"),
+            (self.run_transcription, "transcription"),
         ]
         return [name for enabled, name in flags if enabled]
 
@@ -177,6 +194,7 @@ class EvalConfig(BaseSettings):
             self.retrieval_cache_dir,
             self.grounding_cache_dir,
             self.grouping_cache_dir,
+            self.transcription_cache_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
         return self

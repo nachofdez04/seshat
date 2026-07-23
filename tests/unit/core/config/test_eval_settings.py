@@ -14,6 +14,7 @@ class TestCacheDirFor:
             ("retrieval", "retrieval"),
             ("grounding", "grounding"),
             ("grouping", "grouping"),
+            ("transcription", "transcription"),
         ],
     )
     def test_maps_each_harness_to_its_cache_subdir(self, harness: str, subdir: str) -> None:
@@ -28,11 +29,18 @@ class TestCacheDirFor:
 class TestEnabledHarnesses:
     def test_all_enabled_by_default(self) -> None:
         cfg = EvalConfig()
-        assert cfg.enabled_harnesses == ["identification", "resolution", "retrieval", "grounding", "grouping"]
+        assert cfg.enabled_harnesses == [
+            "identification",
+            "resolution",
+            "retrieval",
+            "grounding",
+            "grouping",
+            "transcription",
+        ]
 
     def test_disabled_harness_is_excluded(self) -> None:
         cfg = EvalConfig(run_resolution=False, run_grounding=False)
-        assert cfg.enabled_harnesses == ["identification", "retrieval", "grouping"]
+        assert cfg.enabled_harnesses == ["identification", "retrieval", "grouping", "transcription"]
 
     def test_none_enabled_returns_empty(self) -> None:
         cfg = EvalConfig(
@@ -41,5 +49,6 @@ class TestEnabledHarnesses:
             run_retrieval=False,
             run_grounding=False,
             run_grouping=False,
+            run_transcription=False,
         )
         assert cfg.enabled_harnesses == []

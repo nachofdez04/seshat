@@ -46,3 +46,10 @@ GROUNDING_RECALL: float = 0.80
 
 GROUPING_GROUP_HIT_RATE: float = 0.80  # gated — partial credit per example
 # grouping.exact_match is logged but not gated (too strict for larger examples)
+
+# UPPER BOUND, unlike every other threshold in this file: WER is lower-is-better, so the
+# gate passes when the measured value is <= this number. Placeholder pending calibration
+# against the first baseline run.
+TRANSCRIPTION_WER_MAX: float = 0.25
+# transcription.wer_macro (unweighted mean of per-example WER) is logged but not gated —
+# the pooled, length-weighted value is the headline metric.

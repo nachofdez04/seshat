@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -10,10 +11,12 @@ from seshat.eval.gate import (
     read_gate,
     resolution_entries,
     retrieval_entries,
+    transcription_entries,
     upsert_gate,
     write_gate,
 )
 from seshat.eval.models import GateResult, MetricEntry
+from seshat.eval.thresholds import TRANSCRIPTION_WER_MAX
 
 
 def _passing_resolution() -> dict[str, float]:
@@ -65,6 +68,7 @@ class TestMetricEntry:
             (retrieval_entries, "recall_at_5", "precision_at_5"),
             (grounding_entries, "precision", "accuracy"),
             (grouping_entries, "group_hit_rate", "exact_match"),
+            (transcription_entries, "wer", "wer_macro"),
         ],
     )
     def test_builder_labels_gated_vs_non_gated(self, builder, gated_key, non_gated_key):
@@ -118,6 +122,24 @@ class TestGateReadWrite:
 
         assert loaded.resolution_metrics is None
         assert loaded.retrieval_metrics is None
+
+    def test_read_gate_accepts_a_valid_file_from_the_previous_schema(self, tmp_path):
+        result = GateResult(
+            run_id="legacy-run",
+            identification_metrics=identification_entries(_passing_identification()),
+        )
+        gate_path = tmp_path / "eval_gate.json"
+        data = result.model_dump()
+        data.pop("transcription_metrics")
+        payload = {key: value for key, value in data.items() if key not in {"passed", "validation_hash"}}
+        serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        data["validation_hash"] = hashlib.sha256(serialized.encode()).hexdigest()[:16]
+        gate_path.write_text(json.dumps(data), encoding="utf-8")
+
+        loaded = read_gate(gate_path)
+
+        assert loaded.run_id == "legacy-run"
+        assert loaded.transcription_metrics is None
 
     def test_read_gate_raises_on_tampered_file(self, tmp_path):
         result = GateResult(
@@ -250,6 +272,27 @@ class TestGateResultPassed:
         )
         assert gate_result.passed is True
 
+    def test_transcription_wer_below_upper_bound_passes(self):
+        # WER is the one lower-is-better gated metric: the threshold is an upper bound.
+        gate_result = GateResult(run_id="r", transcription_metrics=transcription_entries({"wer": 0.05}))
+        assert gate_result.passed is True
+
+    def test_transcription_wer_above_upper_bound_fails(self):
+        gate_result = GateResult(run_id="r", transcription_metrics=transcription_entries({"wer": 0.90}))
+        assert gate_result.passed is False
+
+    def test_transcription_wer_at_exact_threshold_passes(self):
+        entries = transcription_entries({"wer": TRANSCRIPTION_WER_MAX})
+        gate_result = GateResult(run_id="r", transcription_metrics=entries)
+        assert gate_result.passed is True
+
+    def test_transcription_wer_macro_not_gated(self):
+        # a terrible macro mean cannot fail the gate on its own
+        gate_result = GateResult(
+            run_id="r", transcription_metrics=transcription_entries({"wer": 0.05, "wer_macro": 0.99})
+        )
+        assert gate_result.passed is True
+
 
 class TestGateResultHarnessPassed:
     def test_passing_block_is_true(self):
@@ -314,6 +357,18 @@ class TestUpsertGate:
 
         assert result.identification_metrics is not None
         assert result.identification_metrics["decision.precision"].value == 0.95
+
+    def test_upsert_transcription_block_preserves_others(self, tmp_path):
+        gate_path = tmp_path / "gate.json"
+        write_gate(
+            GateResult(run_id="r1", identification_metrics=identification_entries(_passing_identification())),
+            gate_path,
+        )
+        result = upsert_gate(gate_path, run_id="r2", transcription_metrics={"wer": 0.1})
+
+        assert result.identification_metrics is not None
+        assert result.transcription_metrics is not None
+        assert result.transcription_metrics["wer"].passed is True
 
     def test_upsert_creates_file_if_missing(self, tmp_path):
         gate_path = tmp_path / "subdir" / "gate.json"

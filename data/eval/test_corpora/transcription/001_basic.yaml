@@ -1,0 +1,12 @@
+# Shape-only fixture for loader and runner tests. The reference below is a PLACEHOLDER — the
+# spoken content of test-audio-short.mp3 has never been transcribed and reviewed, so any WER
+# computed against it is meaningless. Tests here assert structure (gate written, metrics
+# present), never a WER value.
+audio_file: tests/fixtures/audio/test-audio-short.mp3
+
+reference: |
+  Placeholder reference transcript for the transcription eval test corpus.
+
+tags:
+  language: en
+  reference_verified: "false"
