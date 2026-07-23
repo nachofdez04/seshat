@@ -17,6 +17,7 @@ from seshat.eval.thresholds import (
     RESOLUTION_RECALL,
     RETRIEVAL_MRR_AT_5,
     RETRIEVAL_RECALL_AT_5,
+    TRANSCRIPTION_WER_MAX,
 )
 
 if TYPE_CHECKING:
@@ -30,12 +31,14 @@ def write_gate(result: GateResult, gate_path: Path) -> None:
 
 def read_gate(gate_path: Path) -> GateResult:
     raw = gate_path.read_text(encoding="utf-8")
-    # Capture the stored hash before parsing: model_post_init recomputes validation_hash
-    # on construction, so comparing result.validation_hash to itself would always pass.
-    stored_hash = json.loads(raw).get("validation_hash", "")
-    result = GateResult.model_validate_json(raw)
-    if stored_hash != result.validation_hash:
+    data = json.loads(raw)
+    stored_hash = data.pop("validation_hash", "")
+    data.pop("passed", None)
+    expected_hash = GateResult.compute_validation_hash(data)
+    if stored_hash != expected_hash:
         raise ValueError(f"eval_gate.json has been modified outside the pipeline: {gate_path}")
+
+    result = GateResult.model_validate_json(raw)
     return result
 
 
@@ -47,6 +50,7 @@ def upsert_gate(
     retrieval_metrics: dict[str, float] | None = None,
     grounding_metrics: dict[str, float] | None = None,
     grouping_metrics: dict[str, float] | None = None,
+    transcription_metrics: dict[str, float] | None = None,
 ) -> GateResult:
     """Update only the supplied metric blocks; carry over the rest from the existing file."""
     id_entries = identification_entries(identification_metrics) if identification_metrics is not None else None
@@ -54,6 +58,7 @@ def upsert_gate(
     ret_entries = retrieval_entries(retrieval_metrics) if retrieval_metrics is not None else None
     grd_entries = grounding_entries(grounding_metrics) if grounding_metrics is not None else None
     grp_entries = grouping_entries(grouping_metrics) if grouping_metrics is not None else None
+    trn_entries = transcription_entries(transcription_metrics) if transcription_metrics is not None else None
 
     if gate_path.exists():
         existing = read_gate(gate_path)
@@ -67,6 +72,8 @@ def upsert_gate(
             grd_entries = existing.grounding_metrics
         if grp_entries is None:
             grp_entries = existing.grouping_metrics
+        if trn_entries is None:
+            trn_entries = existing.transcription_metrics
 
     result = GateResult(
         run_id=run_id,
@@ -75,6 +82,7 @@ def upsert_gate(
         retrieval_metrics=ret_entries,
         grounding_metrics=grd_entries,
         grouping_metrics=grp_entries,
+        transcription_metrics=trn_entries,
     )
     write_gate(result, gate_path)
     return result
@@ -146,6 +154,15 @@ def grouping_entries(metrics: dict[str, float]) -> dict[str, MetricEntry]:
         return value >= GROUPING_GROUP_HIT_RATE if key == "group_hit_rate" else None
 
     return _harness_entries(metrics, grouping_gate_judge)
+
+
+def transcription_entries(metrics: dict[str, float]) -> dict[str, MetricEntry]:
+    def transcription_gate_judge(key: str, value: float) -> bool | None:
+        # WER is lower-is-better: the threshold is an upper bound, inverting the comparison
+        # used by every other harness here.
+        return value <= TRANSCRIPTION_WER_MAX if key == "wer" else None
+
+    return _harness_entries(metrics, transcription_gate_judge)
 
 
 def _harness_entries(

@@ -1,0 +1,25 @@
+# The same dialogue as new_service_2026_05_13_clean, mixed with quiet-office background noise
+# at -10 dB. Same reference text — the pair isolates the provider's noise robustness.
+#
+# Note: data/fixtures/audio/new_service_2026_05_13_noise.mp3 is deliberately NOT in this corpus.
+# generate_synthetic_audio.py writes that file as the raw generated ambience only, with no speech
+# in it, so it has no reference transcript to score against.
+audio_file: data/fixtures/audio/new_service_2026_05_13.mp3
+
+reference: |
+  We need to pick a database for the new service. Options are Postgres or MySQL.
+  Postgres has native JSONB and better full-text search. I'd go with it.
+  Agreed. I'd go with Postgres too. It also has a more active community.
+  It's settled then. Anika, can you set up the schema migrations by end of week?
+  Sure, I'll have it done by Friday.
+  We also need to decide on the caching layer — Redis or Memcached?
+  We don't have the load numbers yet. I'd defer that decision. There's also a risk with the
+  migration timeline; if staging is still down on Thursday we can't validate before Friday's
+  deadline.
+  That's a real concern. I haven't got a fixed date from the infra team yet. I'll ping them again.
+
+tags:
+  language: en
+  background_noise: "true"
+  synthetic: "true"
+  speakers: "4"
