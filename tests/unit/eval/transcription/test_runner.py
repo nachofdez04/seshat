@@ -303,6 +303,24 @@ class TestTranscriptionEvalRunner:
         assert logged["harness_passed"] is True
         assert logged["gate_passed"] is False
 
+    async def test_comparison_without_a_persisted_gate_logs_false(
+        self, local_mlflow, isolated_config, monkeypatch
+    ):
+        logged: dict = {}
+        monkeypatch.setattr(
+            "seshat.eval.transcription.runner.log_eval_run_metadata",
+            lambda **kwargs: logged.update(kwargs),
+        )
+        reference = _corpus_reference(isolated_config)
+        runner = _make_runner(isolated_config, transcriber=FakeTranscriber(reference))
+
+        comparison = await _run_in_own_mlflow_run(runner, update_gate=False)
+
+        assert not isolated_config.gate_path.exists()
+        assert comparison.harness_passed("transcription") is True
+        assert logged["harness_passed"] is True
+        assert logged["gate_passed"] is False
+
     async def test_run_without_gate_update_and_empty_filter_does_not_create_gate(self, isolated_config):
         runner = _make_runner(isolated_config)
 

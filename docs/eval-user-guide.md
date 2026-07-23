@@ -12,7 +12,8 @@ against a labelled ground-truth corpus:
 | **grounding** | Does the grounding agent tell a supported quote from a hallucinated one? |
 | **transcription** | How accurately does the configured transcription provider recognize the corpus audio? |
 
-Every run produces **two** artifacts:
+A gate-owning run produces **two** outputs. Comparison-only transcription runs produce
+the MLflow output but deliberately leave the gate file unchanged:
 
 1. **MLflow metrics and traces** — a browsable run at `http://localhost:5000` with
    per-fixture scores and the full LLM traces behind each prediction. This is where you
@@ -234,8 +235,9 @@ reference, see [`configuration.md`](./configuration.md) (the
 
 ## 3. The gate file
 
-Every run writes a `GateResult` to **`eval_gate.json`** at the project root (configurable
-via `EVAL__GATE_PATH`). It is the machine-readable verdict — a trimmed example:
+Every gate-owning harness run writes a `GateResult` to **`eval_gate.json`** at the project
+root (configurable via `EVAL__GATE_PATH`). It is the machine-readable verdict — a trimmed
+example:
 
 ```json
 {

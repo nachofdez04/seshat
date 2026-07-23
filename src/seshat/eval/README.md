@@ -4,7 +4,8 @@ Six eval harnesses that measure quality across the pipeline:
 **identification**, **resolution**, **retrieval**, **grouping**, **grounding**, and
 **transcription**.
 All six use [MLflow Evaluate](https://mlflow.org/docs/latest/llms/llm-evaluate/) as the
-evaluation framework and write their results to a shared gate file.
+evaluation framework. Gate-owning runs write to the shared gate file; comparison-only
+transcription runs log to MLflow without modifying it.
 
 ## Installation
 
@@ -60,10 +61,11 @@ eval/
 
 ## The Gate
 
-Every runner produces a `GateResult` and writes it to the `gate_path` configured in
-`EvalConfig` via `upsert_gate`.  `upsert_gate` is additive: running one harness
-carries over the other harnesses' metric blocks so you can run them independently
-without zeroing out prior results.
+Every runner produces a `GateResult` and normally writes it to the `gate_path` configured
+in `EvalConfig` via `upsert_gate`.  `upsert_gate` is additive: running one harness carries
+over the other harnesses' metric blocks so you can run them independently without zeroing
+out prior results. Comparison-only transcription providers return and log their result
+without writing the gate file.
 
 `GateResult.passed` computes the overall pass/fail verdict by comparing all present
 metric blocks against the thresholds in `thresholds.py`.  A block that is `None`
