@@ -11,7 +11,7 @@ from seshat.app.platform.observability.usage_tracker import track_eval_usage
 from seshat.core.utils.hashing import fingerprint
 from seshat.core.utils.log import set_task_num
 from seshat.eval.cache import build_cache_fp, read_or_run, sweep_stale_entries
-from seshat.eval.gate import transcription_entries, upsert_gate
+from seshat.eval.gate import read_gate, transcription_entries, upsert_gate
 from seshat.eval.mlflow_logging import log_eval_run_metadata
 from seshat.eval.models import GateResult, TranscriptionPrediction
 from seshat.eval.transcription.corpus_loader import load_corpus
@@ -87,13 +87,15 @@ class TranscriptionEvalRunner:
 
         if update_gate:
             gate = upsert_gate(self._config.gate_path, run_id=run_id, transcription_metrics=transcription_metrics)
+            gate_passed = gate.passed
         else:
             gate = GateResult(run_id=run_id, transcription_metrics=transcription_entries(transcription_metrics))
+            gate_passed = read_gate(self._config.gate_path).passed if self._config.gate_path.exists() else False
 
         log_eval_run_metadata(
             run_id=run_id,
             harness="transcription",
-            gate_passed=gate.passed,
+            gate_passed=gate_passed,
             harness_passed=gate.harness_passed("transcription"),
             corpus_dir=self._config.transcription_corpus_dir,
             corpus_examples=examples,

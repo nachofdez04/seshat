@@ -9,7 +9,8 @@ from seshat.core.config.eval_settings import EvalConfig
 from seshat.core.config.settings import TranscriptionConfig
 from seshat.core.models.enums import TranscriptionProvider
 from seshat.eval.cache import build_cache_fp
-from seshat.eval.models import TranscriptionCorpusExample, TranscriptionPrediction
+from seshat.eval.gate import write_gate
+from seshat.eval.models import GateResult, MetricEntry, TranscriptionCorpusExample, TranscriptionPrediction
 from seshat.eval.transcription.runner import (
     TranscriptionEvalRunner,
     _aggregate_metrics,
@@ -275,6 +276,32 @@ class TestTranscriptionEvalRunner:
         assert isolated_config.gate_path.read_text(encoding="utf-8") == before
         assert gate.transcription_metrics is not None
         assert gate.transcription_metrics["wer"].value > 0.0
+
+    async def test_comparison_logs_the_persisted_overall_gate_verdict(
+        self, local_mlflow, isolated_config, monkeypatch
+    ):
+        write_gate(
+            GateResult(
+                run_id="existing",
+                identification_metrics={
+                    "decision.precision": MetricEntry(value=0.0, gated=True, passed=False),
+                },
+            ),
+            isolated_config.gate_path,
+        )
+        logged: dict = {}
+        monkeypatch.setattr(
+            "seshat.eval.transcription.runner.log_eval_run_metadata",
+            lambda **kwargs: logged.update(kwargs),
+        )
+        reference = _corpus_reference(isolated_config)
+        runner = _make_runner(isolated_config, transcriber=FakeTranscriber(reference))
+
+        comparison = await _run_in_own_mlflow_run(runner, update_gate=False)
+
+        assert comparison.harness_passed("transcription") is True
+        assert logged["harness_passed"] is True
+        assert logged["gate_passed"] is False
 
     async def test_run_without_gate_update_and_empty_filter_does_not_create_gate(self, isolated_config):
         runner = _make_runner(isolated_config)

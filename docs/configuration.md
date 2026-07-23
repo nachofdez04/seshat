@@ -314,10 +314,11 @@ Top-level `BaseSettings` root for the `seshat eval` harnesses. Loads from `.env`
 | `run_retrieval` | `True` | Run the retrieval eval pass (does vector search surface the right nodes). |
 | `run_grounding` | `True` | Run the grounding eval pass (does the grounding agent correctly identify grounded vs. hallucinated descriptions). |
 | `run_grouping` | `True` | Run the grouping eval pass (does the grouping agent correctly cluster extracted items into thematic groups). |
+| `run_transcription` | `True` | Run the transcription eval pass (measure provider Word Error Rate against reference transcripts). |
 | `max_concurrent_predictions` | `10` | Maximum number of prediction coroutines that may run in parallel during eval. |
 | `retrieval_score_thresholds` | `{}` | Per-`SearchMode` minimum score thresholds `[0, 1]` applied during retrieval eval. Absent keys default to `0.0` (no filtering). Set per key, e.g. `EVAL__RETRIEVAL_SCORE_THRESHOLDS__SEMANTIC=0.77`. |
 
-`EvalConfig` also exposes ten computed, read-only directory properties (`identification_corpus_dir`, `resolution_corpus_dir`, `retrieval_corpus_dir`, `grounding_corpus_dir`, `grouping_corpus_dir` and their `*_cache_dir` counterparts) derived from `corpus_base_dir` and an internal cache directory. These are not independently configurable via env vars.
+`EvalConfig` also exposes twelve computed, read-only directory properties (`identification_corpus_dir`, `resolution_corpus_dir`, `retrieval_corpus_dir`, `grounding_corpus_dir`, `grouping_corpus_dir`, `transcription_corpus_dir` and their `*_cache_dir` counterparts) derived from `corpus_base_dir` and an internal cache directory. These are not independently configurable via env vars.
 
 ---
 

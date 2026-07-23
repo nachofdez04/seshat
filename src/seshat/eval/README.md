@@ -1,8 +1,9 @@
 # `seshat.eval` — Evaluation Harnesses
 
-Five eval harnesses that measure quality across the pipeline:
-**identification**, **resolution**, **retrieval**, **grouping**, and **grounding**.
-All five use [MLflow Evaluate](https://mlflow.org/docs/latest/llms/llm-evaluate/) as the
+Six eval harnesses that measure quality across the pipeline:
+**identification**, **resolution**, **retrieval**, **grouping**, **grounding**, and
+**transcription**.
+All six use [MLflow Evaluate](https://mlflow.org/docs/latest/llms/llm-evaluate/) as the
 evaluation framework and write their results to a shared gate file.
 
 ## Installation
@@ -38,6 +39,10 @@ eval/
 │   ├── corpus_loader.py    reads YAML fixtures, builds GroundingCorpusExample
 │   ├── scorers.py          confusion-matrix feedback (TP/FP/FN/TN)
 │   └── runner.py           GroundingEvalRunner
+├── transcription/        # AbstractTranscriber → provider WER
+│   ├── corpus_loader.py    reads YAML fixtures and validates referenced audio
+│   ├── scorers.py          normalized word-level Levenshtein and pooled WER
+│   └── runner.py           TranscriptionEvalRunner
 ├── calibration/
 │   ├── identification_meta_scorer.py   IdentificationMetaScorer
 │   ├── retrieval_meta_scorer.py        RetrievalMetaScorer
@@ -394,6 +399,25 @@ Both are order-independent (frozenset comparison).
 
 The scorer tallies a confusion matrix (TP/FP/FN/TN) per node; the runner aggregates
 these into harness-level `precision` and `recall` metrics that feed the gate.
+
+---
+
+## Harness 6 — Transcription (`TranscriptionEvalRunner`)
+
+**What it measures:** How accurately does a transcription provider recognize the
+labelled corpus audio?
+
+The scorer normalizes reference and hypothesis text with NFKC, case folding,
+punctuation removal, and whitespace collapsing before calculating word-level
+Levenshtein distance. The gated headline is pooled WER (total edits divided by total
+reference words); macro mean WER and per-fixture WER are logged for diagnosis.
+
+Predictions are cached separately by provider, model, language, and audio SHA-256.
+The repeatable CLI option
+`seshat eval harness transcription --provider assemblyai --provider openai` creates a
+separate MLflow child run for each supported provider. Only the provider configured by
+`TRANSCRIPTION__PROVIDER` updates the gate; comparison providers report
+`harness.passed` without replacing the persisted global verdict.
 
 ---
 

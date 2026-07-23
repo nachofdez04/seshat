@@ -1,6 +1,6 @@
 # Seshat Eval User Guide
 
-Seshat ships five evaluation harnesses that measure the quality of the AI pipeline
+Seshat ships six evaluation harnesses that measure the quality of the AI pipeline
 against a labelled ground-truth corpus:
 
 | Harness | What it measures |
@@ -10,6 +10,7 @@ against a labelled ground-truth corpus:
 | **retrieval** | Does vector search surface the relevant nodes in the top-5? |
 | **grouping** | Does the grouping agent cluster extracted items the way a human would? |
 | **grounding** | Does the grounding agent tell a supported quote from a hallucinated one? |
+| **transcription** | How accurately does the configured transcription provider recognize the corpus audio? |
 
 Every run produces **two** artifacts:
 
@@ -21,7 +22,8 @@ Every run produces **two** artifacts:
 
 > **Two caveats before you start.** Every harness calls a **paid API — the four agent
 > harnesses hit live LLM endpoints, and retrieval calls the embedding API (plus an LLM in
-> keyword/hybrid mode).** Results are also **not fully deterministic** across runs, even at
+> keyword/hybrid mode), while transcription calls its configured speech-to-text provider.**
+> Results are also **not fully deterministic** across runs, even at
 > `temperature=0`; see the [determinism section](../src/seshat/eval/README.md#eval-determinism)
 > in the eval package README for why, and how the corpus is designed around it.
 
@@ -47,8 +49,9 @@ uv sync --group eval
 The harnesses use the same providers as the runtime pipeline. Eval runs **locally**
 (not in Docker), so the keys must be in your **`.env`** file — loaded via `python-dotenv`
 when the CLI starts. At minimum you need the embedding provider (retrieval) and the
-identification/resolution/grounding agent providers. These are the same keys described in
-the [UI testing guide pre-requisites](./ui-testing-guide.md); reuse them.
+identification/resolution/grounding agent providers, plus the configured transcription
+provider. These are the same keys described in the
+[UI testing guide pre-requisites](./ui-testing-guide.md); reuse them.
 
 ### 3. Start MLflow
 
@@ -79,7 +82,7 @@ Strictly, not every harness uses it:
 |---------|-----------------|-----|
 | retrieval | **Yes** | seeds and searches a real pgvector collection |
 | identification, resolution | **Yes, at startup** | the shared orchestrator opens a connection pool on launch (a deliberate fail-fast check) — the eval itself does not read from the KB |
-| grouping, grounding | No | run a single agent against the corpus; no store involved |
+| grouping, grounding, transcription | No | run directly against the labelled corpus; no store involved |
 
 Bringing Postgres up for every run keeps the setup uniform, so that is the recommendation.
 You do **not** need `localstack`, the API, or the worker: local runs read secrets straight
@@ -97,8 +100,9 @@ Run a single harness by name:
 uv run seshat eval harness identification
 ```
 
-The five harness names are `identification`, `resolution`, `retrieval`, `grouping`, and
-`grounding`. Start with one — every harness spends on a paid API per run.
+The six harness names are `identification`, `resolution`, `retrieval`, `grouping`,
+`grounding`, and `transcription`. Start with one — every harness spends on a paid API
+per run.
 
 To run the whole suite in one command — the usual way to produce a complete gate — pass
 `--all` instead of a name:
@@ -107,7 +111,7 @@ To run the whole suite in one command — the usual way to produce a complete ga
 uv run seshat eval harness --all
 ```
 
-`--all` runs every harness whose `EVAL__RUN_<harness>` flag is enabled (all five are `true`
+`--all` runs every harness whose `EVAL__RUN_<harness>` flag is enabled (all six are `true`
 by default). Set a flag to `false` in `.env` to drop that harness from the suite — e.g.
 `EVAL__RUN_GROUNDING=false` to skip grounding. These flags gate `--all` only; running a
 harness by name always runs it regardless.
@@ -135,6 +139,8 @@ your latest run.
      fields slimmed away, keeping `type / title / description / confidence`).
    - **Resolution** shows expected and predicted relationships as readable slug triples
      alongside the raw UUID relationships the scorer consumes.
+   - **Transcription** shows the reference and provider hypothesis together with the
+     per-fixture Word Error Rate (WER).
 
 If a fixture scores lower than expected, the trace row tells you whether the model picked
 the wrong type, missed a node, or invented one — before you touch any code.
@@ -191,6 +197,21 @@ EVAL__RETRIEVAL_SCORE_THRESHOLDS__SEMANTIC=0.77
 EVAL__RETRIEVAL_SCORE_THRESHOLDS__HYBRID=0.5
 ```
 
+**Compare transcription providers.** The configured provider supplies the default model,
+language, and gate-owning result:
+
+```bash
+TRANSCRIPTION__PROVIDER=assemblyai
+TRANSCRIPTION__LANGUAGE=en
+
+uv run seshat eval harness transcription --provider assemblyai --provider openai
+```
+
+AssemblyAI and OpenAI are currently supported. Each `--provider` value creates a separate
+MLflow child run. Only the provider selected by `TRANSCRIPTION__PROVIDER` updates
+`eval_gate.json`; the others are comparison-only runs and report their own
+`harness.passed` result without replacing the global gate.
+
 > Changing a **threshold** does not invalidate cached predictions the way a model or
 > prompt change does — so after retuning one you often need to clear the cache. See
 > [section 4](#4-clear-the-eval-cache).
@@ -227,6 +248,10 @@ via `EVAL__GATE_PATH`). It is the machine-readable verdict — a trimmed example
     "recall_at_5": { "value": 0.742, "passed": true },
     "mrr_at_5":    { "value": 0.944, "passed": true }
   },
+  "transcription_metrics": {
+    "wer":       { "value": 0.117, "passed": true },
+    "wer_macro": { "value": 0.121, "gated": false, "passed": null }
+  },
   "validation_hash": "bc7fa1e0330eebbb",
   "passed": true
 }
@@ -259,6 +284,8 @@ To avoid paying for the same LLM calls on every iteration, the harnesses cache e
 prediction to disk under `.seshat/eval_cache/<harness>/`. Cache files are keyed on the
 corpus example, the agent's prompt fingerprint, and the input hash — so **changing a
 prompt or a fixture automatically invalidates** the affected entries on the next run.
+For transcription, the key includes provider, model, language, and the audio SHA-256, so
+provider comparisons never reuse each other's hypotheses.
 
 What is **not** captured by that key is a **threshold or other config change** (for
 example, recalibrating the retrieval semantic threshold, which is baked into cached hybrid

@@ -23,6 +23,11 @@ from seshat.core.utils.log import get_logger
 
 logger = get_logger(__name__)
 
+_SUPPORTED_TRANSCRIPTION_PROVIDERS = (
+    TranscriptionProvider.ASSEMBLYAI,
+    TranscriptionProvider.OPENAI,
+)
+
 
 def _run_async(coro: Coroutine) -> None:
     # psycopg (asyncpg-backed PGVector) is incompatible with Windows ProactorEventLoop
@@ -156,12 +161,19 @@ def _parse_providers(providers: list[str] | None) -> list[TranscriptionProvider]
     if not providers:
         return None
 
+    valid = ", ".join(p.value for p in _SUPPORTED_TRANSCRIPTION_PROVIDERS)
     try:
-        return [TranscriptionProvider(p) for p in providers]
+        parsed = [TranscriptionProvider(p) for p in providers]
     except ValueError as exc:
-        valid = ", ".join(p.value for p in TranscriptionProvider)
         typer.echo(f"{exc}. Choose from: {valid}", err=True)
         raise typer.Exit(code=1) from exc
+
+    unsupported = [p.value for p in parsed if p not in _SUPPORTED_TRANSCRIPTION_PROVIDERS]
+    if unsupported:
+        typer.echo(f"Transcription provider(s) not supported: {', '.join(unsupported)}. Choose from: {valid}", err=True)
+        raise typer.Exit(code=1)
+
+    return parsed
 
 
 @eval_app.command("clear-cache")

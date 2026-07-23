@@ -192,6 +192,15 @@ class TestHarnessProviderOption:
         assert result.exit_code == 1
         assert "assemblyai" in result.output
 
+    def test_unimplemented_provider_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cli_app, "_run_single_harness", lambda *a, **kw: None)
+
+        result = runner.invoke(app, ["eval", "harness", "transcription", "--provider", "deepgram"])
+
+        assert result.exit_code == 1
+        assert "not supported" in result.output
+        assert "assemblyai, openai" in result.output
+
 
 class TestHarnessSingleFailHard:
     def test_named_harness_failure_propagates(self, cache_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
