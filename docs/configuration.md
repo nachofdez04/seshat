@@ -46,7 +46,7 @@ Configures the audio transcription provider and its limits.
 
 | Field | Default | Definition |
 |---|---|---|
-| `provider` | `assemblyai` | `TranscriptionProvider` enum: `assemblyai`, `openai`, `deepgram`. |
+| `provider` | `assemblyai` | `TranscriptionProvider` enum: `assemblyai`, `openai`, `deepgram`. Runtime adapters currently exist for AssemblyAI and OpenAI; Deepgram is reserved for future support. |
 | `model` | `None` | Provider-specific model name; `None` uses the provider default. |
 | `language` | `en` | BCP-47 language code for the audio being transcribed. |
 | `max_file_bytes` | `524_288_000` (500 MiB) | Maximum accepted audio file size, in bytes. |

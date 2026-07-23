@@ -197,8 +197,9 @@ EVAL__RETRIEVAL_SCORE_THRESHOLDS__SEMANTIC=0.77
 EVAL__RETRIEVAL_SCORE_THRESHOLDS__HYBRID=0.5
 ```
 
-**Compare transcription providers.** The configured provider supplies the default model,
-language, and gate-owning result:
+**Compare transcription providers.** The configured provider owns the gate result; the
+language is shared across comparison runs, while each other provider resolves its own
+default model and API-key setting:
 
 ```bash
 TRANSCRIPTION__PROVIDER=assemblyai
